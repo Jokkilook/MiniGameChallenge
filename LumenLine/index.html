@@ -204,7 +204,7 @@ function resetLevel(){ loadLevel(li); tone(240,0.08,'sine',0.03); }
 /* ---------- drop / physics ---------- */
 function drop(){ if(phase!=='draw') return; phase='sim'; ball.vx=0; ball.vy=0; SFX.drop(); }
 
-const G=1600, REST=0.34, FRIC=0.010;   // low rolling friction: momentum matters
+const G=1600, REST=0.34, FRIC=0.003;   // very low rolling friction: the orb rolls freely
 function allSegs(){ const a=staticSegs.slice(); for(const s of strokes) for(const g of s.segs) a.push(g); return a; }
 function closest(px,py,x1,y1,x2,y2){ const dx=x2-x1,dy=y2-y1,L2=dx*dx+dy*dy;
   let t=L2?((px-x1)*dx+(py-y1)*dy)/L2:0; t=t<0?0:t>1?1:t; return [x1+dx*t,y1+dy*t]; }

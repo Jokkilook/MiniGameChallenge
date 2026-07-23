@@ -1,0 +1,340 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+<title>꿈틀꿈틀 · Squiggle</title>
+<style>
+  :root{ --bg:#0b0d16; --ink:#eef1ff; --muted:#8b90c4; --amber:#ffd27a; --amber2:#ff9e5e;
+         --wisp:#9ff0ff; --lime:#b6f36a; --panel:rgba(16,18,38,.92); }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%;background:radial-gradient(120% 120% at 50% 0%,#161a30 0%,#080a12 72%);
+    color:var(--ink);font-family:"Segoe UI",-apple-system,BlinkMacSystemFont,"Malgun Gothic",sans-serif;
+    overflow:hidden;-webkit-user-select:none;user-select:none;touch-action:none}
+  #wrap{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;padding:8px}
+  #stage{position:relative;border-radius:16px;overflow:hidden;box-shadow:0 30px 90px rgba(0,0,0,.65),0 0 0 1px rgba(255,255,255,.04)}
+  canvas{display:block;background:#0a0d18;border-radius:16px;cursor:crosshair}
+  #hud{position:absolute;left:0;right:0;top:0;display:flex;align-items:center;gap:16px;padding:12px 16px;z-index:5;pointer-events:none}
+  .stat .k{font-size:11px;letter-spacing:1.5px;color:var(--muted);text-transform:uppercase}
+  .stat .v{font-size:22px;font-weight:800;font-variant-numeric:tabular-nums}
+  #time .v{color:var(--wisp)} #best .v{color:var(--amber)}
+  #hud .spacer{flex:1}
+  .btn{pointer-events:auto;cursor:pointer;border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.05);color:var(--ink);
+    border-radius:10px;padding:8px 13px;font-size:13px;font-weight:700;transition:.15s}
+  .btn:hover{background:rgba(255,255,255,.12);transform:translateY(-1px)}
+  .btn.go{background:linear-gradient(180deg,var(--lime),#7fd83a);color:#10240a;border:none;box-shadow:0 8px 22px rgba(150,220,80,.3)}
+  .btn:disabled{opacity:.4;cursor:default;transform:none}
+  #hint{position:absolute;left:0;right:0;bottom:16px;text-align:center;color:var(--muted);font-size:13px;z-index:4;pointer-events:none;text-shadow:0 2px 10px #000}
+  #hint b{color:var(--lime)}
+  .overlay{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;z-index:10;
+    background:radial-gradient(60% 60% at 50% 45%,rgba(8,9,18,.5),rgba(4,5,11,.95));opacity:0;visibility:hidden;transition:opacity .35s}
+  .overlay.show{opacity:1;visibility:visible}
+  .card{width:min(560px,90%);background:var(--panel);border:1px solid rgba(255,255,255,.08);border-radius:20px;padding:30px 30px 26px;text-align:center;box-shadow:0 26px 70px rgba(0,0,0,.55)}
+  .card h1{margin:0;font-size:36px;letter-spacing:1px} .card h1 small{display:block;font-size:12px;letter-spacing:6px;color:var(--lime);margin-top:9px;font-weight:600}
+  .card p{color:var(--muted);line-height:1.7;font-size:14px;margin:14px 0 18px} .card p b{color:var(--lime)}
+  .cta{cursor:pointer;border:none;border-radius:12px;padding:13px 32px;font-size:15px;font-weight:800;letter-spacing:.5px;color:#10240a;background:linear-gradient(180deg,var(--lime),#7fd83a);box-shadow:0 10px 30px rgba(150,220,80,.3);transition:.15s}
+  .cta:hover{transform:translateY(-2px)}
+  .tag{display:inline-block;color:var(--lime);font-size:12px;letter-spacing:3px;margin-bottom:6px}
+  .final{font-size:34px;font-weight:800;color:var(--wisp);margin:6px 0 16px;font-variant-numeric:tabular-nums}
+  .newbest{color:var(--amber);font-weight:800;letter-spacing:1px;margin-bottom:6px;display:none} .newbest.on{display:block}
+</style>
+</head>
+<body>
+<div id="wrap">
+  <div id="stage">
+    <canvas id="cv"></canvas>
+    <div id="hud">
+      <div class="stat" id="time"><div class="k">시간</div><div class="v" id="timeV">0.0</div></div>
+      <div class="stat" id="best"><div class="k">최고</div><div class="v" id="bestV">–</div></div>
+      <div class="spacer"></div>
+      <button class="btn" id="clearBtn">지우기</button>
+      <button class="btn go" id="liveBtn">살아나라! ▶</button>
+    </div>
+    <div id="hint"></div>
+
+    <div class="overlay show" id="startOv">
+      <div class="card">
+        <span class="tag">DRAW · PHYSICS · RACE</span>
+        <h1>꿈틀꿈틀<small>S Q U I G G L E</small></h1>
+        <p>아무렇게나 <b>생명체를 그려라.</b><br>
+           선 하나든 괴상한 덩어리든 — <b>살아나서</b> 뒤뚱뒤뚱 결승선까지 기어간다.<br>
+           빠를수록 좋은 기록. 망해도 웃기다.</p>
+        <button class="cta" id="startBtn">그리러 가기</button>
+      </div>
+    </div>
+    <div class="overlay" id="winOv">
+      <div class="card">
+        <span class="tag">FINISH</span>
+        <div class="newbest" id="newBest">★ 신기록 ★</div>
+        <h1 style="font-size:26px">결승선 통과!</h1>
+        <div class="final" id="finalTime">0.0초</div>
+        <button class="cta" id="retryBtn">다시 그리기</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+"use strict";
+/* ============================================================
+   꿈틀꿈틀 · Squiggle — draw a creature, physics brings it alive.
+   Any doodle -> mass-spring soft body with traveling-wave muscles +
+   ratchet ground friction -> it crawls to the finish. Time = score.
+   ============================================================ */
+const VW=960, VH=540;                  // viewport (logical)
+const COURSE=2000, FINISH=1800;
+const cv=document.getElementById('cv'), ctx=cv.getContext('2d');
+let DPR=Math.max(1,Math.min(2,devicePixelRatio||1)), scale=1;
+
+/* ---- physics tunables ---- */
+const G=0.42;          // gravity (verlet, px/step^2)
+const AIRDAMP=0.995;
+const STIFF=1.0, ITERS=10;
+const AMP=0.42, STRUCT_AMP=0.14, OMEGA=0.26, WAVEK=0.018;  // link muscle / slight body undulation
+const FRIC_FWD=0.10, FRIC_BACK=0.92;       // ratchet: grip backward, slip forward
+const SAMPLE=17, LINKR=46;                  // node spacing, cross-link radius
+const MAXNODES=150;
+
+/* ---- ground heightfield ---- */
+const GC=[[0,452],[480,452],[780,412],[1080,470],[1420,424],[1720,456],[COURSE,440]];
+function groundY(x){
+  if(x<=GC[0][0]) return GC[0][1];
+  for(let i=0;i<GC.length-1;i++){ if(x<=GC[i+1][0]){ const [x0,y0]=GC[i],[x1,y1]=GC[i+1]; const t=(x-x0)/(x1-x0); return y0+(y1-y0)*(t*t*(3-2*t)); } }
+  return GC[GC.length-1][1];
+}
+
+/* ---- state ---- */
+let phase='intro';   // intro|draw|live|won
+let strokes=[], drawingStroke=null;
+let nodes=[], springs=[], T=0, timer=0, camX=0;
+let best=+(localStorage.getItem('squiggle_best')||0)||0;
+let stuckT=0, lastCx=0, particles=[];
+document.getElementById('bestV').textContent = best?best.toFixed(1):'–';
+
+/* ---- layout ---- */
+function layout(){
+  const vw=Math.max(320,innerWidth||VW), vh=Math.max(240,innerHeight||VH);
+  scale=Math.min((vw-16)/VW,(vh-16)/VH);
+  cv.style.width=(VW*scale)+'px'; cv.style.height=(VH*scale)+'px';
+  cv.width=Math.round(VW*scale*DPR); cv.height=Math.round(VH*scale*DPR);
+  ctx.setTransform(scale*DPR,0,0,scale*DPR,0,0);
+}
+addEventListener('resize',layout);
+
+/* ---- audio ---- */
+let AC=null,muted=false;
+function ac(){ if(!AC){try{AC=new (AudioContext||webkitAudioContext)();}catch(e){}} return AC; }
+function tone(f,d=0.08,t='sine',v=0.04,to){ if(muted)return; const a=ac();if(!a)return; const o=a.createOscillator(),g=a.createGain();
+  o.type=t;o.frequency.value=f;if(to)o.frequency.exponentialRampToValueAtTime(to,a.currentTime+d);
+  g.gain.value=0;o.connect(g);g.connect(a.destination);const n=a.currentTime;g.gain.linearRampToValueAtTime(v,n+0.006);g.gain.exponentialRampToValueAtTime(0.0001,n+d);o.start(n);o.stop(n+d+0.02); }
+const SFX={ alive(){tone(180,0.25,'sawtooth',0.05,320);}, win(){[523,659,784,1047].forEach((f,i)=>setTimeout(()=>tone(f,0.24,'sine',0.05),i*100));}, draw(){tone(600,0.02,'sine',0.008);} };
+
+/* ---- input (draw) ---- */
+function toWorld(e){ const r=cv.getBoundingClientRect();
+  const x=((e.touches?e.touches[0].clientX:e.clientX)-r.left)/scale + camX;
+  const y=((e.touches?e.touches[0].clientY:e.clientY)-r.top)/scale;
+  return {x,y}; }
+function dStart(e){ if(phase!=='draw')return; const p=toWorld(e); drawingStroke=[p]; strokes.push(drawingStroke); e.preventDefault(); }
+function dMove(e){ if(phase!=='draw'||!drawingStroke)return; const p=toWorld(e); const l=drawingStroke[drawingStroke.length-1];
+  if(Math.hypot(p.x-l.x,p.y-l.y)>=8){ drawingStroke.push(p); if(Math.random()<0.3)SFX.draw(); } e.preventDefault(); }
+function dEnd(){ drawingStroke=null; refreshButtons(); }
+cv.addEventListener('mousedown',dStart); addEventListener('mousemove',dMove); addEventListener('mouseup',dEnd);
+cv.addEventListener('touchstart',dStart,{passive:false}); cv.addEventListener('touchmove',dMove,{passive:false}); cv.addEventListener('touchend',dEnd);
+
+function refreshButtons(){
+  const has=strokes.some(s=>s.length>1);
+  document.getElementById('liveBtn').disabled=(phase!=='draw'||!has);
+  document.getElementById('clearBtn').disabled=(phase!=='draw'||strokes.length===0);
+}
+
+/* ---- build creature from strokes ---- */
+function buildCreature(){
+  nodes=[]; springs=[];
+  // sample nodes along strokes
+  let sp=SAMPLE;
+  // estimate count; enlarge spacing if too many
+  const totalLen=strokes.reduce((a,s)=>{ let L=0; for(let i=1;i<s.length;i++)L+=Math.hypot(s[i].x-s[i-1].x,s[i].y-s[i-1].y); return a+L; },0);
+  if(totalLen/sp>MAXNODES) sp=totalLen/MAXNODES;
+  for(const s of strokes){
+    if(s.length<1) continue;
+    let acc=0, prev=null, first=nodes.length;
+    const idx=[];
+    // resample
+    let pts=[s[0]];
+    for(let i=1;i<s.length;i++){ let a=s[i-1],b=s[i]; let d=Math.hypot(b.x-a.x,b.y-a.y); let n=Math.max(1,Math.round(d/sp));
+      for(let k=1;k<=n;k++) pts.push({x:a.x+(b.x-a.x)*k/n, y:a.y+(b.y-a.y)*k/n}); }
+    for(const p of pts){ idx.push(nodes.length); nodes.push({x:p.x,y:p.y,px:p.x,py:p.y,rx:p.x,ry:p.y}); }
+    // structural bones + bending (skip) springs so the drawn shape HOLDS (rigid, not muscle)
+    for(let i=1;i<idx.length;i++) addSpring(idx[i-1],idx[i],'struct');
+    for(let i=0;i<idx.length-2;i++) addSpring(idx[i],idx[i+2],'bend');
+    for(let i=0;i<idx.length-3;i++) addSpring(idx[i],idx[i+3],'bend');
+  }
+  if(nodes.length<2){ // single dot -> make a tiny 2-node
+    if(nodes.length===1){ const n=nodes[0]; nodes.push({x:n.x+12,y:n.y,px:n.x+12,py:n.y,rx:n.x+12,ry:n.y}); addSpring(0,1,'struct'); }
+    else return false;
+  }
+  // cross-links to bind the body (these are the MUSCLES that actuate)
+  for(let i=0;i<nodes.length;i++){
+    let cand=[];
+    for(let j=0;j<nodes.length;j++){ if(i===j)continue; const d=Math.hypot(nodes[i].x-nodes[j].x,nodes[i].y-nodes[j].y);
+      if(d<LINKR) cand.push([d,j]); }
+    cand.sort((a,b)=>a[0]-b[0]);
+    for(let k=0;k<Math.min(3,cand.length);k++){ const j=cand[k][1]; if(!hasSpring(i,j)) addSpring(i,j,'link'); }
+  }
+  // muscles: links pulse strongly; bones undulate slightly (locomotion); bracing stays rigid
+  for(const s of springs){ const mid=(nodes[s.a].rx+nodes[s.b].rx)/2; s.phase=mid*WAVEK;
+    s.amp = s.type==='link'?AMP : (s.type==='struct'?STRUCT_AMP:0); s.muscle=s.amp>0; }
+  return true;
+}
+function addSpring(a,b,type){ const d=Math.hypot(nodes[a].x-nodes[b].x,nodes[a].y-nodes[b].y); springs.push({a,b,rest:d||1,type,structural:type!=='link',muscle:false,phase:0}); }
+function hasSpring(a,b){ return springs.some(s=>(s.a===a&&s.b===b)||(s.a===b&&s.b===a)); }
+
+/* ---- physics ---- */
+function step(){
+  T+=OMEGA;
+  // integrate (verlet)
+  for(const n of nodes){
+    const vx=(n.x-n.px)*AIRDAMP, vy=(n.y-n.py)*AIRDAMP;
+    n.px=n.x; n.py=n.y; n.x+=vx; n.y+=vy+G;
+  }
+  // constraints
+  for(let it=0;it<ITERS;it++){
+    for(const s of springs){
+      const a=nodes[s.a], b=nodes[s.b];
+      let dx=b.x-a.x, dy=b.y-a.y; let d=Math.hypot(dx,dy); if(d<1e-6)continue;
+      let rest=s.rest*(s.muscle?(1+s.amp*Math.sin(T+s.phase)):1);
+      const diff=(d-rest)/d*0.5*STIFF;
+      dx*=diff; dy*=diff; a.x+=dx; a.y+=dy; b.x-=dx; b.y-=dy;
+    }
+    // ground collision + ratchet friction
+    for(const n of nodes){
+      const gy=groundY(n.x);
+      if(n.y>gy){
+        n.y=gy;
+        let vx=n.x-n.px;
+        if(vx<0) n.px=n.x-vx*(1-FRIC_BACK); else n.px=n.x-vx*(1-FRIC_FWD);
+        n.py=n.y; // stop vertical
+      }
+    }
+  }
+}
+function centroid(){ let x=0,y=0; for(const n of nodes){x+=n.x;y+=n.y;} return {x:x/nodes.length,y:y/nodes.length}; }
+
+/* ---- flow ---- */
+function goDraw(){
+  phase='draw'; strokes=[]; drawingStroke=null; nodes=[]; springs=[]; timer=0; camX=0; particles=[];
+  document.getElementById('startOv').classList.remove('show');
+  document.getElementById('winOv').classList.remove('show');
+  document.getElementById('hint').innerHTML='아무 <b>생명체</b>나 그려봐. 다리·꼬리·뭐든. 준비되면 <b>살아나라!</b>';
+  refreshButtons(); document.getElementById('timeV').textContent='0.0';
+}
+function goLive(){
+  if(phase!=='draw'||!buildCreature()) return;
+  phase='live'; T=0; timer=0; stuckT=0; lastCx=centroid().x; SFX.alive();
+  document.getElementById('hint').innerHTML='꿈틀꿈틀… <b>결승선</b>까지!';
+  refreshButtons();
+}
+function win(){
+  phase='won'; SFX.win();
+  const s=timer; const isBest=(best===0||s<best); if(isBest){ best=s; localStorage.setItem('squiggle_best',s.toFixed(2)); }
+  document.getElementById('bestV').textContent=best.toFixed(1);
+  const c=centroid(); for(let k=0;k<40;k++)particles.push({x:c.x,y:c.y,vx:rand(-1,1)*5,vy:rand(-1,0.2)*6,life:rand(0.5,1.2),r:rand(1,3),c:'182,243,106'});
+  document.getElementById('finalTime').textContent=s.toFixed(1)+'초';
+  document.getElementById('newBest').classList.toggle('on',isBest);
+  setTimeout(()=>document.getElementById('winOv').classList.add('show'),700);
+}
+function rand(a,b){return a+Math.random()*(b-a);}
+
+/* ---- loop ---- */
+let acc=0;
+function frame(){
+  if(phase==='live'){
+    // fixed-step physics
+    for(let s=0;s<2;s++) step();
+    timer+=1/60;
+    const c=centroid();
+    camX=Math.max(0,Math.min(COURSE-VW, c.x-VW*0.36));
+    if(c.x>=FINISH) win();
+    // stuck detection (no forward progress ~8s) -> allow retry hint
+    if(c.x>lastCx+2){ lastCx=c.x; stuckT=0; } else { stuckT+=1/60; if(stuckT>7) document.getElementById('hint').innerHTML='막혔나? <b>지우기</b> 후 다시 그려도 돼 (R)'; }
+    document.getElementById('timeV').textContent=timer.toFixed(1);
+  }
+  for(let i=particles.length-1;i>=0;i--){const p=particles[i];p.life-=1/60;if(p.life<=0){particles.splice(i,1);continue;}p.x+=p.vx;p.y+=p.vy;p.vy+=0.15;}
+  render();
+  requestAnimationFrame(frame);
+}
+
+/* ---- render ---- */
+function render(){
+  ctx.clearRect(0,0,VW,VH);
+  ctx.save(); ctx.translate(-camX,0);
+  // sky bands
+  ctx.restore();
+  // parallax dots
+  ctx.fillStyle='rgba(255,255,255,.05)';
+  for(let i=0;i<40;i++){ const x=((i*137.5 - camX*0.3)%COURSE+COURSE)%COURSE - 0 - camX*0 ; }
+  ctx.save(); ctx.translate(-camX,0);
+  // ground fill
+  ctx.beginPath(); ctx.moveTo(0,VH);
+  for(let x=0;x<=COURSE;x+=20) ctx.lineTo(x,groundY(x));
+  ctx.lineTo(COURSE,VH); ctx.closePath();
+  const gg=ctx.createLinearGradient(0,300,0,VH); gg.addColorStop(0,'#1a1f3a'); gg.addColorStop(1,'#10132a');
+  ctx.fillStyle=gg; ctx.fill();
+  ctx.strokeStyle='rgba(182,243,106,.35)'; ctx.lineWidth=2.5; ctx.beginPath();
+  for(let x=0;x<=COURSE;x+=20){ if(x===0)ctx.moveTo(x,groundY(x)); else ctx.lineTo(x,groundY(x)); } ctx.stroke();
+  // distance marks
+  for(let x=400;x<COURSE;x+=400){ ctx.fillStyle='rgba(255,255,255,.12)'; ctx.fillRect(x,groundY(x)-30,2,30); }
+  // finish
+  drawFinish();
+  // start marker
+  ctx.fillStyle='rgba(159,240,255,.3)'; ctx.fillRect(60,groundY(60)-40,3,40);
+  // strokes preview (draw phase)
+  if(phase==='draw'){ ctx.strokeStyle='rgba(182,243,106,.95)'; ctx.lineWidth=5; ctx.lineCap='round'; ctx.lineJoin='round';
+    for(const s of strokes){ if(s.length<2)continue; ctx.beginPath(); ctx.moveTo(s[0].x,s[0].y); for(let i=1;i<s.length;i++)ctx.lineTo(s[i].x,s[i].y); ctx.stroke(); }
+    // ghost hint
+    if(strokes.length===0){ ctx.fillStyle='rgba(255,255,255,.18)'; ctx.font='20px "Malgun Gothic",sans-serif'; ctx.textAlign='center'; ctx.fillText('여기에 그려봐 ✎',230,groundY(230)-80); }
+  }
+  // creature
+  if(nodes.length){
+    // body fill (springs)
+    ctx.lineCap='round';
+    for(const s of springs){ const a=nodes[s.a],b=nodes[s.b];
+      if(s.type==='bend') continue;   // internal bracing, not drawn
+      ctx.strokeStyle=s.type==='struct'?'rgba(182,243,106,.9)':'rgba(120,200,255,.18)'; ctx.lineWidth=s.type==='struct'?7:2.5;
+      ctx.beginPath(); ctx.moveTo(a.x,a.y); ctx.lineTo(b.x,b.y); ctx.stroke(); }
+    for(const n of nodes){ ctx.fillStyle='#c9f78a'; ctx.beginPath(); ctx.arc(n.x,n.y,4.5,0,6.283); ctx.fill(); }
+    // eyes on frontmost node
+    let front=nodes[0]; for(const n of nodes) if(n.x>front.x) front=n;
+    ctx.fillStyle='#fff'; ctx.beginPath(); ctx.arc(front.x+3,front.y-4,4,0,6.283); ctx.arc(front.x+3,front.y+4,4,0,6.283); ctx.fill();
+    ctx.fillStyle='#111'; ctx.beginPath(); ctx.arc(front.x+4.5,front.y-4,1.8,0,6.283); ctx.arc(front.x+4.5,front.y+4,1.8,0,6.283); ctx.fill();
+  }
+  // particles
+  for(const p of particles){ ctx.globalAlpha=Math.max(0,Math.min(1,p.life)); ctx.fillStyle='rgb('+p.c+')'; ctx.beginPath(); ctx.arc(p.x,p.y,p.r,0,6.283); ctx.fill(); }
+  ctx.globalAlpha=1;
+  ctx.restore();
+  // vignette
+  const vg=ctx.createRadialGradient(VW/2,VH/2,VH*0.4,VW/2,VH/2,VH*0.95); vg.addColorStop(0,'rgba(0,0,0,0)');vg.addColorStop(1,'rgba(0,0,0,0.5)');
+  ctx.fillStyle=vg; ctx.fillRect(0,0,VW,VH);
+}
+function drawFinish(){
+  const x=FINISH, gy=groundY(x);
+  ctx.fillStyle='#0e1226'; ctx.fillRect(x,gy-120,6,120);
+  // checkered flag
+  const fw=46,fh=30; for(let r=0;r<3;r++)for(let c=0;c<4;c++){ ctx.fillStyle=((r+c)&1)?'#eef1ff':'#1a1f3a'; ctx.fillRect(x+6+c*fw/4,gy-120+r*fh/3,fw/4,fh/3); }
+  ctx.save(); ctx.globalCompositeOperation='lighter';
+  const g=ctx.createRadialGradient(x,gy-60,4,x,gy-60,80); g.addColorStop(0,'rgba(182,243,106,.25)');g.addColorStop(1,'rgba(182,243,106,0)');
+  ctx.fillStyle=g; ctx.beginPath(); ctx.arc(x,gy-60,80,0,6.283); ctx.fill(); ctx.restore();
+}
+
+/* ---- buttons ---- */
+document.getElementById('startBtn').onclick=()=>{ ac(); goDraw(); };
+document.getElementById('liveBtn').onclick=goLive;
+document.getElementById('clearBtn').onclick=()=>{ if(phase==='draw'){ strokes=[]; refreshButtons(); } };
+document.getElementById('retryBtn').onclick=goDraw;
+addEventListener('keydown',e=>{ if(e.key===' '){ if(phase==='draw')goLive(); e.preventDefault(); } else if(e.key==='r'||e.key==='R'){ if(phase==='live'||phase==='won')goDraw(); } });
+
+/* ---- boot ---- */
+layout(); requestAnimationFrame(frame);
+</script>
+</body>
+</html>

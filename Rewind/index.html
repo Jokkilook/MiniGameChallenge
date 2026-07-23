@@ -1,0 +1,279 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+<title>되감기 · Rewind</title>
+<style>
+  :root{ --ink:#eef1ff; --muted:#8b90c4; --amber:#ffd27a; --wisp:#9ff0ff; --ghost:#7a86c8; --goal:#96ffd2; --panel:rgba(16,18,38,.92); }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%;background:radial-gradient(120% 120% at 50% 0%,#12162c 0%,#05060c 72%);color:var(--ink);
+    font-family:"Segoe UI",-apple-system,BlinkMacSystemFont,"Malgun Gothic",sans-serif;overflow:hidden;-webkit-user-select:none;user-select:none;touch-action:none}
+  #wrap{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;padding:8px}
+  #stage{position:relative;border-radius:16px;overflow:hidden;box-shadow:0 30px 90px rgba(0,0,0,.65),0 0 0 1px rgba(255,255,255,.04)}
+  canvas{display:block;background:#07080f;border-radius:16px}
+  #hud{position:absolute;left:0;right:0;top:0;display:flex;align-items:center;gap:18px;padding:12px 16px;z-index:5;pointer-events:none}
+  .stat .k{font-size:11px;letter-spacing:1.5px;color:var(--muted);text-transform:uppercase}
+  .stat .v{font-size:22px;font-weight:800;font-variant-numeric:tabular-nums}
+  #takes .v{color:var(--wisp)} #best .v{color:var(--amber)}
+  #hud .spacer{flex:1} #lvl{font-size:13px;color:var(--muted)}
+  #rewindBtn{pointer-events:auto;cursor:pointer;border:none;border-radius:11px;padding:8px 15px;font-size:13px;font-weight:800;
+    color:#221600;background:linear-gradient(180deg,var(--amber),#ff9e5e);box-shadow:0 8px 22px rgba(255,158,94,.3)}
+  #hint{position:absolute;left:0;right:0;bottom:14px;text-align:center;color:var(--muted);font-size:13px;z-index:5;pointer-events:none;text-shadow:0 2px 10px #000}
+  #hint b{color:var(--wisp)}
+  .overlay{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;z-index:10;
+    background:radial-gradient(60% 60% at 50% 45%,rgba(8,9,18,.5),rgba(4,5,11,.95));opacity:0;visibility:hidden;transition:opacity .35s}
+  .overlay.show{opacity:1;visibility:visible}
+  .card{width:min(560px,90%);background:var(--panel);border:1px solid rgba(255,255,255,.08);border-radius:20px;padding:30px 30px 26px;text-align:center;box-shadow:0 26px 70px rgba(0,0,0,.55)}
+  .card h1{margin:0;font-size:38px;letter-spacing:2px} .card h1 small{display:block;font-size:12px;letter-spacing:6px;color:var(--amber);margin-top:10px;font-weight:600}
+  .card p{color:var(--muted);line-height:1.75;font-size:14.5px;margin:16px 0 18px}
+  .keys{display:flex;gap:10px;justify-content:center;flex-wrap:wrap;margin:14px 0 22px}
+  .key{border:1px solid rgba(255,255,255,.14);border-radius:8px;padding:6px 11px;font-size:12.5px;background:rgba(255,255,255,.04)} .key b{color:var(--amber)}
+  .cta{cursor:pointer;border:none;border-radius:12px;padding:13px 32px;font-size:15px;font-weight:800;letter-spacing:.5px;color:#221600;background:linear-gradient(180deg,var(--amber),#ff9e5e);box-shadow:0 10px 30px rgba(255,158,94,.35);transition:.15s}
+  .cta:hover{transform:translateY(-2px)}
+  .tag{display:inline-block;color:var(--amber);font-size:12px;letter-spacing:3px;margin-bottom:6px}
+</style>
+</head>
+<body>
+<div id="wrap">
+  <div id="stage">
+    <canvas id="cv"></canvas>
+    <div id="hud">
+      <div class="stat" id="takes"><div class="k">되감기</div><div class="v" id="takesV">0</div></div>
+      <div class="spacer"></div><div id="lvl">1</div><div class="spacer"></div>
+      <button id="rewindBtn">되감기 ↺ (R)</button>
+    </div>
+    <div id="hint"></div>
+
+    <div class="overlay show" id="startOv">
+      <div class="card">
+        <span class="tag">CO-OP WITH YOUR PAST SELF</span>
+        <h1>되감기<small>R E W I N D</small></h1>
+        <p>움직이면 그게 <b>녹화</b>된다. <b>되감기</b>하면 과거의 내가<br>
+           유령이 되어 똑같이 재생되고, 새로운 나는 그 옆에서 움직인다.<br>
+           과거의 내가 스위치를 밟는 동안, 지금의 내가 지나간다.</p>
+        <div class="keys"><span class="key"><b>WASD</b>/방향키 이동</span><span class="key"><b>Space</b> 대기</span><span class="key"><b>R</b> 되감기</span><span class="key"><b>Z</b> 무르기</span></div>
+        <button class="cta" id="startBtn">시작</button>
+      </div>
+    </div>
+    <div class="overlay" id="winOv">
+      <div class="card">
+        <span class="tag" id="winTag">CLEAR</span>
+        <h1 id="winTitle" style="font-size:26px;letter-spacing:1px">·</h1>
+        <p id="winMsg">·</p>
+        <button class="cta" id="nextBtn">다음 →</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+"use strict";
+/* ============================================================
+   되감기 · Rewind — co-op with recordings of your past self.
+   Turn-based grid. Each move is recorded. "Rewind" saves the take as a
+   ghost that re-enacts it in sync; ghosts trigger plates (open doors)
+   so your new self can pass. Reach the goal in as few takes as possible.
+   Fully deterministic — pure planning, no RNG.
+   ============================================================ */
+const cv=document.getElementById('cv'), ctx=cv.getContext('2d');
+let DPR=Math.max(1,Math.min(2,devicePixelRatio||1));
+const CELL=54;
+
+/* ---- levels ----
+   '#'=wall '.'/' '=floor '@'=start 'X'=goal
+   'a'-'f' = pressure plate (id) ; 'A'-'F' = door (same id, open when a
+   plate of that id is occupied by ANY self). */
+const LEVELS=[
+  { name:"과거의 손", par:1,
+    hint:"문 A는 스위치 a를 밟아야 열린다. 하지만 넌 하나뿐 — <b>되감기(R)</b>로 과거의 내가 밟게 하라.",
+    map:[
+      "#########",
+      "#@..a#X.#",
+      "#....A..#",
+      "#....#..#",
+      "#########",
+    ]},
+  { name:"두 개의 문", par:2,
+    hint:"문을 지나야 다음 스위치가 있다. <b>과거의 나들</b>이 층층이 문을 잡아준다.",
+    map:[
+      "#########",
+      "#@..a...#",
+      "####A####",
+      "#...b...#",
+      "####B####",
+      "#......X#",
+      "#########",
+    ]},
+  { name:"세 개의 문", par:3,
+    hint:"셋을 이어 열어라. 되감을수록 더 깊이 내려간다.",
+    map:[
+      "#########",
+      "#@..a...#",
+      "####A####",
+      "#...b...#",
+      "####B####",
+      "#...c...#",
+      "####C####",
+      "#......X#",
+      "#########",
+    ]},
+];
+
+/* ---- state ---- */
+let phase='intro', li=0, W=0, H=0;
+let walls, plates, doors, start, goal;
+let player, turn, rec, ghosts, takes, hist, best=[];
+try{ best=JSON.parse(localStorage.getItem('rewind_best')||'[]'); }catch(e){ best=[]; }
+let anim=0, particles=[];
+
+const keys={};
+const KM={ArrowUp:[0,-1],ArrowDown:[0,1],ArrowLeft:[-1,0],ArrowRight:[1,0],w:[0,-1],s:[0,1],a:[-1,0],d:[1,0],W:[0,-1],S:[0,1],A:[-1,0],D:[1,0]};
+addEventListener('keydown',e=>{
+  if(phase!=='play'){ return; }
+  if(e.repeat){ e.preventDefault(); return; }   // one action per physical press
+  if(e.key==='r'||e.key==='R'){ rewind(); e.preventDefault(); return; }
+  if(e.key==='z'||e.key==='Z'){ undo(); e.preventDefault(); return; }
+  if(e.key===' '){ doTurn(0,0); e.preventDefault(); return; }
+  const m=KM[e.key]; if(m){ doTurn(m[0],m[1]); e.preventDefault(); }
+});
+
+/* ---- audio ---- */
+let AC=null,muted=false;
+function ac(){ if(!AC){try{AC=new (AudioContext||webkitAudioContext)();}catch(e){}} return AC; }
+function tone(f,d=0.07,t='sine',v=0.035,to){ if(muted)return; const a=ac();if(!a)return; const o=a.createOscillator(),g=a.createGain();
+  o.type=t;o.frequency.value=f;if(to)o.frequency.exponentialRampToValueAtTime(to,a.currentTime+d);
+  g.gain.value=0;o.connect(g);g.connect(a.destination);const n=a.currentTime;g.gain.linearRampToValueAtTime(v,n+0.006);g.gain.exponentialRampToValueAtTime(0.0001,n+d);o.start(n);o.stop(n+d+0.02); }
+const SFX={ step(){tone(300,0.05,'sine',0.02);}, door(){tone(520,0.1,'triangle',0.04,700);}, rewind(){tone(180,0.25,'sawtooth',0.05,420);}, win(){[523,659,784,1047].forEach((f,i)=>setTimeout(()=>tone(f,0.22,'sine',0.05),i*95));} };
+
+/* ---- layout / parse ---- */
+function parse(mp){
+  H=mp.length; W=mp[0].length; walls=[]; plates=[]; doors=[]; start=null; goal=null;
+  for(let y=0;y<H;y++){ walls[y]=[];
+    for(let x=0;x<W;x++){ const c=mp[y][x];
+      walls[y][x]=(c==='#');
+      if(c==='@') start={x,y};
+      else if(c==='X') goal={x,y};
+      else if(c>='a'&&c<='f') plates.push({x,y,id:c});
+      else if(c>='A'&&c<='F') doors.push({x,y,id:c.toLowerCase()});
+    }
+  }
+}
+function layout(){ const cw=W*CELL, ch=H*CELL;
+  const s=Math.min((Math.max(320,innerWidth)-16)/cw,(Math.max(240,innerHeight)-16)/ch,1.6);
+  cv.style.width=(cw*s)+'px'; cv.style.height=(ch*s)+'px'; cv.width=Math.round(cw*s*DPR); cv.height=Math.round(ch*s*DPR); ctx.setTransform(s*DPR,0,0,s*DPR,0,0);
+}
+addEventListener('resize',()=>{ if(W)layout(); });
+
+/* ---- level flow ---- */
+function loadLevel(i){ li=i; parse(LEVELS[i].map); layout();
+  player={...start}; turn=0; rec=[{...start}]; ghosts=[]; takes=0; hist=[]; particles=[];
+  document.getElementById('lvl').textContent=(i+1)+' · '+LEVELS[i].name;
+  document.getElementById('hint').innerHTML=LEVELS[i].hint;
+  document.getElementById('takesV').textContent=takes;
+}
+function ghostAt(g,t){ return g[Math.min(t,g.length-1)]; }
+function occupied(x,y){ if(player.x===x&&player.y===y)return true; for(const g of ghosts){ const p=ghostAt(g,turn); if(p.x===x&&p.y===y)return true; } return false; }
+function doorOpen(id){ for(const pl of plates){ if(pl.id===id && occupied(pl.x,pl.y)) return true; } return false; }
+function isDoorAt(x,y){ return doors.find(d=>d.x===x&&d.y===y); }
+function passable(x,y){ if(x<0||y<0||x>=W||y>=H)return false; if(walls[y][x])return false; const d=isDoorAt(x,y); if(d&&!doorOpen(d.id))return false; return true; }
+
+function doTurn(dx,dy){
+  if(phase!=='play') return;
+  hist.push({player:{...player}, turn});
+  turn++;
+  // (ghosts advance implicitly via ghostAt using new turn)
+  // doors recomputed live via occupied() which uses new turn for ghosts + player's pre-move pos
+  let moved=false;
+  if(dx!==0||dy!==0){ const nx=player.x+dx, ny=player.y+dy; if(passable(nx,ny)){ player.x=nx; player.y=ny; moved=true; } }
+  rec.push({...player});
+  if(moved) SFX.step();
+  // door state may have changed
+  checkWin();
+}
+function undo(){ if(!hist.length)return; const h=hist.pop(); player={...h.player}; turn=h.turn; rec.pop(); }
+function rewind(){
+  // save current take as a ghost (its recorded path)
+  ghosts.push(rec.map(p=>({...p})));
+  takes++; document.getElementById('takesV').textContent=takes;
+  player={...start}; turn=0; rec=[{...start}]; hist=[];
+  SFX.rewind();
+}
+function checkWin(){
+  if(player.x===goal.x&&player.y===goal.y){ win(); }
+}
+function win(){ phase='win'; SFX.win();
+  for(let k=0;k<26;k++)particles.push({x:goal.x*CELL+CELL/2,y:goal.y*CELL+CELL/2,vx:rand(-1,1)*140,vy:rand(-1,1)*140,life:rand(0.5,1.1),r:rand(1,3),c:'150,255,210'});
+  const usedTakes=takes; const isBest=(best[li]==null||usedTakes<best[li]); if(isBest){ best[li]=usedTakes; localStorage.setItem('rewind_best',JSON.stringify(best)); }
+  const last=li===LEVELS.length-1;
+  document.getElementById('winTag').textContent=last?'ALL CLEAR':'CLEAR';
+  document.getElementById('winTitle').textContent=last?'모든 과거를 건넜다':'통과!';
+  document.getElementById('winMsg').innerHTML=`되감기 <b style="color:var(--wisp)">${usedTakes}</b>회 사용 (목표 ${LEVELS[li].par})`+(isBest?' · <b style="color:var(--amber)">최소 기록!</b>':'');
+  document.getElementById('nextBtn').textContent=last?'처음부터':'다음 →';
+  setTimeout(()=>document.getElementById('winOv').classList.add('show'),450);
+}
+function rand(a,b){return a+Math.random()*(b-a);}
+
+/* ---- loop ---- */
+let lastT=perf(); function perf(){return performance?performance.now():0;}
+function frame(t){ const dt=Math.min(0.033,(t-lastT)/1000); lastT=t;
+  for(let i=particles.length-1;i>=0;i--){const p=particles[i];p.life-=dt;if(p.life<=0){particles.splice(i,1);continue;}p.x+=p.vx*dt;p.y+=p.vy*dt;}
+  render(t); requestAnimationFrame(frame); }
+
+/* ---- render ---- */
+function render(t){
+  const tt=t/1000;
+  if(!W||!goal||!player) return;
+  ctx.clearRect(0,0,W*CELL,H*CELL);
+  // tiles
+  for(let y=0;y<H;y++)for(let x=0;x<W;x++){ const X=x*CELL,Y=y*CELL;
+    if(walls[y][x]){ ctx.fillStyle='#0d1024'; ctx.fillRect(X,Y,CELL,CELL); ctx.fillStyle='#171b39'; ctx.fillRect(X+1,Y+1,CELL-2,CELL-3); }
+    else { ctx.fillStyle=((x+y)&1)?'#0c0f22':'#0a0d1e'; ctx.fillRect(X,Y,CELL,CELL); ctx.strokeStyle='rgba(255,255,255,.02)'; ctx.strokeRect(X+.5,Y+.5,CELL-1,CELL-1); }
+  }
+  // plates
+  for(const pl of plates){ const X=pl.x*CELL,Y=pl.y*CELL; const on=occupied(pl.x,pl.y); const col=idColor(pl.id);
+    ctx.fillStyle=on?`rgba(${col},.28)`:'rgba(0,0,0,.25)'; roundRect(X+8,Y+8,CELL-16,CELL-16,6); ctx.fill();
+    ctx.strokeStyle=`rgba(${col},${on?1:.6})`; ctx.lineWidth=2; ctx.stroke();
+    ctx.fillStyle=`rgba(${col},${on?1:.6})`; ctx.beginPath(); ctx.arc(X+CELL/2,Y+CELL/2,4,0,6.283); ctx.fill(); }
+  // doors
+  for(const d of doors){ const X=d.x*CELL,Y=d.y*CELL; const open=doorOpen(d.id); const col=idColor(d.id);
+    if(open){ ctx.strokeStyle=`rgba(${col},.5)`; ctx.lineWidth=2; ctx.setLineDash([4,5]); ctx.strokeRect(X+6,Y+6,CELL-12,CELL-12); ctx.setLineDash([]); }
+    else { const g=ctx.createLinearGradient(X,Y,X,Y+CELL); g.addColorStop(0,`rgba(${col},.55)`); g.addColorStop(1,`rgba(${col},.28)`);
+      ctx.fillStyle=g; roundRect(X+3,Y+3,CELL-6,CELL-6,5); ctx.fill(); ctx.strokeStyle=`rgba(${col},.9)`; ctx.lineWidth=2; ctx.stroke();
+      for(let i=0;i<3;i++){ ctx.strokeStyle=`rgba(0,0,0,.3)`; ctx.beginPath(); ctx.moveTo(X+8,Y+14+i*12); ctx.lineTo(X+CELL-8,Y+14+i*12); ctx.stroke(); } }
+  }
+  // goal
+  { const X=goal.x*CELL+CELL/2,Y=goal.y*CELL+CELL/2; const p=0.5+0.5*Math.sin(tt*2.5); const ok=true;
+    ctx.save();ctx.globalCompositeOperation='lighter'; const g=ctx.createRadialGradient(X,Y,2,X,Y,26+p*5);
+    g.addColorStop(0,'rgba(150,255,210,.7)');g.addColorStop(1,'rgba(150,255,210,0)'); ctx.fillStyle=g; ctx.beginPath();ctx.arc(X,Y,26+p*5,0,6.283);ctx.fill(); ctx.restore();
+    ctx.strokeStyle='rgba(150,255,210,.9)';ctx.lineWidth=2.5;ctx.beginPath();ctx.arc(X,Y,15,0,6.283);ctx.stroke(); }
+  // ghosts
+  for(let gi=0;gi<ghosts.length;gi++){ const p=ghostAt(ghosts[gi],turn); drawSelf(p.x,p.y,true,tt,gi); }
+  // player
+  drawSelf(player.x,player.y,false,tt,-1);
+  // particles
+  ctx.save();ctx.globalCompositeOperation='lighter'; for(const p of particles){ctx.globalAlpha=Math.max(0,Math.min(1,p.life));ctx.fillStyle='rgb('+p.c+')';ctx.beginPath();ctx.arc(p.x,p.y,p.r,0,6.283);ctx.fill();}ctx.globalAlpha=1;ctx.restore();
+}
+function drawSelf(gx,gy,isGhost,tt,gi){ const X=gx*CELL+CELL/2,Y=gy*CELL+CELL/2, r=CELL*0.28;
+  const col=isGhost?'122,134,200':'159,240,255';
+  ctx.save();ctx.globalCompositeOperation='lighter'; const g=ctx.createRadialGradient(X,Y,1,X,Y,r*2.2);
+  g.addColorStop(0,`rgba(${col},${isGhost?.3:.5})`);g.addColorStop(1,`rgba(${col},0)`); ctx.fillStyle=g;ctx.beginPath();ctx.arc(X,Y,r*2.2,0,6.283);ctx.fill();ctx.restore();
+  ctx.fillStyle=isGhost?'rgba(20,24,48,.55)':'#0c1224'; ctx.beginPath();ctx.arc(X,Y,r,0,6.283);ctx.fill();
+  ctx.strokeStyle=`rgba(${col},${isGhost?.6:.95})`;ctx.lineWidth=2;ctx.stroke();
+  ctx.fillStyle=`rgba(${col},${isGhost?.7:.95})`; const eo=r*0.4;
+  ctx.beginPath();ctx.arc(X-eo,Y-2,2,0,6.283);ctx.arc(X+eo,Y-2,2,0,6.283);ctx.fill();
+}
+function idColor(id){ return ({a:'255,210,122',b:'127,227,255',c:'192,123,255',d:'150,255,150',e:'255,150,200',f:'255,180,90'})[id]||'255,255,255'; }
+function roundRect(x,y,w,h,r){ ctx.beginPath();ctx.moveTo(x+r,y);ctx.arcTo(x+w,y,x+w,y+h,r);ctx.arcTo(x+w,y+h,x,y+h,r);ctx.arcTo(x,y+h,x,y,r);ctx.arcTo(x,y,x+w,y,r);ctx.closePath(); }
+
+/* ---- buttons ---- */
+document.getElementById('startBtn').onclick=()=>{ ac(); document.getElementById('startOv').classList.remove('show'); phase='play'; loadLevel(0); };
+document.getElementById('rewindBtn').onclick=()=>{ if(phase==='play')rewind(); };
+document.getElementById('nextBtn').onclick=()=>{ document.getElementById('winOv').classList.remove('show'); const last=li===LEVELS.length-1; phase='play'; loadLevel(last?0:li+1); };
+
+/* ---- boot ---- */
+loadLevel(0);            // size the canvas & populate state so the stage (and start overlay) is visible
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>

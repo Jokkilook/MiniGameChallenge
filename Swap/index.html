@@ -1,0 +1,249 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+<title>자리바꿈 · Swap</title>
+<style>
+  :root{ --ink:#eef1ff; --muted:#8b90c4; --amber:#ffd27a; --wisp:#9ff0ff; --block:#5b78ff; --goal:#96ffd2; --panel:rgba(16,18,38,.92); }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%;background:radial-gradient(120% 120% at 50% 0%,#12162c 0%,#05060c 72%);color:var(--ink);
+    font-family:"Segoe UI",-apple-system,BlinkMacSystemFont,"Malgun Gothic",sans-serif;overflow:hidden;-webkit-user-select:none;user-select:none;touch-action:none}
+  #wrap{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;padding:8px}
+  #stage{position:relative;border-radius:16px;overflow:hidden;box-shadow:0 30px 90px rgba(0,0,0,.65),0 0 0 1px rgba(255,255,255,.04)}
+  canvas{display:block;background:#07080f;border-radius:16px}
+  #hud{position:absolute;left:0;right:0;top:0;display:flex;align-items:center;gap:18px;padding:12px 16px;z-index:5;pointer-events:none}
+  .stat .k{font-size:11px;letter-spacing:1.5px;color:var(--muted);text-transform:uppercase}
+  .stat .v{font-size:22px;font-weight:800;font-variant-numeric:tabular-nums}
+  #moves .v{color:var(--wisp)} #best .v{color:var(--amber)}
+  #hud .spacer{flex:1} #lvl{font-size:13px;color:var(--muted)}
+  #resetBtn{pointer-events:auto;cursor:pointer;border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.05);color:var(--ink);border-radius:10px;padding:7px 12px;font-size:13px;font-weight:700}
+  #hint{position:absolute;left:0;right:0;bottom:14px;text-align:center;color:var(--muted);font-size:13px;z-index:5;pointer-events:none;text-shadow:0 2px 10px #000} #hint b{color:var(--wisp)}
+  .overlay{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;z-index:10;background:radial-gradient(60% 60% at 50% 45%,rgba(8,9,18,.5),rgba(4,5,11,.95));opacity:0;visibility:hidden;transition:opacity .35s}
+  .overlay.show{opacity:1;visibility:visible}
+  .card{width:min(560px,90%);background:var(--panel);border:1px solid rgba(255,255,255,.08);border-radius:20px;padding:30px 30px 26px;text-align:center;box-shadow:0 26px 70px rgba(0,0,0,.55)}
+  .card h1{margin:0;font-size:38px;letter-spacing:3px} .card h1 small{display:block;font-size:12px;letter-spacing:6px;color:var(--wisp);margin-top:10px;font-weight:600}
+  .card p{color:var(--muted);line-height:1.75;font-size:14.5px;margin:16px 0 18px}
+  .keys{display:flex;gap:10px;justify-content:center;flex-wrap:wrap;margin:14px 0 22px}
+  .key{border:1px solid rgba(255,255,255,.14);border-radius:8px;padding:6px 11px;font-size:12.5px;background:rgba(255,255,255,.04)} .key b{color:var(--wisp)}
+  .cta{cursor:pointer;border:none;border-radius:12px;padding:13px 32px;font-size:15px;font-weight:800;letter-spacing:.5px;color:#221600;background:linear-gradient(180deg,var(--amber),#ff9e5e);box-shadow:0 10px 30px rgba(255,158,94,.35);transition:.15s}
+  .cta:hover{transform:translateY(-2px)}
+  .tag{display:inline-block;color:var(--wisp);font-size:12px;letter-spacing:3px;margin-bottom:6px}
+</style>
+</head>
+<body>
+<div id="wrap">
+  <div id="stage">
+    <canvas id="cv"></canvas>
+    <div id="hud">
+      <div class="stat" id="moves"><div class="k">이동</div><div class="v" id="movesV">0</div></div>
+      <div class="spacer"></div><div id="lvl">1</div><div class="spacer"></div>
+      <button id="resetBtn">다시 (R)</button>
+    </div>
+    <div id="hint"></div>
+
+    <div class="overlay show" id="startOv">
+      <div class="card">
+        <span class="tag">SWAP TO CROSS</span>
+        <h1>자리바꿈<small>S W A P</small></h1>
+        <p>바닥은 걷는다. 하지만 <b>틈</b>은 못 건넌다.<br>
+           대신 <b>저 너머의 블록</b>과 자리를 바꿔 순간이동으로 건너라.<br>
+           블록은 내가 있던 자리로 온다. 연쇄해서 출구로.</p>
+        <div class="keys"><span class="key"><b>WASD</b>/방향키 이동·자리바꿈</span><span class="key"><b>Z</b> 무르기</span><span class="key"><b>R</b> 다시</span></div>
+        <button class="cta" id="startBtn">시작</button>
+      </div>
+    </div>
+    <div class="overlay" id="winOv">
+      <div class="card">
+        <span class="tag" id="winTag">CLEAR</span>
+        <h1 id="winTitle" style="font-size:26px;letter-spacing:1px">·</h1>
+        <p id="winMsg">·</p>
+        <button class="cta" id="nextBtn">다음 →</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+"use strict";
+/* ============================================================
+   자리바꿈 · Swap — move by walking on floor, or SWAP places with the
+   first block across a gap (line of sight, blocked by walls). Chain
+   swaps to cross voids and reach the exit. Deterministic — pure logic.
+   ============================================================ */
+const AW=760, AH=600;
+const cv=document.getElementById('cv'), ctx=cv.getContext('2d');
+let DPR=Math.max(1,Math.min(2,devicePixelRatio||1));
+let CELL=54, OX=0, OY=0;
+
+/* ---- levels ----  '#'=wall '.'=floor '-'=void 'B'=block '@'=start 'X'=exit 'o'=orb */
+const LEVELS=[
+  { name:"틈 건너기", par:4,
+    hint:"블록 쪽으로 눌러 <b>자리바꿈</b> — 틈 너머로 순간이동. 걸어서 출구로.",
+    map:[
+      "#######",
+      "#@B-B.X#",
+      "#######",
+    ]},
+  { name:"돌아 건너기", par:8,
+    hint:"길이 곧지 않다. <b>네 방향</b>으로 블록을 디딤돌 삼아라.",
+    map:[
+      "#######",
+      "#@-...#",
+      "#-..-B#",
+      "#...-.#",
+      "#BB-.X#",
+      "#######",
+    ]},
+  { name:"엮인 틈", par:8,
+    hint:"블록은 바꾸면 <b>내 자리로 따라온다.</b> 순서를 궁리하라.",
+    map:[
+      "#######",
+      "#@-.-B#",
+      "#-B--.#",
+      "#.B-.-#",
+      "#.--BX#",
+      "#######",
+    ]},
+  { name:"디딤돌 궁리", par:8,
+    hint:"어느 블록을 어디로 옮길지 — 한 수 앞을 봐라.",
+    map:[
+      "#######",
+      "#@B-..#",
+      "#B-.--#",
+      "#-..B.#",
+      "#B.B-X#",
+      "#######",
+    ]},
+];
+
+/* ---- state ---- */
+let phase='intro', li=0, W=0, H=0;
+let grid, blocks, player, exit, start, moves, hist, best=[];
+try{ best=JSON.parse(localStorage.getItem('swap_best')||'[]'); }catch(e){ best=[]; }
+let particles=[];
+
+/* ---- input ---- */
+const KM={ArrowUp:[0,-1],ArrowDown:[0,1],ArrowLeft:[-1,0],ArrowRight:[1,0],w:[0,-1],s:[0,1],a:[-1,0],d:[1,0],W:[0,-1],S:[0,1],A:[-1,0],D:[1,0]};
+addEventListener('keydown',e=>{
+  if(phase!=='play') return;
+  if(e.repeat){ e.preventDefault(); return; }
+  if(e.key==='r'||e.key==='R'){ resetLevel(); e.preventDefault(); return; }
+  if(e.key==='z'||e.key==='Z'){ undo(); e.preventDefault(); return; }
+  const m=KM[e.key]; if(m){ move(m[0],m[1]); e.preventDefault(); }
+});
+
+/* ---- audio ---- */
+let AC=null,muted=false;
+function ac(){ if(!AC){try{AC=new (AudioContext||webkitAudioContext)();}catch(e){}} return AC; }
+function tone(f,d=0.07,t='sine',v=0.035,to){ if(muted)return; const a=ac();if(!a)return; const o=a.createOscillator(),g=a.createGain();
+  o.type=t;o.frequency.value=f;if(to)o.frequency.exponentialRampToValueAtTime(to,a.currentTime+d);
+  g.gain.value=0;o.connect(g);g.connect(a.destination);const n=a.currentTime;g.gain.linearRampToValueAtTime(v,n+0.006);g.gain.exponentialRampToValueAtTime(0.0001,n+d);o.start(n);o.stop(n+d+0.02); }
+const SFX={ walk(){tone(300,0.05,'sine',0.02);}, swap(){tone(440,0.09,'triangle',0.04,660);}, bump(){tone(120,0.07,'sawtooth',0.025);}, win(){[523,659,784,1047].forEach((f,i)=>setTimeout(()=>tone(f,0.22,'sine',0.05),i*95));} };
+
+/* ---- parse / layout ---- */
+function parse(mp){ H=mp.length; W=mp[0].length; grid=[]; blocks=[]; start=null; exit=null;
+  for(let y=0;y<H;y++){ grid[y]=[]; for(let x=0;x<W;x++){ const c=mp[y][x];
+    if(c==='#')grid[y][x]='#'; else if(c==='-')grid[y][x]='-'; else grid[y][x]='.';
+    if(c==='@')start={x,y}; else if(c==='X')exit={x,y}; else if(c==='B')blocks.push({x,y}); } } }
+function layout(){
+  CELL=Math.min(Math.floor(AW/W),Math.floor(AH/H),66); const gw=W*CELL, gh=H*CELL; OX=Math.round((AW-gw)/2); OY=Math.round((AH-gh)/2);
+  const scr=Math.min((Math.max(320,innerWidth)-16)/AW,(Math.max(240,innerHeight)-16)/AH,1.4);
+  cv.style.width=(AW*scr)+'px'; cv.style.height=(AH*scr)+'px'; cv.width=Math.round(AW*scr*DPR); cv.height=Math.round(AH*scr*DPR); ctx.setTransform(scr*DPR,0,0,scr*DPR,0,0);
+}
+addEventListener('resize',()=>{ if(W)layout(); });
+
+/* ---- helpers ---- */
+function blockAt(x,y){ return blocks.find(b=>b.x===x&&b.y===y); }
+function inb(x,y){ return x>=0&&y>=0&&x<W&&y<H; }
+
+/* ---- movement: walk on floor, else swap with first block across gaps ---- */
+function move(dx,dy){
+  const nx=player.x+dx, ny=player.y+dy;
+  if(!inb(nx,ny)||grid[ny][nx]==='#'){ SFX.bump(); return; }
+  const adjBlock=blockAt(nx,ny);
+  if(grid[ny][nx]==='.'&&!adjBlock){ // walk onto adjacent floor
+    pushHist(); player.x=nx; player.y=ny; moves++; SFX.walk(); after(); return;
+  }
+  // otherwise scan for first block in this direction (skip floor/void), stop at wall
+  let cx=nx, cy=ny;
+  while(inb(cx,cy)&&grid[cy][cx]!=='#'){
+    const b=blockAt(cx,cy);
+    if(b){ pushHist(); // swap
+      const oldx=player.x, oldy=player.y; player.x=b.x; player.y=b.y; b.x=oldx; b.y=oldy; moves++; SFX.swap();
+      for(let k=0;k<8;k++)particles.push({x:cell(player.x)+CELL/2,y:cellY(player.y)+CELL/2,vx:rand(-1,1)*90,vy:rand(-1,1)*90,life:rand(0.25,0.5),r:rand(1,2.4),c:'91,120,255'});
+      after(); return; }
+    cx+=dx; cy+=dy;
+  }
+  SFX.bump(); // nothing to swap with
+}
+function after(){ document.getElementById('movesV').textContent=moves; if(player.x===exit.x&&player.y===exit.y) win(); }
+function pushHist(){ hist.push({p:{...player}, b:blocks.map(b=>({...b})), moves}); }
+function undo(){ if(!hist.length)return; const h=hist.pop(); player={...h.p}; blocks=h.b.map(b=>({...b})); moves=h.moves; document.getElementById('movesV').textContent=moves; }
+
+/* ---- flow ---- */
+function loadLevel(i){ li=i; parse(LEVELS[i].map); layout(); player={...start}; moves=0; hist=[]; particles=[];
+  document.getElementById('lvl').textContent=(i+1)+' · '+LEVELS[i].name; document.getElementById('hint').innerHTML=LEVELS[i].hint; document.getElementById('movesV').textContent=0; }
+function resetLevel(){ loadLevel(li); }
+function win(){ phase='win'; SFX.win();
+  for(let k=0;k<26;k++)particles.push({x:cell(exit.x)+CELL/2,y:cellY(exit.y)+CELL/2,vx:rand(-1,1)*130,vy:rand(-1,1)*130,life:rand(0.5,1.1),r:rand(1,3),c:'150,255,210'});
+  const isBest=(best[li]==null||moves<best[li]); if(isBest){ best[li]=moves; localStorage.setItem('swap_best',JSON.stringify(best)); }
+  const last=li===LEVELS.length-1;
+  document.getElementById('winTag').textContent=last?'ALL CLEAR':'CLEAR';
+  document.getElementById('winTitle').textContent=last?'모든 틈을 건넜다':'통과!';
+  document.getElementById('winMsg').innerHTML=`${moves}번 이동 (목표 ${LEVELS[li].par})`+(isBest?' · <b style="color:var(--amber)">최소 기록!</b>':'');
+  document.getElementById('nextBtn').textContent=last?'처음부터':'다음 →';
+  setTimeout(()=>document.getElementById('winOv').classList.add('show'),450);
+}
+function rand(a,b){return a+Math.random()*(b-a);}
+function cell(x){ return OX+x*CELL; } function cellY(y){ return OY+y*CELL; }
+
+/* ---- loop ---- */
+let lastT=perf(); function perf(){return performance?performance.now():0;}
+function frame(t){ const dt=Math.min(0.033,(t-lastT)/1000); lastT=t;
+  for(let i=particles.length-1;i>=0;i--){const p=particles[i];p.life-=dt;if(p.life<=0){particles.splice(i,1);continue;}p.x+=p.vx*dt;p.y+=p.vy*dt;}
+  render(t); requestAnimationFrame(frame); }
+
+/* ---- render ---- */
+function render(t){
+  const tt=t/1000;
+  ctx.clearRect(0,0,AW,AH);
+  if(!W||!exit||!player) return;
+  for(let y=0;y<H;y++)for(let x=0;x<W;x++){ const X=cell(x),Y=cellY(y),g=grid[y][x];
+    if(g==='#'){ ctx.fillStyle='#0d1024'; ctx.fillRect(X,Y,CELL,CELL); ctx.fillStyle='#171b39'; ctx.fillRect(X+1,Y+1,CELL-2,CELL-3); }
+    else if(g==='-'){ /* void: dark, subtle dots */ ctx.fillStyle='#050609'; ctx.fillRect(X,Y,CELL,CELL);
+      ctx.fillStyle='rgba(255,255,255,.03)'; for(let i=0;i<2;i++)for(let j=0;j<2;j++){ ctx.beginPath();ctx.arc(X+CELL*(0.3+i*0.4),Y+CELL*(0.3+j*0.4),1.2,0,6.283);ctx.fill(); } }
+    else { ctx.fillStyle=((x+y)&1)?'#0c0f22':'#0a0d1e'; ctx.fillRect(X,Y,CELL,CELL); ctx.strokeStyle='rgba(255,255,255,.02)'; ctx.strokeRect(X+.5,Y+.5,CELL-1,CELL-1); }
+  }
+  // exit
+  { const X=cell(exit.x)+CELL/2,Y=cellY(exit.y)+CELL/2, p=0.5+0.5*Math.sin(tt*2.5);
+    ctx.save();ctx.globalCompositeOperation='lighter'; const g=ctx.createRadialGradient(X,Y,2,X,Y,CELL*0.5+p*5);
+    g.addColorStop(0,'rgba(150,255,210,.7)');g.addColorStop(1,'rgba(150,255,210,0)'); ctx.fillStyle=g; ctx.beginPath();ctx.arc(X,Y,CELL*0.5+p*5,0,6.283);ctx.fill(); ctx.restore();
+    ctx.strokeStyle='rgba(150,255,210,.9)';ctx.lineWidth=2.5;ctx.beginPath();ctx.arc(X,Y,CELL*0.28,0,6.283);ctx.stroke(); }
+  // blocks
+  for(const b of blocks){ const X=cell(b.x),Y=cellY(b.y),m=CELL*0.12;
+    const g=ctx.createLinearGradient(X,Y,X,Y+CELL); g.addColorStop(0,'#6d86ff'); g.addColorStop(1,'#3f57d6');
+    ctx.fillStyle=g; roundRect(X+m,Y+m,CELL-2*m,CELL-2*m,7); ctx.fill();
+    ctx.strokeStyle='rgba(255,255,255,.25)';ctx.lineWidth=1.5;ctx.stroke();
+    ctx.fillStyle='rgba(255,255,255,.15)'; roundRect(X+m+3,Y+m+3,CELL-2*m-6,(CELL-2*m)*0.3,4); ctx.fill(); }
+  // player
+  { const X=cell(player.x)+CELL/2,Y=cellY(player.y)+CELL/2, r=CELL*0.3;
+    ctx.save();ctx.globalCompositeOperation='lighter'; const g=ctx.createRadialGradient(X,Y,1,X,Y,r*2.2);
+    g.addColorStop(0,'rgba(159,240,255,.5)');g.addColorStop(1,'rgba(159,240,255,0)'); ctx.fillStyle=g;ctx.beginPath();ctx.arc(X,Y,r*2.2,0,6.283);ctx.fill();ctx.restore();
+    ctx.fillStyle='#0c1224';ctx.beginPath();ctx.arc(X,Y,r,0,6.283);ctx.fill(); ctx.strokeStyle='rgba(159,240,255,.95)';ctx.lineWidth=2.5;ctx.stroke();
+    ctx.fillStyle='rgba(159,240,255,.95)'; const eo=r*0.4; ctx.beginPath();ctx.arc(X-eo,Y-2,2.2,0,6.283);ctx.arc(X+eo,Y-2,2.2,0,6.283);ctx.fill(); }
+  // particles
+  ctx.save();ctx.globalCompositeOperation='lighter'; for(const p of particles){ctx.globalAlpha=Math.max(0,Math.min(1,p.life));ctx.fillStyle='rgb('+p.c+')';ctx.beginPath();ctx.arc(p.x,p.y,p.r,0,6.283);ctx.fill();}ctx.globalAlpha=1;ctx.restore();
+}
+function roundRect(x,y,w,h,r){ ctx.beginPath();ctx.moveTo(x+r,y);ctx.arcTo(x+w,y,x+w,y+h,r);ctx.arcTo(x+w,y+h,x,y+h,r);ctx.arcTo(x,y+h,x,y,r);ctx.arcTo(x,y,x+w,y,r);ctx.closePath(); }
+
+/* ---- buttons ---- */
+document.getElementById('startBtn').onclick=()=>{ ac(); document.getElementById('startOv').classList.remove('show'); phase='play'; loadLevel(0); };
+document.getElementById('resetBtn').onclick=()=>{ if(phase==='play')resetLevel(); };
+document.getElementById('nextBtn').onclick=()=>{ document.getElementById('winOv').classList.remove('show'); const last=li===LEVELS.length-1; phase='play'; loadLevel(last?0:li+1); };
+
+/* ---- boot ---- */
+loadLevel(0); requestAnimationFrame(frame);
+</script>
+</body>
+</html>

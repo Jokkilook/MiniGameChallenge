@@ -1,0 +1,474 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+<title>빛의 수호자 · Light Keeper</title>
+<style>
+  :root{ --bg:#080a12; --ink:#eef1ff; --muted:#8b90c4; --amber:#ffd27a; --amber2:#ff9e5e;
+         --wisp:#9ff0ff; --danger:#ff5a6e; --frost:#7fe3ff; --panel:rgba(16,18,38,.92); }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%;background:radial-gradient(120% 120% at 50% 0%,#13152c 0%,#05060c 72%);
+    color:var(--ink);font-family:"Segoe UI",-apple-system,BlinkMacSystemFont,"Malgun Gothic",sans-serif;
+    overflow:hidden;-webkit-user-select:none;user-select:none;touch-action:none}
+  #wrap{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;padding:8px}
+  #stage{position:relative;border-radius:16px;overflow:hidden;
+    box-shadow:0 30px 90px rgba(0,0,0,.65),0 0 0 1px rgba(255,255,255,.04)}
+  canvas{display:block;background:#06070d;border-radius:16px;cursor:pointer}
+
+  #hud{position:absolute;left:0;right:0;top:0;display:flex;align-items:center;gap:18px;padding:12px 16px;
+    z-index:5;pointer-events:none}
+  .stat{display:flex;align-items:center;gap:7px}
+  .stat .k{font-size:11px;letter-spacing:1.5px;color:var(--muted);text-transform:uppercase}
+  .stat .v{font-size:22px;font-weight:800;font-variant-numeric:tabular-nums}
+  #energy .v{color:var(--amber)} #lives .v{color:var(--danger)} #wave .v{color:var(--wisp)}
+  #hud .spacer{flex:1}
+  #startWaveBtn{pointer-events:auto;cursor:pointer;border:none;border-radius:11px;padding:9px 18px;font-size:14px;font-weight:800;
+    color:#221600;background:linear-gradient(180deg,var(--amber),var(--amber2));box-shadow:0 8px 24px rgba(255,158,94,.35);transition:.15s}
+  #startWaveBtn:hover{transform:translateY(-1px)} #startWaveBtn:disabled{opacity:.4;cursor:default;transform:none}
+
+  /* tower palette */
+  #palette{position:absolute;left:0;right:0;bottom:0;display:flex;gap:10px;justify-content:center;padding:12px;z-index:5}
+  .tw{pointer-events:auto;cursor:pointer;width:118px;background:rgba(18,20,42,.86);border:1px solid rgba(255,255,255,.10);
+    border-radius:12px;padding:9px 10px;transition:.12s;backdrop-filter:blur(6px)}
+  .tw:hover{transform:translateY(-2px);border-color:rgba(255,255,255,.22)}
+  .tw.sel{border-color:var(--amber);box-shadow:0 0 0 1px var(--amber),0 8px 24px rgba(255,158,94,.25)}
+  .tw.poor{opacity:.5}
+  .tw .nm{font-size:13px;font-weight:700} .tw .nm b{font-size:12px}
+  .tw .ds{font-size:10.5px;color:var(--muted);margin:2px 0 5px;line-height:1.35}
+  .tw .cost{font-size:12px;font-weight:800;color:var(--amber)}
+  .dot{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:5px;vertical-align:middle}
+
+  /* selected tower panel */
+  #twpanel{position:absolute;z-index:6;width:150px;background:var(--panel);border:1px solid rgba(255,255,255,.12);
+    border-radius:12px;padding:10px;display:none;box-shadow:0 12px 34px rgba(0,0,0,.5)}
+  #twpanel h4{margin:0 0 6px;font-size:13px} #twpanel .row{font-size:11.5px;color:var(--muted);margin:2px 0}
+  #twpanel .bs{display:flex;gap:6px;margin-top:8px}
+  .mini{flex:1;cursor:pointer;border:1px solid rgba(255,255,255,.14);background:rgba(255,255,255,.05);color:var(--ink);
+    border-radius:8px;padding:6px;font-size:11.5px;font-weight:700}
+  .mini.up{border-color:var(--amber);color:var(--amber)} .mini.up:disabled{opacity:.4;cursor:default}
+  .mini.sell{border-color:var(--danger);color:var(--danger)}
+
+  #hint{position:absolute;left:0;right:0;bottom:92px;text-align:center;color:var(--muted);font-size:12.5px;z-index:4;pointer-events:none;text-shadow:0 2px 10px #000}
+  #hint b{color:var(--amber)}
+
+  .overlay{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;z-index:10;
+    background:radial-gradient(60% 60% at 50% 45%,rgba(8,9,18,.55),rgba(4,5,11,.95));opacity:0;visibility:hidden;transition:opacity .35s}
+  .overlay.show{opacity:1;visibility:visible}
+  .card{width:min(560px,90%);background:var(--panel);border:1px solid rgba(255,255,255,.08);border-radius:20px;
+    padding:30px 30px 26px;text-align:center;box-shadow:0 26px 70px rgba(0,0,0,.55)}
+  .card h1{margin:0;font-size:34px;letter-spacing:2px} .card h1 small{display:block;font-size:12px;letter-spacing:6px;color:var(--wisp);margin-top:9px;font-weight:600}
+  .card p{color:var(--muted);line-height:1.7;font-size:14px;margin:14px 0 18px}
+  .card p b{color:var(--amber)}
+  .cta{cursor:pointer;border:none;border-radius:12px;padding:13px 32px;font-size:15px;font-weight:800;letter-spacing:.5px;
+    color:#221600;background:linear-gradient(180deg,var(--amber),var(--amber2));box-shadow:0 10px 30px rgba(255,158,94,.35);transition:.15s}
+  .cta:hover{transform:translateY(-2px)}
+  .tag{display:inline-block;color:var(--wisp);font-size:12px;letter-spacing:3px;margin-bottom:6px}
+</style>
+</head>
+<body>
+<div id="wrap">
+  <div id="stage">
+    <canvas id="cv"></canvas>
+    <div id="hud">
+      <div class="stat" id="energy"><span class="k">빛</span><span class="v" id="energyV">0</span></div>
+      <div class="stat" id="lives"><span class="k">생명</span><span class="v" id="livesV">0</span></div>
+      <div class="stat" id="wave"><span class="k">웨이브</span><span class="v" id="waveV">0/0</span></div>
+      <div class="spacer"></div>
+      <button id="startWaveBtn">다음 웨이브 ▶</button>
+    </div>
+    <div id="hint"></div>
+    <div id="twpanel">
+      <h4 id="tpName">타워</h4>
+      <div class="row" id="tpStats">·</div>
+      <div class="bs">
+        <button class="mini up" id="tpUp">강화</button>
+        <button class="mini sell" id="tpSell">판매</button>
+      </div>
+    </div>
+    <div id="palette"></div>
+
+    <div class="overlay show" id="startOv">
+      <div class="card">
+        <span class="tag">TOWER DEFENSE</span>
+        <h1>빛의 수호자<small>L I G H T &nbsp; K E E P E R</small></h1>
+        <p>어둠이 <b style="color:var(--danger)">등불의 심장</b>으로 몰려온다.<br>
+           길목에 <b>빛 타워</b>를 세워 그림자를 태워라.<br>
+           처치하면 빛이 모이고, 웨이브는 점점 거세진다.</p>
+        <button class="cta" id="startBtn">수호 시작</button>
+      </div>
+    </div>
+    <div class="overlay" id="endOv">
+      <div class="card">
+        <span class="tag" id="endTag">·</span>
+        <h1 id="endTitle" style="font-size:26px">·</h1>
+        <p id="endMsg">·</p>
+        <button class="cta" id="endBtn">다시</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+"use strict";
+/* ============================================================
+   빛의 수호자 · Light Keeper — tower defense (light vs shadow)
+   Place light towers along the path; shadow creatures march to your
+   lantern core. Kill them for light-energy; upgrade; survive the waves.
+   ============================================================ */
+const COLS=16, ROWS=10, CELL=56;
+const AW=COLS*CELL, AH=ROWS*CELL;      // 896 x 560 logical arena
+const cv=document.getElementById('cv'), ctx=cv.getContext('2d');
+let DPR=Math.max(1,Math.min(2,devicePixelRatio||1)), scale=1;
+
+/* ---------- path ---------- */
+const CORNERS=[[-1,1],[13,1],[13,4],[2,4],[2,7],[16,7]];   // (col,row)
+function cc(c,r){ return [c*CELL+CELL/2, r*CELL+CELL/2]; }
+const WP=CORNERS.map(p=>cc(p[0],p[1]));                     // pixel waypoints
+const CORE={x:cc(15,7)[0], y:cc(15,7)[1]};
+const pathCells=new Set();
+(function buildPath(){
+  for(let i=0;i<CORNERS.length-1;i++){
+    let [c1,r1]=CORNERS[i],[c2,r2]=CORNERS[i+1];
+    const dc=Math.sign(c2-c1), dr=Math.sign(r2-r1);
+    let c=c1,r=r1;
+    while(c!==c2||r!==r2){ if(c>=0&&c<COLS&&r>=0&&r<ROWS)pathCells.add(c+','+r); c+=dc; r+=dr; }
+    if(c2>=0&&c2<COLS&&r2>=0&&r2<ROWS)pathCells.add(c2+','+r2);
+  }
+})();
+
+/* ---------- tower & enemy defs ---------- */
+const TOWERS={
+  lantern:{ name:'등불', dot:'#ffd27a', cost:50, range:118, dmg:15, cd:0.55, kind:'single',
+    ds:'단일 대상, 균형잡힌 빛살' },
+  nova:{ name:'섬광', dot:'#bfe0ff', cost:110, range:92, dmg:10, cd:1.1, kind:'aoe',
+    ds:'범위 전체를 태우는 빛 폭발' },
+  frost:{ name:'서리빛', dot:'#7fe3ff', cost:75, range:104, dmg:4, cd:0.7, kind:'slow', slow:0.45, slowT:1.3,
+    ds:'적을 느리게, 약한 피해' },
+};
+const TORDER=['lantern','nova','frost'];
+const ENEMIES={
+  wisp:{ name:'정령', hp:26, speed:60, reward:7, leak:1, r:11, col:'150,120,220' },
+  runner:{ name:'질주', hp:20, speed:104, reward:8, leak:1, r:9, col:'220,120,180' },
+  golem:{ name:'골렘', hp:150, speed:32, reward:24, leak:3, r:17, col:'120,110,160' },
+};
+const MAXWAVE=12;
+function waveGroups(w){
+  const g=[];
+  g.push({type:'wisp', count:6+Math.round(w*1.7), gap:0.55, hpm:1+w*0.16});
+  if(w>=3) g.push({type:'runner', count:3+w, gap:0.4, hpm:1+w*0.13});
+  if(w>=4 && w%2===0) g.push({type:'golem', count:1+Math.floor(w/3), gap:1.4, hpm:1+w*0.20});
+  return g;
+}
+
+/* ---------- state ---------- */
+let energy=220, lives=20, wave=0, phase='build'; // build|wave|over|win
+let enemies=[], towers=[], beams=[], particles=[], spawnQ=[];
+let selTower=null;      // palette selection (tower type key)
+let selPlaced=null;     // clicked existing tower
+let hoverCell=null, waveTimer=0, score=0;
+let core={hp:20, pulse:0, hurt:0};
+
+/* ---------- helpers ---------- */
+const TAU=Math.PI*2;
+function now(){ return performance?performance.now():0; }
+function dist(ax,ay,bx,by){ return Math.hypot(ax-bx,ay-by); }
+function cellOccupied(c,r){ return towers.some(t=>t.c===c&&t.r===r); }
+function canPlace(c,r){ return c>=0&&c<COLS&&r>=0&&r<ROWS && !pathCells.has(c+','+r) && !cellOccupied(c,r); }
+function upgradeCost(t){ return Math.round(TOWERS[t.type].cost*0.8*(t.lvl)); }
+function towerStat(t){ const b=TOWERS[t.type]; const m=1+(t.lvl-1)*0.5; return {dmg:b.dmg*m, range:b.range*(1+(t.lvl-1)*0.12), cd:b.cd*(1-(t.lvl-1)*0.08)}; }
+
+/* ---------- layout ---------- */
+function layout(){
+  const vw=Math.max(320,innerWidth||AW), vh=Math.max(240,innerHeight||AH);
+  scale=Math.min((vw-16)/AW,(vh-40)/AH);
+  cv.style.width=(AW*scale)+'px'; cv.style.height=(AH*scale)+'px';
+  cv.width=Math.round(AW*scale*DPR); cv.height=Math.round(AH*scale*DPR);
+  ctx.setTransform(scale*DPR,0,0,scale*DPR,0,0);
+}
+addEventListener('resize',layout);
+
+/* ---------- build palette ---------- */
+const paletteEl=document.getElementById('palette');
+function buildPalette(){
+  paletteEl.innerHTML='';
+  for(const key of TORDER){ const b=TOWERS[key];
+    const el=document.createElement('div'); el.className='tw'; el.dataset.k=key;
+    el.innerHTML=`<div class="nm"><span class="dot" style="background:${b.dot}"></span>${b.name}</div>
+      <div class="ds">${b.ds}</div><div class="cost">빛 ${b.cost}</div>`;
+    el.onclick=()=>{ selTower=(selTower===key)?null:key; selPlaced=null; refreshPalette(); hideTP(); };
+    paletteEl.appendChild(el);
+  }
+  refreshPalette();
+}
+function refreshPalette(){
+  for(const el of paletteEl.children){ const k=el.dataset.k;
+    el.classList.toggle('sel',selTower===k);
+    el.classList.toggle('poor',energy<TOWERS[k].cost);
+  }
+}
+
+/* ---------- input ---------- */
+function evCell(e){ const r=cv.getBoundingClientRect();
+  const x=((e.touches?e.touches[0].clientX:e.clientX)-r.left)/scale;
+  const y=((e.touches?e.touches[0].clientY:e.clientY)-r.top)/scale;
+  return {c:Math.floor(x/CELL), r:Math.floor(y/CELL), x, y}; }
+cv.addEventListener('mousemove',e=>{ hoverCell=evCell(e); });
+cv.addEventListener('mouseleave',()=>{ hoverCell=null; });
+cv.addEventListener('click',e=>{
+  const p=evCell(e);
+  // click existing tower?
+  const t=towers.find(t=>t.c===p.c&&t.r===p.r);
+  if(t){ selPlaced=t; selTower=null; refreshPalette(); showTP(t); return; }
+  hideTP();
+  if(selTower){
+    const b=TOWERS[selTower];
+    if(canPlace(p.c,p.r) && energy>=b.cost){
+      energy-=b.cost; towers.push({type:selTower,c:p.c,r:p.r,x:cc(p.c,p.r)[0],y:cc(p.c,p.r)[1],lvl:1,cool:0,fx:0,target:null});
+      refreshPalette(); ping(520);
+    } else ping(140);
+  }
+});
+
+/* ---------- tower panel ---------- */
+const tp=document.getElementById('twpanel');
+function showTP(t){
+  selPlaced=t; const s=towerStat(t); const b=TOWERS[t.type];
+  document.getElementById('tpName').textContent=`${b.name} Lv.${t.lvl}`;
+  document.getElementById('tpStats').innerHTML=`피해 ${Math.round(s.dmg)} · 사거리 ${Math.round(s.range)}<br>속도 ${(1/s.cd).toFixed(1)}/s${b.kind==='slow'?' · 둔화':''}`;
+  const up=document.getElementById('tpUp');
+  if(t.lvl>=3){ up.textContent='최대'; up.disabled=true; }
+  else{ up.textContent=`강화 (${upgradeCost(t)})`; up.disabled=energy<upgradeCost(t); }
+  const rect=cv.getBoundingClientRect();
+  tp.style.left=(rect.left+t.x*scale-75)+'px'; tp.style.top=(rect.top+t.y*scale-CELL*scale-6)+'px';
+  tp.style.display='block';
+}
+function hideTP(){ tp.style.display='none'; selPlaced=null; }
+document.getElementById('tpUp').onclick=()=>{ const t=selPlaced; if(!t||t.lvl>=3)return; const c=upgradeCost(t); if(energy>=c){ energy-=c; t.lvl++; t.fx=0.4; showTP(t); refreshPalette(); ping(660);} };
+document.getElementById('tpSell').onclick=()=>{ const t=selPlaced; if(!t)return; energy+=Math.round(TOWERS[t.type].cost*0.6*t.lvl); towers=towers.filter(x=>x!==t); hideTP(); refreshPalette(); ping(300); };
+
+/* ---------- audio ---------- */
+let AC=null,muted=false;
+function ac(){ if(!AC){try{AC=new (AudioContext||webkitAudioContext)();}catch(e){}} return AC; }
+function ping(f,d=0.06,v=0.03,t='sine'){ if(muted)return; const a=ac();if(!a)return; const o=a.createOscillator(),g=a.createGain();
+  o.type=t;o.frequency.value=f;g.gain.value=0;o.connect(g);g.connect(a.destination);const n=a.currentTime;
+  g.gain.linearRampToValueAtTime(v,n+0.006);g.gain.exponentialRampToValueAtTime(0.0001,n+d);o.start(n);o.stop(n+d+0.02); }
+const SFX={ shoot(){ping(680,0.04,0.012,'triangle');}, kill(){ping(320,0.12,0.03,'sine');}, leak(){ping(120,0.2,0.05,'sawtooth');},
+  wave(){ping(200,0.3,0.04,'sine'); setTimeout(()=>ping(300,0.3,0.03),90);}, win(){[523,659,784,1047].forEach((f,i)=>setTimeout(()=>ping(f,0.25,0.05),i*110));}, lose(){ping(160,0.5,0.06,'sawtooth');} };
+
+/* ---------- waves ---------- */
+function startWave(){
+  if(phase==='wave'||wave>=MAXWAVE) return;
+  wave++; phase='wave'; spawnQ=[]; let t=0;
+  for(const g of waveGroups(wave)){ t+=0.3;
+    for(let i=0;i<g.count;i++){ t+=g.gap; spawnQ.push({at:t,type:g.type,hpm:g.hpm}); }
+  }
+  waveTimer=0; SFX.wave(); hideTP(); updateHUD();
+  document.getElementById('startWaveBtn').disabled=true;
+}
+function spawnEnemy(type,hpm){
+  const b=ENEMIES[type];
+  enemies.push({type,x:WP[0][0],y:WP[0][1],wp:1,hp:b.hp*hpm,max:b.hp*hpm,speed:b.speed,base:b.speed,
+    slowT:0,reward:Math.round(b.reward+b.hp*hpm*0.05),leak:b.leak,r:b.r,col:b.col,hit:0});
+}
+
+/* ---------- update ---------- */
+function update(dt){
+  if(phase==='wave'){
+    waveTimer+=dt;
+    while(spawnQ.length && spawnQ[0].at<=waveTimer){ const s=spawnQ.shift(); spawnEnemy(s.type,s.hpm); }
+  }
+  // enemies
+  for(let i=enemies.length-1;i>=0;i--){
+    const e=enemies[i];
+    if(e.slowT>0){ e.slowT-=dt; e.speed=e.base*(e.slowT>0?TOWERS.frost.slow:1); } else e.speed=e.base;
+    const tgt=WP[e.wp]; const dx=tgt[0]-e.x, dy=tgt[1]-e.y, d=Math.hypot(dx,dy);
+    const step=e.speed*dt;
+    if(d<=step){ e.x=tgt[0]; e.y=tgt[1]; e.wp++; if(e.wp>=WP.length){ // leaked
+        lives-=e.leak; core.hurt=0.5; enemies.splice(i,1); SFX.leak();
+        if(lives<=0){ lives=0; endGame(false);} updateHUD(); continue; } }
+    else { e.x+=dx/d*step; e.y+=dy/d*step; }
+    if(e.hit>0) e.hit-=dt;
+  }
+  // towers fire
+  for(const t of towers){
+    if(t.cool>0) t.cool-=dt; if(t.fx>0) t.fx-=dt;
+    const s=towerStat(t); const b=TOWERS[t.type];
+    if(t.cool>0) continue;
+    if(b.kind==='aoe'){
+      const inR=enemies.filter(e=>dist(t.x,t.y,e.x,e.y)<=s.range);
+      if(inR.length){ for(const e of inR){ damage(e,s.dmg);} t.cool=s.cd; t.fx=0.25; beams.push({aoe:true,x:t.x,y:t.y,r:s.range,life:0.25,col:b.dot}); SFX.shoot(); }
+    } else {
+      // pick furthest-along target in range
+      let best=null,bp=-1;
+      for(const e of enemies){ if(dist(t.x,t.y,e.x,e.y)<=s.range){ const p=e.wp+ -dist(e.x,e.y,WP[e.wp][0],WP[e.wp][1])*0.001; if(p>bp){bp=p;best=e;} } }
+      if(best){ damage(best,s.dmg); if(b.kind==='slow'){ best.slowT=b.slowT; }
+        t.cool=s.cd; t.fx=0.2; beams.push({x1:t.x,y1:t.y,x2:best.x,y2:best.y,life:0.12,col:b.dot}); SFX.shoot(); }
+    }
+  }
+  // beams/particles
+  for(let i=beams.length-1;i>=0;i--){ beams[i].life-=dt; if(beams[i].life<=0) beams.splice(i,1); }
+  for(let i=particles.length-1;i>=0;i--){ const p=particles[i]; p.life-=dt; if(p.life<=0){particles.splice(i,1);continue;} p.x+=p.vx*dt;p.y+=p.vy*dt;p.vx*=Math.pow(0.1,dt);p.vy*=Math.pow(0.1,dt); }
+  if(core.pulse>0)core.pulse-=dt; if(core.hurt>0)core.hurt-=dt;
+  // wave end?
+  if(phase==='wave' && spawnQ.length===0 && enemies.length===0){
+    energy+=20+wave*6; score+=100*wave;
+    if(wave>=MAXWAVE){ endGame(true); }
+    else { phase='build'; document.getElementById('startWaveBtn').disabled=false; }
+    refreshPalette(); updateHUD();
+  }
+}
+function damage(e,dmg){
+  e.hp-=dmg; e.hit=0.12;
+  if(e.hp<=0){ energy+=e.reward; score+=e.reward; enemies.splice(enemies.indexOf(e),1); SFX.kill();
+    for(let k=0;k<8;k++)particles.push({x:e.x,y:e.y,vx:rand(-1,1)*120,vy:rand(-1,1)*120,life:rand(0.25,0.55),r:rand(1,2.6),c:e.col});
+    refreshPalette(); updateHUD();
+  }
+}
+function rand(a,b){return a+Math.random()*(b-a);}
+
+/* ---------- HUD ---------- */
+function updateHUD(){
+  document.getElementById('energyV').textContent=Math.floor(energy);
+  document.getElementById('livesV').textContent=lives;
+  document.getElementById('waveV').textContent=wave+'/'+MAXWAVE;
+}
+
+/* ---------- flow ---------- */
+function startGame(){
+  energy=220; lives=20; wave=0; phase='build'; enemies=[]; towers=[]; beams=[]; particles=[]; spawnQ=[]; score=0;
+  selTower=null; selPlaced=null; core={hp:20,pulse:0,hurt:0};
+  document.getElementById('startOv').classList.remove('show');
+  document.getElementById('endOv').classList.remove('show');
+  document.getElementById('startWaveBtn').disabled=false;
+  buildPalette(); updateHUD();
+  document.getElementById('hint').innerHTML='길목 옆 빈 칸에 <b>타워</b>를 세우고, 준비되면 <b>다음 웨이브</b>.';
+}
+function endGame(wonGame){
+  phase=wonGame?'win':'over';
+  document.getElementById('startWaveBtn').disabled=true; hideTP();
+  if(wonGame) SFX.win(); else SFX.lose();
+  document.getElementById('endTag').textContent=wonGame?'승리':'패배';
+  document.getElementById('endTag').style.color=wonGame?'var(--wisp)':'var(--danger)';
+  document.getElementById('endTitle').textContent=wonGame?'빛이 어둠을 몰아냈다':'등불이 꺼졌다';
+  document.getElementById('endMsg').innerHTML=wonGame
+    ? `${MAXWAVE}개의 웨이브를 모두 막아냈다. 점수 <b>${score}</b>.`
+    : `웨이브 <b>${wave}</b>에서 무너졌다. 점수 <b>${score}</b>.`;
+  setTimeout(()=>document.getElementById('endOv').classList.add('show'),700);
+}
+
+/* ---------- render ---------- */
+let lastT=now();
+function frame(t){
+  let dt=Math.min(0.033,(t-lastT)/1000); lastT=t;
+  if(phase==='wave'||phase==='build') update(dt);
+  else { for(let i=particles.length-1;i>=0;i--){const p=particles[i];p.life-=dt;if(p.life<=0){particles.splice(i,1);continue;}p.x+=p.vx*dt;p.y+=p.vy*dt;} }
+  render(t); requestAnimationFrame(frame);
+}
+function render(t){
+  const tt=t/1000;
+  ctx.clearRect(0,0,AW,AH);
+  ctx.fillStyle='#080a14'; ctx.fillRect(0,0,AW,AH);
+  // grid cells (buildable subtle)
+  for(let c=0;c<COLS;c++)for(let r=0;r<ROWS;r++){
+    const x=c*CELL,y=r*CELL;
+    if(pathCells.has(c+','+r)){ ctx.fillStyle='#11142a'; ctx.fillRect(x,y,CELL,CELL); }
+    ctx.strokeStyle='rgba(255,255,255,.025)'; ctx.strokeRect(x+.5,y+.5,CELL-1,CELL-1);
+  }
+  // path glow line
+  ctx.strokeStyle='rgba(120,110,180,.18)'; ctx.lineWidth=CELL*0.6; ctx.lineCap='round'; ctx.lineJoin='round';
+  ctx.beginPath(); ctx.moveTo(WP[0][0],WP[0][1]); for(let i=1;i<WP.length;i++)ctx.lineTo(WP[i][0],WP[i][1]); ctx.stroke();
+
+  // placement preview
+  if(selTower&&hoverCell){ const {c,r}=hoverCell; if(c>=0&&c<COLS&&r>=0&&r<ROWS){
+    const ok=canPlace(c,r)&&energy>=TOWERS[selTower].cost;
+    const [x,y]=cc(c,r); const s=TOWERS[selTower];
+    ctx.save(); ctx.globalCompositeOperation='lighter';
+    ctx.fillStyle=ok?'rgba(159,240,255,.06)':'rgba(255,90,110,.06)';
+    ctx.beginPath(); ctx.arc(x,y,s.range,0,TAU); ctx.fill(); ctx.restore();
+    ctx.strokeStyle=ok?'rgba(159,240,255,.5)':'rgba(255,90,110,.5)'; ctx.lineWidth=2;
+    ctx.strokeRect(c*CELL+3,r*CELL+3,CELL-6,CELL-6);
+  }}
+  // selected tower range
+  if(selPlaced){ const s=towerStat(selPlaced); ctx.save(); ctx.globalCompositeOperation='lighter';
+    ctx.fillStyle='rgba(255,210,122,.05)'; ctx.beginPath(); ctx.arc(selPlaced.x,selPlaced.y,s.range,0,TAU); ctx.fill(); ctx.restore();
+    ctx.strokeStyle='rgba(255,210,122,.4)'; ctx.lineWidth=1.5; ctx.beginPath(); ctx.arc(selPlaced.x,selPlaced.y,s.range,0,TAU); ctx.stroke(); }
+
+  // core (lantern to defend)
+  drawCore(tt);
+
+  // towers
+  for(const t of towers) drawTower(t,tt);
+  // beams
+  ctx.save(); ctx.globalCompositeOperation='lighter';
+  for(const bm of beams){ if(bm.aoe){ const a=bm.life/0.25;
+      ctx.strokeStyle=`rgba(191,224,255,${a*0.7})`; ctx.lineWidth=3; ctx.beginPath(); ctx.arc(bm.x,bm.y,bm.r*(1-a*0.15),0,TAU); ctx.stroke();
+    } else { ctx.strokeStyle=hexA(bm.col, Math.max(0,bm.life/0.12)*0.9);
+      ctx.lineWidth=2.5; ctx.beginPath(); ctx.moveTo(bm.x1,bm.y1); ctx.lineTo(bm.x2,bm.y2); ctx.stroke(); } }
+  ctx.restore();
+  // enemies
+  for(const e of enemies) drawEnemy(e,tt);
+  // particles
+  ctx.save(); ctx.globalCompositeOperation='lighter';
+  for(const p of particles){ ctx.globalAlpha=Math.max(0,Math.min(1,p.life)); ctx.fillStyle='rgb('+p.c+')'; ctx.beginPath(); ctx.arc(p.x,p.y,p.r,0,TAU); ctx.fill(); }
+  ctx.globalAlpha=1; ctx.restore();
+  // vignette
+  const vg=ctx.createRadialGradient(AW/2,AH/2,AH*0.4,AW/2,AH/2,AH*0.9);
+  vg.addColorStop(0,'rgba(0,0,0,0)');vg.addColorStop(1,'rgba(0,0,0,0.5)'); ctx.fillStyle=vg; ctx.fillRect(0,0,AW,AH);
+}
+function drawCore(tt){
+  const p=0.5+0.5*Math.sin(tt*2.2); const hurt=core.hurt>0;
+  ctx.save(); ctx.globalCompositeOperation='lighter';
+  const R=44+p*6; const col=hurt?'255,90,110':'255,220,150';
+  const g=ctx.createRadialGradient(CORE.x,CORE.y,2,CORE.x,CORE.y,R*1.6);
+  g.addColorStop(0,`rgba(${col},0.9)`);g.addColorStop(0.5,`rgba(${col},0.3)`);g.addColorStop(1,`rgba(${col},0)`);
+  ctx.fillStyle=g; ctx.beginPath(); ctx.arc(CORE.x,CORE.y,R*1.6,0,TAU); ctx.fill(); ctx.restore();
+  ctx.strokeStyle=`rgba(${hurt?'255,90,110':'255,220,150'},.9)`; ctx.lineWidth=3; ctx.beginPath(); ctx.arc(CORE.x,CORE.y,22,0,TAU); ctx.stroke();
+  ctx.fillStyle='#fff3d6'; ctx.beginPath(); ctx.arc(CORE.x,CORE.y,9,0,TAU); ctx.fill();
+}
+function drawTower(t,tt){
+  const b=TOWERS[t.type]; const [x,y]=[t.x,t.y];
+  // base
+  ctx.fillStyle='#1a1d3a'; roundRect(x-CELL*0.32,y-CELL*0.32,CELL*0.64,CELL*0.64,8); ctx.fill();
+  ctx.strokeStyle='rgba(255,255,255,.08)'; ctx.lineWidth=1; ctx.stroke();
+  // glow bulb
+  const fx=t.fx>0?t.fx:0;
+  ctx.save(); ctx.globalCompositeOperation='lighter';
+  const rr=12+t.lvl*2+fx*20;
+  const g=ctx.createRadialGradient(x,y,1,x,y,rr*1.6);
+  const rgb=b.dot;
+  g.addColorStop(0,hexA(rgb,0.95)); g.addColorStop(0.5,hexA(rgb,0.4)); g.addColorStop(1,hexA(rgb,0));
+  ctx.fillStyle=g; ctx.beginPath(); ctx.arc(x,y,rr*1.6,0,TAU); ctx.fill(); ctx.restore();
+  ctx.fillStyle=rgb; ctx.beginPath(); ctx.arc(x,y,6+t.lvl,0,TAU); ctx.fill();
+  // level pips
+  for(let i=0;i<t.lvl;i++){ ctx.fillStyle='rgba(255,255,255,.8)'; ctx.beginPath(); ctx.arc(x-8+i*8,y+CELL*0.24,1.8,0,TAU); ctx.fill(); }
+}
+function drawEnemy(e,tt){
+  const b=ENEMIES[e.type];
+  ctx.save(); ctx.globalCompositeOperation='lighter';
+  const g=ctx.createRadialGradient(e.x,e.y,1,e.x,e.y,e.r*1.8);
+  g.addColorStop(0,`rgba(${e.col},0.5)`);g.addColorStop(1,`rgba(${e.col},0)`);
+  ctx.fillStyle=g; ctx.beginPath(); ctx.arc(e.x,e.y,e.r*1.8,0,TAU); ctx.fill(); ctx.restore();
+  ctx.fillStyle=e.hit>0?'#fff':`rgb(${e.col})`; ctx.beginPath(); ctx.arc(e.x,e.y,e.r,0,TAU); ctx.fill();
+  ctx.strokeStyle='rgba(0,0,0,.4)'; ctx.lineWidth=1.5; ctx.stroke();
+  if(e.slowT>0){ ctx.strokeStyle='rgba(127,227,255,.7)'; ctx.lineWidth=1.5; ctx.beginPath(); ctx.arc(e.x,e.y,e.r+3,0,TAU); ctx.stroke(); }
+  // hp bar
+  if(e.hp<e.max){ const w=e.r*2.2, h=3; ctx.fillStyle='rgba(0,0,0,.5)'; ctx.fillRect(e.x-w/2,e.y-e.r-8,w,h);
+    ctx.fillStyle=e.hp/e.max>0.4?'#7fe3ff':'#ff5a6e'; ctx.fillRect(e.x-w/2,e.y-e.r-8,w*Math.max(0,e.hp/e.max),h); }
+}
+function roundRect(x,y,w,h,r){ ctx.beginPath(); ctx.moveTo(x+r,y); ctx.arcTo(x+w,y,x+w,y+h,r); ctx.arcTo(x+w,y+h,x,y+h,r); ctx.arcTo(x,y+h,x,y,r); ctx.arcTo(x,y,x+w,y,r); ctx.closePath(); }
+function hexA(hex,a){ const n=parseInt(hex.slice(1),16); const r=(n>>16)&255,g=(n>>8)&255,b=n&255; return `rgba(${r},${g},${b},${a})`; }
+
+/* ---------- buttons ---------- */
+document.getElementById('startBtn').onclick=()=>{ ac(); startGame(); };
+document.getElementById('startWaveBtn').onclick=startWave;
+document.getElementById('endBtn').onclick=startGame;
+addEventListener('keydown',e=>{ if(e.key===' '){ if(phase==='build')startWave(); e.preventDefault(); }
+  else if(e.key>='1'&&e.key<='3'){ selTower=TORDER[+e.key-1]; selPlaced=null; refreshPalette(); hideTP(); } });
+
+/* ---------- boot ---------- */
+layout(); buildPalette(); updateHUD();
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>

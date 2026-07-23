@@ -1,0 +1,260 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+<title>멈춤 · STILL</title>
+<style>
+  :root{ --ink:#eef1ff; --muted:#8b90c4; --amber:#ffd27a; --wisp:#9ff0ff; --hot:#ff5a6e; --panel:rgba(16,18,38,.92); }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%;background:radial-gradient(120% 120% at 50% 0%,#12162c 0%,#05060c 72%);color:var(--ink);
+    font-family:"Segoe UI",-apple-system,BlinkMacSystemFont,"Malgun Gothic",sans-serif;overflow:hidden;-webkit-user-select:none;user-select:none;touch-action:none}
+  #wrap{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;padding:8px}
+  #stage{position:relative;border-radius:16px;overflow:hidden;box-shadow:0 30px 90px rgba(0,0,0,.65),0 0 0 1px rgba(255,255,255,.04)}
+  canvas{display:block;background:#07080f;border-radius:16px}
+  #hud{position:absolute;left:0;right:0;top:0;display:flex;align-items:center;gap:18px;padding:12px 16px;z-index:5;pointer-events:none}
+  .stat .k{font-size:11px;letter-spacing:1.5px;color:var(--muted);text-transform:uppercase}
+  .stat .v{font-size:22px;font-weight:800;font-variant-numeric:tabular-nums}
+  #time .v{color:var(--wisp)} #best .v{color:var(--amber)} #orb .v{color:var(--amber)}
+  #hud .spacer{flex:1} #lvl{font-size:13px;color:var(--muted)}
+  #frozen{position:absolute;top:12px;left:50%;transform:translateX(-50%);z-index:5;font-size:11px;letter-spacing:3px;
+    color:var(--wisp);opacity:0;transition:opacity .2s} #frozen.on{opacity:.8}
+  #hint{position:absolute;left:0;right:0;bottom:16px;text-align:center;color:var(--muted);font-size:13px;z-index:5;pointer-events:none;text-shadow:0 2px 10px #000}
+  #hint b{color:var(--wisp)}
+  .overlay{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;z-index:10;
+    background:radial-gradient(60% 60% at 50% 45%,rgba(8,9,18,.5),rgba(4,5,11,.95));opacity:0;visibility:hidden;transition:opacity .35s}
+  .overlay.show{opacity:1;visibility:visible}
+  .card{width:min(560px,90%);background:var(--panel);border:1px solid rgba(255,255,255,.08);border-radius:20px;padding:30px 30px 26px;text-align:center;box-shadow:0 26px 70px rgba(0,0,0,.55)}
+  .card h1{margin:0;font-size:40px;letter-spacing:4px} .card h1 small{display:block;font-size:12px;letter-spacing:6px;color:var(--wisp);margin-top:10px;font-weight:600}
+  .card p{color:var(--muted);line-height:1.75;font-size:14.5px;margin:16px 0 18px}
+  .keys{display:flex;gap:10px;justify-content:center;flex-wrap:wrap;margin:14px 0 22px}
+  .key{border:1px solid rgba(255,255,255,.14);border-radius:8px;padding:6px 11px;font-size:12.5px;background:rgba(255,255,255,.04)} .key b{color:var(--wisp)}
+  .cta{cursor:pointer;border:none;border-radius:12px;padding:13px 32px;font-size:15px;font-weight:800;letter-spacing:.5px;color:#221600;background:linear-gradient(180deg,var(--amber),#ff9e5e);box-shadow:0 10px 30px rgba(255,158,94,.35);transition:.15s}
+  .cta:hover{transform:translateY(-2px)}
+  .tag{display:inline-block;color:var(--wisp);font-size:12px;letter-spacing:3px;margin-bottom:6px}
+</style>
+</head>
+<body>
+<div id="wrap">
+  <div id="stage">
+    <canvas id="cv"></canvas>
+    <div id="hud">
+      <div class="stat" id="time"><div class="k">시간</div><div class="v" id="timeV">0.0</div></div>
+      <div class="stat" id="orb"><div class="k">빛</div><div class="v" id="orbV">0/0</div></div>
+      <div class="spacer"></div><div id="lvl">1</div><div class="spacer"></div>
+      <div class="stat" id="best"><div class="k">최고</div><div class="v" id="bestV">–</div></div>
+    </div>
+    <div id="frozen">◼ 시간 정지</div>
+    <div id="hint"></div>
+
+    <div class="overlay show" id="startOv">
+      <div class="card">
+        <span class="tag">TIME MOVES ONLY WHEN YOU DO</span>
+        <h1>멈춤<small>S T I L L</small></h1>
+        <p>네가 <b>움직일 때만</b> 시간이 흐른다.<br>
+           멈추면 빛도, 모든 것이 <b>정지</b>한다.<br>
+           멈춰서 계획하고, 정확히 움직여 빛의 틈으로 빠져나가라.</p>
+        <div class="keys"><span class="key"><b>WASD</b> / 방향키 이동</span><span class="key">멈추면 <b>시간 정지</b></span><span class="key"><b>R</b> 다시</span></div>
+        <button class="cta" id="startBtn">시작</button>
+      </div>
+    </div>
+    <div class="overlay" id="winOv">
+      <div class="card">
+        <span class="tag" id="winTag">CLEAR</span>
+        <h1 id="winTitle" style="font-size:26px;letter-spacing:1px">·</h1>
+        <p id="winMsg">·</p>
+        <button class="cta" id="nextBtn">다음 →</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+"use strict";
+/* ============================================================
+   멈춤 · STILL — time advances only by your movement.
+   Rotating light-beams / patrolling hunters freeze when you stand still.
+   Plan while still, move precisely through the gaps, collect the lights,
+   reach the exit. 100% deterministic — pure skill, no RNG.
+   ============================================================ */
+const AW=920, AH=600;
+const cv=document.getElementById('cv'), ctx=cv.getContext('2d');
+let DPR=Math.max(1,Math.min(2,devicePixelRatio||1)), scale=1;
+
+/* ---- levels (deterministic) ----
+   beam: pivot (x,y), ang0, spd (rad per px moved), len, th (half-thickness)
+   mover: path pts, period (px moved per loop), r
+   wall: [x1,y1,x2,y2] blocks movement. orb/exit positions. */
+const LEVELS=[
+  { name:"첫 걸음", hint:"멈추면 빔도 멈춘다. <b>움직일 때만</b> 빔이 돈다. 틈을 노려 건너 <b>빛</b>을 모으고 출구로.",
+    start:{x:80,y:300}, exit:{x:850,y:300},
+    orbs:[{x:460,y:150},{x:460,y:450}],
+    walls:[],
+    beams:[{x:460,y:300,ang0:0,spd:0.010,len:300,th:10}],
+    movers:[] },
+  { name:"두 개의 시계", hint:"반대로 도는 두 빔. 하나가 지나갈 때 다른 하나가 오지 않게 <b>타이밍</b>.",
+    start:{x:70,y:300}, exit:{x:850,y:300},
+    orbs:[{x:300,y:120},{x:620,y:480},{x:460,y:300}],
+    walls:[],
+    beams:[{x:300,y:300,ang0:0,spd:0.011,len:250,th:10},{x:620,y:300,ang0:1.6,spd:-0.011,len:250,th:10}],
+    movers:[] },
+  { name:"순찰자", hint:"빔 + <b>순찰하는 사냥꾼</b>. 사냥꾼도 네가 움직일 때만 움직인다.",
+    start:{x:70,y:70}, exit:{x:850,y:530},
+    orbs:[{x:460,y:80},{x:120,y:520},{x:820,y:90},{x:460,y:520}],
+    walls:[[300,0,300,360],[620,240,620,600]],
+    beams:[{x:460,y:300,ang0:0.5,spd:0.009,len:280,th:10}],
+    movers:[{path:[{x:180,y:300},{x:760,y:300}],period:520,r:16},{path:[{x:460,y:130},{x:460,y:470}],period:420,r:16}] },
+];
+
+/* ---- state ---- */
+let phase='intro'; // intro|play|win
+let li=0, L=null, clock=0, timer=0, orbsGot=0;
+let player={x:0,y:0,r:9}, walls=[], best=[];
+let particles=[], deaths=0, flash=0;
+try{ best=JSON.parse(localStorage.getItem('still_best')||'[]'); }catch(e){ best=[]; }
+
+const keys={};
+const KM={ArrowUp:'u',ArrowDown:'d',ArrowLeft:'l',ArrowRight:'r',w:'u',s:'d',a:'l',d:'r',W:'u',S:'d',A:'l',D:'r'};
+addEventListener('keydown',e=>{ if(e.key==='r'||e.key==='R'){ if(phase==='play')resetLevel(); }
+  const k=KM[e.key]; if(k){keys[k]=1;e.preventDefault();} });
+addEventListener('keyup',e=>{ const k=KM[e.key]; if(k)keys[k]=0; });
+
+/* ---- audio ---- */
+let AC=null,muted=false;
+function ac(){ if(!AC){try{AC=new (AudioContext||webkitAudioContext)();}catch(e){}} return AC; }
+function tone(f,d=0.08,t='sine',v=0.04,to){ if(muted)return; const a=ac();if(!a)return; const o=a.createOscillator(),g=a.createGain();
+  o.type=t;o.frequency.value=f;if(to)o.frequency.exponentialRampToValueAtTime(to,a.currentTime+d);
+  g.gain.value=0;o.connect(g);g.connect(a.destination);const n=a.currentTime;g.gain.linearRampToValueAtTime(v,n+0.006);g.gain.exponentialRampToValueAtTime(0.0001,n+d);o.start(n);o.stop(n+d+0.02); }
+const SFX={ orb(){tone(720,0.08,'sine',0.05,1050);}, die(){tone(200,0.3,'sawtooth',0.05,70);}, win(){[523,659,784,1047].forEach((f,i)=>setTimeout(()=>tone(f,0.22,'sine',0.05),i*95));} };
+
+/* ---- layout ---- */
+function layout(){ const vw=Math.max(320,innerWidth||AW), vh=Math.max(240,innerHeight||AH);
+  scale=Math.min((vw-16)/AW,(vh-16)/AH); cv.style.width=(AW*scale)+'px'; cv.style.height=(AH*scale)+'px';
+  cv.width=Math.round(AW*scale*DPR); cv.height=Math.round(AH*scale*DPR); ctx.setTransform(scale*DPR,0,0,scale*DPR,0,0); }
+addEventListener('resize',layout);
+
+/* ---- geometry ---- */
+function segDist(px,py,x1,y1,x2,y2){ const dx=x2-x1,dy=y2-y1,L2=dx*dx+dy*dy; let t=L2?((px-x1)*dx+(py-y1)*dy)/L2:0; t=t<0?0:t>1?1:t; return Math.hypot(px-(x1+dx*t),py-(y1+dy*t)); }
+
+/* ---- hazard positions at current clock ---- */
+function beamEnd(b){ const a=b.ang0+b.spd*clock; return [b.x+Math.cos(a)*b.len, b.y+Math.sin(a)*b.len]; }
+function moverPos(m){ const t=((clock%m.period)+m.period)%m.period / m.period; // ping-pong
+  const tt=t<0.5?t*2:(1-(t-0.5)*2); const a=m.path[0],b=m.path[1]; return [a.x+(b.x-a.x)*tt, a.y+(b.y-a.y)*tt]; }
+function lethal(px,py){
+  for(const b of L.beams){ const [ex,ey]=beamEnd(b); if(segDist(px,py,b.x,b.y,ex,ey)<b.th+player.r) return true; }
+  for(const m of L.movers){ const [mx,my]=moverPos(m); if(Math.hypot(px-mx,py-my)<m.r+player.r) return true; }
+  return false;
+}
+
+/* ---- flow ---- */
+function loadLevel(i){ li=i; L=LEVELS[i]; walls=L.walls.slice();
+  player={x:L.start.x,y:L.start.y,r:9}; clock=0; timer=0; orbsGot=0;
+  L.orbs.forEach(o=>o.got=false); particles=[];
+  document.getElementById('lvl').textContent=(i+1)+' · '+L.name;
+  document.getElementById('hint').innerHTML=L.hint;
+  document.getElementById('bestV').textContent=best[i]?best[i].toFixed(1):'–';
+  updateHUD();
+}
+function resetLevel(){ deaths++; flash=0.4; SFX.die(); loadLevel(li); }
+function updateHUD(){ document.getElementById('timeV').textContent=timer.toFixed(1); document.getElementById('orbV').textContent=orbsGot+'/'+L.orbs.length; }
+function winLevel(){ phase='win'; SFX.win();
+  const t=timer, isBest=(!best[li]||t<best[li]); if(isBest){ best[li]=t; localStorage.setItem('still_best',JSON.stringify(best)); }
+  const last=li===LEVELS.length-1;
+  document.getElementById('winTag').textContent=last?'ALL CLEAR':'CLEAR';
+  document.getElementById('winTitle').textContent=last?'모든 시간을 건넜다':'통과!';
+  document.getElementById('winMsg').innerHTML=`${t.toFixed(1)}초 · 재시도 ${deaths}회` + (isBest?' · <b style="color:var(--amber)">최고기록!</b>':'');
+  document.getElementById('nextBtn').textContent=last?'처음부터':'다음 →';
+  setTimeout(()=>document.getElementById('winOv').classList.add('show'),500);
+}
+
+/* ---- update ---- */
+function update(dt){
+  timer+=dt;
+  let ix=(keys.r?1:0)-(keys.l?1:0), iy=(keys.d?1:0)-(keys.u?1:0);
+  const im=Math.hypot(ix,iy); if(im>0){ ix/=im; iy/=im; }
+  const SPEED=196;
+  const ox=player.x, oy=player.y;
+  let nx=player.x+ix*SPEED*dt, ny=player.y+iy*SPEED*dt;
+  nx=Math.max(player.r,Math.min(AW-player.r,nx)); ny=Math.max(player.r,Math.min(AH-player.r,ny));
+  // wall collision (push out)
+  player.x=nx; player.y=ny;
+  for(const w of walls){ const d=segDist(player.x,player.y,w[0],w[1],w[2],w[3]);
+    if(d<player.r+4){ // push away
+      const dx=w[2]-w[0],dy=w[3]-w[1],L2=dx*dx+dy*dy; let t=L2?((player.x-w[0])*dx+(player.y-w[1])*dy)/L2:0;t=Math.max(0,Math.min(1,t));
+      const cx=w[0]+dx*t,cy=w[1]+dy*t; let px=player.x-cx,py=player.y-cy,pl=Math.hypot(px,py)||1;
+      player.x=cx+px/pl*(player.r+4); player.y=cy+py/pl*(player.r+4); } }
+  // time advances by ACTUAL distance moved
+  const moved=Math.hypot(player.x-ox,player.y-oy);
+  clock+=moved;
+  // frozen indicator
+  document.getElementById('frozen').classList.toggle('on',moved<0.01);
+  // collect orbs
+  for(const o of L.orbs){ if(!o.got && Math.hypot(player.x-o.x,player.y-o.y)<player.r+11){ o.got=true; orbsGot++; SFX.orb();
+    for(let k=0;k<8;k++)particles.push({x:o.x,y:o.y,vx:rand(-1,1)*120,vy:rand(-1,1)*120,life:rand(0.3,0.6),r:rand(1,2.4),c:'255,210,122'}); updateHUD(); } }
+  // exit (after all orbs)
+  if(orbsGot>=L.orbs.length && Math.hypot(player.x-L.exit.x,player.y-L.exit.y)<player.r+18){ winLevel(); return; }
+  // death
+  if(lethal(player.x,player.y)){ resetLevel(); return; }
+  if(flash>0)flash-=dt;
+  for(let i=particles.length-1;i>=0;i--){const p=particles[i];p.life-=dt;if(p.life<=0){particles.splice(i,1);continue;}p.x+=p.vx*dt;p.y+=p.vy*dt;}
+  updateHUD();
+}
+function rand(a,b){return a+Math.random()*(b-a);}
+
+/* ---- loop ---- */
+let lastT=perf(); function perf(){return performance?performance.now():0;}
+function frame(t){ let dt=Math.min(0.033,(t-lastT)/1000); lastT=t; if(phase==='play')update(dt); render(t); requestAnimationFrame(frame); }
+
+/* ---- render ---- */
+function render(t){
+  const tt=t/1000;
+  ctx.clearRect(0,0,AW,AH); ctx.fillStyle='#07080f'; ctx.fillRect(0,0,AW,AH);
+  // grid
+  ctx.strokeStyle='rgba(255,255,255,.02)'; for(let x=46;x<AW;x+=46){ctx.beginPath();ctx.moveTo(x,0);ctx.lineTo(x,AH);ctx.stroke();} for(let y=46;y<AH;y+=46){ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(AW,y);ctx.stroke();}
+  if(!L){ return; }
+  // walls
+  ctx.strokeStyle='#2a2f57'; ctx.lineWidth=10; ctx.lineCap='round'; for(const w of walls){ctx.beginPath();ctx.moveTo(w[0],w[1]);ctx.lineTo(w[2],w[3]);ctx.stroke();}
+  // exit
+  const eOK=orbsGot>=L.orbs.length; const ep=0.5+0.5*Math.sin(tt*2.5);
+  ctx.save(); ctx.globalCompositeOperation='lighter'; const col=eOK?'150,255,210':'110,120,160';
+  const g=ctx.createRadialGradient(L.exit.x,L.exit.y,2,L.exit.x,L.exit.y,40+ep*8); g.addColorStop(0,`rgba(${col},.7)`);g.addColorStop(1,`rgba(${col},0)`);
+  ctx.fillStyle=g; ctx.beginPath();ctx.arc(L.exit.x,L.exit.y,40+ep*8,0,6.283);ctx.fill(); ctx.restore();
+  ctx.strokeStyle=`rgba(${col},.9)`;ctx.lineWidth=2.5;ctx.beginPath();ctx.arc(L.exit.x,L.exit.y,18,0,6.283);ctx.stroke();
+  // orbs
+  for(const o of L.orbs){ if(o.got)continue; const pu=0.6+0.4*Math.sin(tt*4+o.x);
+    ctx.save();ctx.globalCompositeOperation='lighter'; const g2=ctx.createRadialGradient(o.x,o.y,1,o.x,o.y,16);
+    g2.addColorStop(0,`rgba(255,220,150,${.9*pu})`);g2.addColorStop(1,'rgba(255,200,110,0)'); ctx.fillStyle=g2;ctx.beginPath();ctx.arc(o.x,o.y,16,0,6.283);ctx.fill();ctx.restore();
+    ctx.fillStyle='#fff2cf';ctx.beginPath();ctx.arc(o.x,o.y,3,0,6.283);ctx.fill(); }
+  // beams
+  for(const b of L.beams){ const [ex,ey]=beamEnd(b);
+    ctx.save();ctx.globalCompositeOperation='lighter';
+    ctx.strokeStyle='rgba(255,90,110,.18)';ctx.lineWidth=b.th*2+16;ctx.lineCap='round';ctx.beginPath();ctx.moveTo(b.x,b.y);ctx.lineTo(ex,ey);ctx.stroke();
+    ctx.restore();
+    ctx.strokeStyle='rgba(255,120,135,.95)';ctx.lineWidth=b.th*2;ctx.lineCap='round';ctx.beginPath();ctx.moveTo(b.x,b.y);ctx.lineTo(ex,ey);ctx.stroke();
+    ctx.fillStyle='#ffd0d6';ctx.beginPath();ctx.arc(b.x,b.y,7,0,6.283);ctx.fill(); }
+  // movers
+  for(const m of L.movers){ const [mx,my]=moverPos(m);
+    ctx.save();ctx.globalCompositeOperation='lighter'; const g3=ctx.createRadialGradient(mx,my,1,mx,my,m.r*2);
+    g3.addColorStop(0,'rgba(255,90,110,.7)');g3.addColorStop(1,'rgba(255,90,110,0)');ctx.fillStyle=g3;ctx.beginPath();ctx.arc(mx,my,m.r*2,0,6.283);ctx.fill();ctx.restore();
+    ctx.fillStyle='#ff5a6e';ctx.beginPath();ctx.arc(mx,my,m.r,0,6.283);ctx.fill();
+    ctx.strokeStyle='rgba(255,255,255,.4)';ctx.lineWidth=1.5;ctx.stroke(); }
+  // player
+  ctx.save();ctx.globalCompositeOperation='lighter'; const g4=ctx.createRadialGradient(player.x,player.y,1,player.x,player.y,22);
+  g4.addColorStop(0,'rgba(159,240,255,.55)');g4.addColorStop(1,'rgba(159,240,255,0)');ctx.fillStyle=g4;ctx.beginPath();ctx.arc(player.x,player.y,22,0,6.283);ctx.fill();ctx.restore();
+  ctx.fillStyle='#0c1224';ctx.beginPath();ctx.arc(player.x,player.y,player.r,0,6.283);ctx.fill();
+  ctx.strokeStyle='rgba(159,240,255,.95)';ctx.lineWidth=2;ctx.stroke();
+  // particles
+  ctx.save();ctx.globalCompositeOperation='lighter'; for(const p of particles){ctx.globalAlpha=Math.max(0,Math.min(1,p.life));ctx.fillStyle='rgb('+p.c+')';ctx.beginPath();ctx.arc(p.x,p.y,p.r,0,6.283);ctx.fill();}ctx.globalAlpha=1;ctx.restore();
+  if(flash>0){ ctx.fillStyle=`rgba(255,90,110,${flash*0.4})`; ctx.fillRect(0,0,AW,AH); }
+  const vg=ctx.createRadialGradient(AW/2,AH/2,AH*0.4,AW/2,AH/2,AH*0.92);vg.addColorStop(0,'rgba(0,0,0,0)');vg.addColorStop(1,'rgba(0,0,0,0.5)');ctx.fillStyle=vg;ctx.fillRect(0,0,AW,AH);
+}
+
+/* ---- buttons ---- */
+document.getElementById('startBtn').onclick=()=>{ ac(); document.getElementById('startOv').classList.remove('show'); phase='play'; deaths=0; loadLevel(0); };
+document.getElementById('nextBtn').onclick=()=>{ document.getElementById('winOv').classList.remove('show'); const last=li===LEVELS.length-1; phase='play'; loadLevel(last?0:li+1); };
+
+/* ---- boot ---- */
+layout(); requestAnimationFrame(frame);
+</script>
+</body>
+</html>
