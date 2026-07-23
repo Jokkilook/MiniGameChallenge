@@ -1,0 +1,636 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+<title>그림자 서바이벌 · Umbra Survivor</title>
+<style>
+  :root{
+    --bg:#07080f; --ink:#eef1ff; --muted:#8b90c4;
+    --amber:#ffd27a; --amber2:#ff9e5e; --wisp:#9ff0ff; --danger:#ff5a6e;
+    --panel:rgba(16,18,38,.9);
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%;background:radial-gradient(120% 120% at 50% 0%,#12142c 0%,#05060c 72%);
+    color:var(--ink);font-family:"Segoe UI",-apple-system,BlinkMacSystemFont,"Malgun Gothic",sans-serif;
+    overflow:hidden;-webkit-user-select:none;user-select:none;touch-action:none}
+  #wrap{position:fixed;inset:0;display:flex;align-items:center;justify-content:center}
+  #stage{position:relative;border-radius:16px;overflow:hidden;
+    box-shadow:0 30px 90px rgba(0,0,0,.65),0 0 0 1px rgba(255,255,255,.04)}
+  canvas{display:block;background:#05060d;border-radius:16px}
+
+  /* HUD */
+  #hud{position:absolute;left:0;right:0;top:0;display:flex;align-items:flex-start;gap:16px;
+    padding:14px 18px;pointer-events:none;z-index:5}
+  .stat .k{font-size:11px;letter-spacing:2px;color:var(--muted);text-transform:uppercase}
+  .stat .v{font-size:26px;font-weight:800;line-height:1.05;font-variant-numeric:tabular-nums}
+  #time .v{color:var(--wisp)}
+  #score .v{color:var(--amber)}
+  #best{margin-left:auto;text-align:right}
+  #best .v{font-size:18px;color:var(--muted)}
+  #mult{position:absolute;top:14px;left:50%;transform:translateX(-50%);text-align:center;opacity:0;transition:opacity .2s}
+  #mult.on{opacity:1}
+  #mult .m{font-size:30px;font-weight:900;color:var(--amber)}
+  #mult .l{font-size:10px;letter-spacing:3px;color:var(--muted)}
+
+  /* dash bar */
+  #dash{position:absolute;left:18px;bottom:16px;width:120px;height:8px;border-radius:6px;
+    background:rgba(255,255,255,.08);overflow:hidden;z-index:5}
+  #dash i{display:block;height:100%;width:100%;background:linear-gradient(90deg,var(--wisp),#5ad1ff);
+    transform-origin:left;transition:transform .05s linear}
+  #dashlbl{position:absolute;left:18px;bottom:28px;font-size:10px;letter-spacing:2px;color:var(--muted);z-index:5}
+
+  /* overlays */
+  .overlay{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;z-index:10;
+    background:radial-gradient(60% 60% at 50% 45%,rgba(8,9,18,.55),rgba(4,5,11,.95));
+    opacity:0;visibility:hidden;transition:opacity .35s}
+  .overlay.show{opacity:1;visibility:visible}
+  .card{width:min(560px,88%);background:var(--panel);border:1px solid rgba(255,255,255,.08);
+    border-radius:20px;padding:32px 30px 28px;text-align:center;box-shadow:0 26px 70px rgba(0,0,0,.55)}
+  .card h1{margin:0;font-size:38px;letter-spacing:2px}
+  .card h1 small{display:block;font-size:12px;letter-spacing:7px;color:var(--wisp);margin-top:10px;font-weight:600}
+  .card p{color:var(--muted);line-height:1.7;font-size:14.5px;margin:16px 0 20px}
+  .keys{display:flex;gap:10px;justify-content:center;flex-wrap:wrap;margin:16px 0 22px}
+  .key{border:1px solid rgba(255,255,255,.14);border-radius:8px;padding:6px 11px;font-size:12.5px;background:rgba(255,255,255,.04)}
+  .key b{color:var(--wisp)}
+  .cta{cursor:pointer;border:none;border-radius:12px;padding:14px 34px;font-size:16px;font-weight:800;letter-spacing:.5px;
+    color:#221600;background:linear-gradient(180deg,var(--amber),var(--amber2));
+    box-shadow:0 10px 30px rgba(255,158,94,.35);transition:.15s}
+  .cta:hover{transform:translateY(-2px);box-shadow:0 14px 38px rgba(255,158,94,.5)}
+  .tag{display:inline-block;color:var(--wisp);font-size:12px;letter-spacing:3px;margin-bottom:6px}
+  .final{display:flex;gap:28px;justify-content:center;margin:8px 0 18px}
+  .final .k{font-size:11px;letter-spacing:2px;color:var(--muted)}
+  .final .v{font-size:34px;font-weight:800;font-variant-numeric:tabular-nums}
+  #goScore .v{color:var(--wisp)} #goBest .v{color:var(--amber)}
+  .newbest{color:var(--amber);font-weight:800;letter-spacing:1px;margin-bottom:6px;display:none}
+  .newbest.on{display:block}
+  .muteBtn{position:absolute;right:16px;bottom:14px;z-index:6;pointer-events:auto;cursor:pointer;
+    border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.05);color:var(--ink);
+    border-radius:10px;padding:7px 10px;font-size:13px}
+  /* mobile stick */
+  #stick{position:absolute;inset:0;z-index:4;display:none}
+  @media (hover:none) and (pointer:coarse){ #stick{display:block} }
+</style>
+</head>
+<body>
+<div id="wrap">
+  <div id="stage">
+    <canvas id="cv"></canvas>
+    <div id="hud">
+      <div class="stat" id="time"><div class="k">시간</div><div class="v" id="timeV">0.0</div></div>
+      <div class="stat" id="score"><div class="k">점수</div><div class="v" id="scoreV">0</div></div>
+      <div class="stat" id="best"><div class="k">최고</div><div class="v" id="bestV">0</div></div>
+    </div>
+    <div id="mult"><div class="m" id="multV">x2</div><div class="l">COMBO</div></div>
+    <div id="dashlbl">DASH</div>
+    <div id="dash"><i id="dashFill"></i></div>
+    <button class="muteBtn" id="muteBtn">🔊</button>
+    <div id="stick"></div>
+
+    <div class="overlay show" id="startOv">
+      <div class="card">
+        <span class="tag">ENDLESS · SURVIVAL</span>
+        <h1>그림자 서바이벌<small>U M B R A &nbsp; S U R V I V O R</small></h1>
+        <p>너는 <b style="color:var(--wisp)">그림자</b>. 빛에 닿으면 스러진다.<br>
+           휩쓰는 빛줄기를 피하고, 어둠 속 <b style="color:var(--amber)">불티</b>를 모아라.<br>
+           오래 버틸수록 점수는 오르고, 빛은 더 사나워진다.</p>
+        <div class="keys">
+          <span class="key"><b>← ↑ ↓ →</b> / WASD 이동</span>
+          <span class="key"><b>Space</b> 대시</span>
+          <span class="key">기둥 <b>뒤 그림자</b>에 숨어라</span>
+        </div>
+        <button class="cta" id="startBtn">시작</button>
+      </div>
+    </div>
+
+    <div class="overlay" id="goOv">
+      <div class="card">
+        <span class="tag" style="color:var(--danger)">빛에 스러졌다</span>
+        <div class="newbest" id="newBest">★ 신기록 ★</div>
+        <h1 style="font-size:28px;letter-spacing:1px" id="goTitle">GAME OVER</h1>
+        <div class="final">
+          <div id="goScore"><div class="k">점수</div><div class="v" id="goScoreV">0</div></div>
+          <div id="goBest"><div class="k">최고</div><div class="v" id="goBestV">0</div></div>
+        </div>
+        <p id="goSub">버틴 시간 <b id="goTime">0.0</b>초</p>
+        <button class="cta" id="retryBtn">다시 (한 판 더)</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+"use strict";
+/* ============================================================
+   그림자 서바이벌 · Umbra Survivor
+   Endless dodge-survival. You are a shadow; light kills. Hide in the
+   moving shadows cast by pillars, dodge sweeping beams and patrolling
+   orbs, collect motes. Survival time = score. It only gets harder.
+   ============================================================ */
+
+const cv = document.getElementById('cv');
+const ctx = cv.getContext('2d');
+let DPR = Math.max(1, Math.min(2, window.devicePixelRatio||1));
+let W=900, H=620;   // logical arena (px)
+
+/* ---------- audio ---------- */
+let AC=null, muted=false;
+function ac(){ if(!AC){ try{AC=new (window.AudioContext||window.webkitAudioContext)();}catch(e){} } return AC; }
+function tone(freq,dur=0.08,type='sine',vol=0.05,slideTo){
+  if(muted) return; const a=ac(); if(!a) return;
+  const o=a.createOscillator(), g=a.createGain();
+  o.type=type; o.frequency.value=freq;
+  if(slideTo) o.frequency.exponentialRampToValueAtTime(slideTo, a.currentTime+dur);
+  g.gain.value=0; o.connect(g); g.connect(a.destination);
+  const t=a.currentTime;
+  g.gain.linearRampToValueAtTime(vol,t+0.008);
+  g.gain.exponentialRampToValueAtTime(0.0001,t+dur);
+  o.start(t); o.stop(t+dur+0.02);
+}
+const SFX={
+  mote(){ tone(720,0.07,'sine',0.05,1040); },
+  combo(n){ tone(500+n*90,0.09,'triangle',0.05); },
+  dash(){ tone(300,0.12,'sawtooth',0.04,140); },
+  near(){ tone(1200,0.06,'sine',0.035,1600); },
+  wave(){ tone(200,0.25,'sine',0.05,120); tone(300,0.25,'sine',0.03,180); },
+  die(){ tone(220,0.5,'sawtooth',0.06,60); setTimeout(()=>tone(140,0.5,'sawtooth',0.05,50),80); },
+};
+
+/* ---------- input ---------- */
+const keys={};
+const KMAP={ArrowUp:'up',ArrowDown:'down',ArrowLeft:'left',ArrowRight:'right',
+  w:'up',s:'down',a:'left',d:'right',W:'up',S:'down',A:'left',D:'right'};
+addEventListener('keydown',e=>{
+  if(e.key===' '){ doDash(); e.preventDefault(); return; }
+  const k=KMAP[e.key]; if(k){ keys[k]=1; e.preventDefault(); }
+});
+addEventListener('keyup',e=>{ const k=KMAP[e.key]; if(k) keys[k]=0; });
+// touch stick (relative drag)
+let touchDir={x:0,y:0}, touchActive=false, touchStart=null;
+const stick=document.getElementById('stick');
+stick.addEventListener('touchstart',e=>{ const t=e.touches[0]; touchStart={x:t.clientX,y:t.clientY}; touchActive=true; e.preventDefault(); },{passive:false});
+stick.addEventListener('touchmove',e=>{ if(!touchStart)return; const t=e.touches[0]; let dx=t.clientX-touchStart.x, dy=t.clientY-touchStart.y; const m=Math.hypot(dx,dy)||1; const c=Math.min(1,m/60); touchDir={x:dx/m*c,y:dy/m*c}; e.preventDefault(); },{passive:false});
+stick.addEventListener('touchend',e=>{ touchActive=false; touchDir={x:0,y:0}; touchStart=null; if(e.touches.length===0 && Math.random()<0){} },{passive:false});
+// double tap = dash
+let lastTap=0;
+stick.addEventListener('touchstart',()=>{ const now=perfNow(); if(now-lastTap<280) doDash(); lastTap=now; });
+
+/* ---------- state ---------- */
+let running=false, gameOver=false;
+let player, pillars=[], lights=[], motes=[], particles=[];
+let elapsed=0, score=0, best=+(localStorage.getItem('umbra_survivor_best')||0);
+let mult=1, comboTimer=0, moteTimer=0;
+let dashCD=0, dashT=0, invuln=0, spawnGrace=0;
+let shake=0, slowmo=1, nearCd=0, waveIdx=0, nextWave=0, flashT=0;
+let facing={x:0,y:-1};
+
+document.getElementById('bestV').textContent = Math.floor(best);
+
+/* ---------- helpers ---------- */
+function perfNow(){ return (typeof performance!=='undefined')?performance.now():0; }
+const TAU=Math.PI*2;
+function clamp(v,a,b){ return v<a?a:v>b?b:v; }
+function angDiff(a,b){ let d=(a-b)%TAU; if(d>Math.PI)d-=TAU; if(d<-Math.PI)d+=TAU; return d; }
+function rand(a,b){ return a+Math.random()*(b-a); }
+
+// segment (a->b) blocked by any pillar? (light occlusion)
+function segBlocked(ax,ay,bx,by){
+  for(const p of pillars){
+    // distance from pillar center to segment
+    const dx=bx-ax, dy=by-ay; const L2=dx*dx+dy*dy||1;
+    let t=((p.x-ax)*dx+(p.y-ay)*dy)/L2; t=clamp(t,0,1);
+    const cx=ax+dx*t, cy=ay+dy*t;
+    const dd=(cx-p.x)**2+(cy-p.y)**2;
+    if(dd < p.r*p.r) return true;
+  }
+  return false;
+}
+
+/* ---------- layout ---------- */
+function layout(){
+  const vw=Math.max(320, innerWidth||900), vh=Math.max(240, innerHeight||620);
+  const maxW=Math.max(320, Math.min(vw-20, 1000)), maxH=Math.max(240, Math.min(vh-20, 720));
+  // keep ~3:2
+  let w=maxW, h=w*0.68; if(h>maxH){ h=maxH; w=h/0.68; }
+  W=Math.round(w); H=Math.round(h);
+  cv.style.width=W+'px'; cv.style.height=H+'px';
+  cv.width=Math.round(W*DPR); cv.height=Math.round(H*DPR);
+  ctx.setTransform(DPR,0,0,DPR,0,0);
+  // offscreen light buffer (for per-light shadow compositing)
+  if(!lbuf){ lbuf=document.createElement('canvas'); lctx=lbuf.getContext('2d'); }
+  lbuf.width=cv.width; lbuf.height=cv.height;
+}
+let lbuf=null, lctx=null;
+addEventListener('resize',()=>{ layout(); if(pillars.length) placePillars(); });
+
+function placePillars(){
+  // a few pillars that cast moving shadows; symmetric-ish, avoid center spawn
+  pillars=[];
+  const pad=Math.min(W,H)*0.16;
+  const cfg=[
+    [W*0.26,H*0.30,Math.min(W,H)*0.055],
+    [W*0.74,H*0.30,Math.min(W,H)*0.05],
+    [W*0.30,H*0.74,Math.min(W,H)*0.05],
+    [W*0.70,H*0.72,Math.min(W,H)*0.06],
+    [W*0.50,H*0.50,Math.min(W,H)*0.045],
+  ];
+  for(const [x,y,r] of cfg) pillars.push({x,y,r});
+}
+
+/* ---------- lights ---------- */
+// Lighthouse: rotating wedge beam from a pivot on the arena edge/corner.
+function makeBeam(opts){
+  return Object.assign({type:'beam', px:W*0.5, py:H*0.5, ang:rand(0,TAU),
+    omega:0.5, half:0.22, range:Math.hypot(W,H), warm:true}, opts);
+}
+// Orb: patrolling point light bouncing in the arena.
+function makeOrb(opts){
+  const a=rand(0,TAU);
+  return Object.assign({type:'orb', x:rand(W*0.2,W*0.8), y:rand(H*0.2,H*0.8),
+    vx:Math.cos(a), vy:Math.sin(a), speed:90, r:Math.min(W,H)*0.11}, opts);
+}
+
+function lethalAt(x,y){
+  for(const L of lights){
+    if(L.type==='beam'){
+      const dx=x-L.px, dy=y-L.py; const d=Math.hypot(dx,dy);
+      if(d>L.range) continue;
+      if(Math.abs(angDiff(Math.atan2(dy,dx), L.ang))>L.half) continue;
+      if(!segBlocked(L.px,L.py,x,y)) return L;
+    } else if(L.type==='orb'){
+      const d=Math.hypot(x-L.x,y-L.y);
+      if(d>L.r) continue;
+      if(!segBlocked(L.x,L.y,x,y)) return L;
+    }
+  }
+  return null;
+}
+// nearest "danger distance" (negative if inside) for near-miss detection
+function edgeDistance(x,y){
+  let best=1e9;
+  for(const L of lights){
+    if(L.type==='beam'){
+      const dx=x-L.px, dy=y-L.py; const d=Math.hypot(dx,dy);
+      if(d>L.range+40) continue;
+      if(segBlocked(L.px,L.py,x,y)) continue;
+      const ad=Math.abs(angDiff(Math.atan2(dy,dx),L.ang));
+      const perp=Math.sin(Math.max(0,ad-L.half))*d; // approx dist to beam edge
+      best=Math.min(best, Math.max(0,perp));
+    } else if(L.type==='orb'){
+      if(segBlocked(L.x,L.y,x,y)) continue;
+      best=Math.min(best, Math.abs(Math.hypot(x-L.x,y-L.y)-L.r));
+    }
+  }
+  return best;
+}
+
+/* ---------- difficulty director ---------- */
+function resetWaves(){
+  lights=[ makeBeam({px:W*0.5,py:-H*0.05,ang:Math.PI/2,omega:0.45,half:0.20}) ];
+  waveIdx=0; nextWave=10;
+}
+function escalate(){
+  waveIdx++;
+  // ramp existing
+  for(const L of lights){ if(L.type==='beam'){ L.omega=Math.sign(L.omega||1)*(0.42+waveIdx*0.05); } if(L.type==='orb'){ L.speed=90+waveIdx*14; } }
+  // add a new light on some waves — spawned FAIR (never onto the player)
+  const corners=[[W*0.5,-H*0.05],[-W*0.05,H*0.5],[W*1.05,H*0.5],[W*0.5,H*1.05]];
+  if(waveIdx%2===1){
+    const c=corners[(waveIdx>>1)%4];
+    // aim the beam AWAY from the player so it sweeps toward them gradually (telegraph)
+    const toPlayer=Math.atan2(player.y-c[1], player.x-c[0]);
+    lights.push(makeBeam({px:c[0],py:c[1],ang:toPlayer+Math.PI,
+      omega:(Math.random()<0.5?1:-1)*(0.4+waveIdx*0.04),half:0.16+Math.random()*0.06}));
+  } else {
+    // place the orb far from the player
+    let ox,oy,tries=0;
+    do{ ox=rand(W*0.15,W*0.85); oy=rand(H*0.15,H*0.85); tries++; }
+    while(tries<30 && (ox-player.x)**2+(oy-player.y)**2 < 260*260);
+    const a=rand(0,TAU);
+    lights.push(makeOrb({x:ox,y:oy,vx:Math.cos(a),vy:Math.sin(a),speed:100+waveIdx*12, r:Math.min(W,H)*(0.09+Math.random()*0.03)}));
+  }
+  nextWave += Math.max(6, 11-waveIdx*0.4);
+  invuln=Math.max(invuln,0.6);   // brief grace so a new light can never be a cheap kill
+  SFX.wave(); flashT=0.4;
+}
+
+/* ---------- game control ---------- */
+function startGame(){
+  layout(); placePillars();
+  player={x:W*0.5,y:H*0.62,vx:0,vy:0,r:9};
+  motes=[]; particles=[]; elapsed=0; score=0; mult=1; comboTimer=0; moteTimer=0.6;
+  dashCD=0; dashT=0; invuln=0; spawnGrace=1.2; shake=0; slowmo=1; nearCd=0; flashT=0;
+  resetWaves();
+  running=true; gameOver=false;
+  document.getElementById('startOv').classList.remove('show');
+  document.getElementById('goOv').classList.remove('show');
+}
+function endGame(){
+  running=false; gameOver=true; SFX.die();
+  shake=22; slowmo=0.12;
+  for(let i=0;i<40;i++) particles.push({x:player.x,y:player.y,vx:rand(-1,1)*220,vy:rand(-1,1)*220,life:rand(0.5,1.1),r:rand(1,3),c:'159,240,255'});
+  const s=Math.floor(score);
+  const isBest=s>best; if(isBest){ best=s; localStorage.setItem('umbra_survivor_best',s); }
+  setTimeout(()=>{
+    document.getElementById('goScoreV').textContent=s;
+    document.getElementById('goBestV').textContent=Math.floor(best);
+    document.getElementById('goTime').textContent=elapsed.toFixed(1);
+    document.getElementById('bestV').textContent=Math.floor(best);
+    document.getElementById('newBest').classList.toggle('on',isBest);
+    document.getElementById('goOv').classList.add('show');
+  }, 700);
+}
+
+function doDash(){
+  if(!running||dashCD>0||dashT>0) return;
+  let dx=facing.x, dy=facing.y;
+  const m=Math.hypot(dx,dy)||1; dx/=m; dy/=m;
+  player.vx=dx*720; player.vy=dy*720;
+  dashT=0.14; invuln=0.22; dashCD=0.8; SFX.dash();
+  for(let i=0;i<10;i++) particles.push({x:player.x,y:player.y,vx:-dx*rand(40,160)+rand(-40,40),vy:-dy*rand(40,160)+rand(-40,40),life:rand(0.2,0.5),r:rand(1,2.4),c:'159,240,255'});
+}
+
+/* ---------- motes ---------- */
+function spawnMote(){
+  for(let tries=0;tries<40;tries++){
+    const x=rand(W*0.1,W*0.9), y=rand(H*0.1,H*0.9);
+    if(lethalAt(x,y)) continue;
+    let ok=true; for(const p of pillars){ if((x-p.x)**2+(y-p.y)**2<(p.r+16)**2){ok=false;break;} }
+    if(!ok) continue;
+    if((x-player.x)**2+(y-player.y)**2 < 90*90) continue;
+    motes.push({x,y,born:elapsed,ph:rand(0,TAU)});
+    return;
+  }
+}
+
+/* ---------- update ---------- */
+function update(dt){
+  elapsed+=dt;
+  // input dir
+  let ix=(keys.right?1:0)-(keys.left?1:0);
+  let iy=(keys.down?1:0)-(keys.up?1:0);
+  if(touchActive){ ix=touchDir.x; iy=touchDir.y; }
+  const im=Math.hypot(ix,iy);
+  if(im>0.05){ facing={x:ix/im,y:iy/im}; }
+  // movement (accel toward input)
+  const SPEED=248;
+  if(dashT<=0){
+    const tx=ix*SPEED, ty=iy*SPEED;
+    player.vx += (tx-player.vx)*Math.min(1,dt*14);
+    player.vy += (ty-player.vy)*Math.min(1,dt*14);
+  } else {
+    player.vx*=Math.pow(0.02,dt); player.vy*=Math.pow(0.02,dt);
+  }
+  player.x=clamp(player.x+player.vx*dt, player.r, W-player.r);
+  player.y=clamp(player.y+player.vy*dt, player.r, H-player.r);
+  // collide with pillars (can't walk through)
+  for(const p of pillars){
+    const dx=player.x-p.x, dy=player.y-p.y; const d=Math.hypot(dx,dy), min=p.r+player.r;
+    if(d<min){ const nx=dx/(d||1), ny=dy/(d||1); player.x=p.x+nx*min; player.y=p.y+ny*min; player.vx*=0.4; player.vy*=0.4; }
+  }
+  // timers
+  if(dashT>0) dashT-=dt; if(invuln>0) invuln-=dt; if(dashCD>0) dashCD-=dt;
+  if(spawnGrace>0) spawnGrace-=dt; if(nearCd>0) nearCd-=dt; if(flashT>0) flashT-=dt;
+  if(shake>0) shake=Math.max(0,shake-dt*40);
+
+  // waves
+  if(elapsed>=nextWave) escalate();
+
+  // lights
+  for(const L of lights){
+    if(L.type==='beam'){ L.ang=(L.ang+L.omega*dt)%TAU; }
+    else if(L.type==='orb'){
+      L.x+=L.vx*L.speed*dt; L.y+=L.vy*L.speed*dt;
+      if(L.x<L.r){L.x=L.r;L.vx=Math.abs(L.vx);} if(L.x>W-L.r){L.x=W-L.r;L.vx=-Math.abs(L.vx);}
+      if(L.y<L.r){L.y=L.r;L.vy=Math.abs(L.vy);} if(L.y>H-L.r){L.y=H-L.r;L.vy=-Math.abs(L.vy);}
+      // bounce off pillars
+      for(const p of pillars){ const dx=L.x-p.x,dy=L.y-p.y,d=Math.hypot(dx,dy),min=p.r+L.r*0.5; if(d<min){ const nx=dx/(d||1),ny=dy/(d||1); L.x=p.x+nx*min;L.y=p.y+ny*min; const dot=L.vx*nx+L.vy*ny; L.vx-=2*dot*nx; L.vy-=2*dot*ny; } }
+    }
+  }
+
+  // motes
+  moteTimer-=dt;
+  const targetMotes=3;
+  if(moteTimer<=0 && motes.length<targetMotes+2){ spawnMote(); moteTimer=rand(0.8,1.6); }
+  for(let i=motes.length-1;i>=0;i--){
+    const m=motes[i];
+    // mote consumed by light? (it fades if lit)
+    if(lethalAt(m.x,m.y)){ motes.splice(i,1); continue; }
+    if((player.x-m.x)**2+(player.y-m.y)**2 < (player.r+11)**2){
+      motes.splice(i,1);
+      comboTimer=3; mult=Math.min(5,mult+1);
+      const gain=Math.round(30*mult);
+      score+=gain; SFX.mote(); if(mult>=2) SFX.combo(mult);
+      for(let k=0;k<10;k++) particles.push({x:m.x,y:m.y,vx:rand(-1,1)*120,vy:rand(-1,1)*120,life:rand(0.3,0.6),r:rand(1,2.5),c:'255,210,122'});
+    }
+  }
+  // combo decay
+  if(comboTimer>0){ comboTimer-=dt; if(comboTimer<=0){ mult=1; } }
+
+  // survival score
+  score += dt*10*Math.max(1,mult*0.5+0.5);
+
+  // near-miss
+  if(spawnGrace<=0 && invuln<=0 && nearCd<=0){
+    const ed=edgeDistance(player.x,player.y);
+    if(ed>0 && ed<14){ slowmo=Math.min(slowmo,0.4); nearCd=0.6; score+=8; SFX.near(); flashT=Math.max(flashT,0.15); }
+  }
+  // recover slowmo
+  slowmo += (1-slowmo)*Math.min(1,dt*4);
+
+  // death check
+  if(running && spawnGrace<=0 && invuln<=0){
+    if(lethalAt(player.x,player.y)) endGame();
+  }
+
+  // particles
+  for(let i=particles.length-1;i>=0;i--){
+    const p=particles[i]; p.life-=dt; if(p.life<=0){ particles.splice(i,1); continue; }
+    p.x+=p.vx*dt; p.y+=p.vy*dt; p.vx*=Math.pow(0.1,dt); p.vy*=Math.pow(0.1,dt);
+  }
+
+  // HUD
+  document.getElementById('timeV').textContent=elapsed.toFixed(1);
+  document.getElementById('scoreV').textContent=Math.floor(score);
+  const mv=document.getElementById('mult');
+  if(mult>1){ mv.classList.add('on'); document.getElementById('multV').textContent='x'+mult; } else mv.classList.remove('on');
+  document.getElementById('dashFill').style.transform='scaleX('+(1-clamp(dashCD/0.8,0,1))+')';
+}
+
+/* ---------- render ---------- */
+function render(now){
+  const t=now/1000;
+  let ox=0,oy=0;
+  if(shake>0){ ox=rand(-1,1)*shake; oy=rand(-1,1)*shake; }
+  ctx.setTransform(DPR,0,0,DPR,ox*DPR,oy*DPR);
+  ctx.clearRect(-40,-40,W+80,H+80);
+
+  // arena floor
+  ctx.fillStyle='#080a15'; ctx.fillRect(0,0,W,H);
+  // subtle grid
+  ctx.strokeStyle='rgba(255,255,255,.018)'; ctx.lineWidth=1;
+  const gs=46;
+  for(let x=gs;x<W;x+=gs){ ctx.beginPath();ctx.moveTo(x,0);ctx.lineTo(x,H);ctx.stroke(); }
+  for(let y=gs;y<H;y+=gs){ ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(W,y);ctx.stroke(); }
+
+  // lights: render each on the offscreen buffer, carve ITS OWN pillar shadows,
+  // then add to the scene. This keeps one light's shadow from cutting another's glow.
+  if(lctx){
+    for(const L of lights){
+      lctx.setTransform(DPR,0,0,DPR,0,0);
+      lctx.clearRect(0,0,W,H);
+      lctx.globalCompositeOperation='source-over';
+      drawLightGlow(lctx,L,t);
+      lctx.globalCompositeOperation='destination-out';
+      drawPillarShadows(lctx,L);
+      lctx.globalCompositeOperation='source-over';
+      // composite additively (drawImage ignores the current transform's for src, uses dest transform)
+      ctx.save();
+      ctx.globalCompositeOperation='lighter';
+      ctx.setTransform(1,0,0,1,ox*DPR,oy*DPR);
+      ctx.drawImage(lbuf,0,0);
+      ctx.restore();
+    }
+    ctx.setTransform(DPR,0,0,DPR,ox*DPR,oy*DPR);
+  }
+
+  // pillars
+  for(const p of pillars) drawPillar(p);
+
+  // motes
+  ctx.save(); ctx.globalCompositeOperation='lighter';
+  for(const m of motes){
+    const pulse=0.6+0.4*Math.sin(t*4+m.ph);
+    const g=ctx.createRadialGradient(m.x,m.y,0,m.x,m.y,16);
+    g.addColorStop(0,'rgba(255,225,150,'+(0.9*pulse)+')');
+    g.addColorStop(0.5,'rgba(255,190,110,'+(0.35*pulse)+')');
+    g.addColorStop(1,'rgba(255,180,90,0)');
+    ctx.fillStyle=g; ctx.beginPath(); ctx.arc(m.x,m.y,16,0,TAU); ctx.fill();
+    ctx.fillStyle='rgba(255,245,220,'+pulse+')'; ctx.beginPath(); ctx.arc(m.x,m.y,2.4,0,TAU); ctx.fill();
+  }
+  ctx.restore();
+
+  // particles
+  ctx.save(); ctx.globalCompositeOperation='lighter';
+  for(const p of particles){
+    ctx.globalAlpha=clamp(p.life,0,1);
+    ctx.fillStyle='rgb('+p.c+')'; ctx.beginPath(); ctx.arc(p.x,p.y,p.r,0,TAU); ctx.fill();
+  }
+  ctx.globalAlpha=1; ctx.restore();
+
+  // player wisp
+  if(!gameOver||slowmo>0.13) drawPlayer(t);
+
+  // near-miss / wave flash
+  if(flashT>0){ ctx.fillStyle='rgba(159,240,255,'+(flashT*0.25)+')'; ctx.fillRect(0,0,W,H); }
+
+  // vignette
+  const vg=ctx.createRadialGradient(W/2,H/2,Math.min(W,H)*0.32,W/2,H/2,Math.max(W,H)*0.72);
+  vg.addColorStop(0,'rgba(0,0,0,0)'); vg.addColorStop(1,'rgba(0,0,0,0.6)');
+  ctx.fillStyle=vg; ctx.fillRect(0,0,W,H);
+}
+
+function drawLightGlow(c,L,t){
+  if(L.type==='beam'){
+    const R=L.range;
+    c.save();
+    c.translate(L.px,L.py); c.rotate(L.ang);
+    const g=c.createRadialGradient(0,0,10,0,0,R);
+    g.addColorStop(0,'rgba(255,225,160,0.5)');
+    g.addColorStop(0.5,'rgba(255,190,110,0.22)');
+    g.addColorStop(1,'rgba(255,170,90,0)');
+    c.fillStyle=g;
+    c.beginPath(); c.moveTo(0,0);
+    c.arc(0,0,R,-L.half,L.half); c.closePath(); c.fill();
+    c.restore();
+    // source glow
+    c.fillStyle='rgba(255,240,200,0.5)'; c.beginPath(); c.arc(L.px,L.py,8,0,TAU); c.fill();
+  } else {
+    const g=c.createRadialGradient(L.x,L.y,4,L.x,L.y,L.r*1.15);
+    g.addColorStop(0,'rgba(255,225,160,0.85)');
+    g.addColorStop(0.6,'rgba(255,185,110,0.4)');
+    g.addColorStop(1,'rgba(255,170,90,0)');
+    c.fillStyle=g; c.beginPath(); c.arc(L.x,L.y,L.r*1.15,0,TAU); c.fill();
+  }
+}
+
+// umbra polygons behind pillars from a light source point (tangent geometry).
+// Drawn with destination-out on the light buffer, so it only erases THIS light.
+function drawPillarShadows(c,L){
+  const sx = L.type==='beam'? L.px : L.x;
+  const sy = L.type==='beam'? L.py : L.y;
+  c.fillStyle='#000';
+  const far=Math.hypot(W,H)*1.6;
+  for(const p of pillars){
+    const dx=p.x-sx, dy=p.y-sy, d=Math.hypot(dx,dy);
+    if(d<=p.r) continue;                       // source inside pillar: skip
+    const beta=Math.atan2(dy,dx);
+    const alpha=Math.asin(clamp(p.r/d,0,1));   // half-angle of tangent cone
+    const Lt=Math.sqrt(Math.max(0,d*d-p.r*p.r)); // distance to the tangent points
+    const a1=beta+alpha, a2=beta-alpha;
+    const t1x=sx+Math.cos(a1)*Lt, t1y=sy+Math.sin(a1)*Lt;
+    const t2x=sx+Math.cos(a2)*Lt, t2y=sy+Math.sin(a2)*Lt;
+    const f1x=sx+Math.cos(a1)*far, f1y=sy+Math.sin(a1)*far;
+    const f2x=sx+Math.cos(a2)*far, f2y=sy+Math.sin(a2)*far;
+    c.beginPath();
+    c.moveTo(t1x,t1y); c.lineTo(f1x,f1y); c.lineTo(f2x,f2y); c.lineTo(t2x,t2y);
+    c.closePath(); c.fill();
+  }
+}
+
+function drawPillar(p){
+  const g=ctx.createRadialGradient(p.x-p.r*0.3,p.y-p.r*0.3,p.r*0.2,p.x,p.y,p.r);
+  g.addColorStop(0,'#20244a'); g.addColorStop(1,'#141731');
+  ctx.fillStyle=g; ctx.beginPath(); ctx.arc(p.x,p.y,p.r,0,TAU); ctx.fill();
+  ctx.strokeStyle='rgba(159,240,255,.12)'; ctx.lineWidth=1.5; ctx.stroke();
+}
+
+function drawPlayer(t){
+  const p=player; const bob=Math.sin(t*3)*1.5;
+  const inv = invuln>0;
+  const col = inv? '255,255,255':'159,240,255';
+  ctx.save(); ctx.globalCompositeOperation='lighter';
+  const g=ctx.createRadialGradient(p.x,p.y+bob,1,p.x,p.y+bob,26);
+  g.addColorStop(0,'rgba('+col+',0.55)'); g.addColorStop(0.5,'rgba('+col+',0.16)'); g.addColorStop(1,'rgba('+col+',0)');
+  ctx.fillStyle=g; ctx.beginPath(); ctx.arc(p.x,p.y+bob,26,0,TAU); ctx.fill();
+  ctx.restore();
+  // trail
+  const sp=Math.hypot(p.vx,p.vy);
+  if(sp>60){ ctx.strokeStyle='rgba('+col+',0.25)'; ctx.lineWidth=p.r*1.3; ctx.lineCap='round';
+    ctx.beginPath(); ctx.moveTo(p.x,p.y+bob); ctx.lineTo(p.x-p.vx*0.04,p.y-p.vy*0.04+bob); ctx.stroke(); }
+  ctx.fillStyle='#0c1224'; ctx.beginPath(); ctx.arc(p.x,p.y+bob,p.r,0,TAU); ctx.fill();
+  ctx.strokeStyle='rgba('+col+',0.95)'; ctx.lineWidth=2; ctx.stroke();
+  // eyes
+  ctx.fillStyle='rgba('+col+',0.95)';
+  const eo=p.r*0.4, ex=facing.x*1.5, ey=facing.y*1.5;
+  ctx.beginPath(); ctx.arc(p.x-eo+ex,p.y-1+bob+ey,1.7,0,TAU); ctx.fill();
+  ctx.beginPath(); ctx.arc(p.x+eo+ex,p.y-1+bob+ey,1.7,0,TAU); ctx.fill();
+}
+
+/* ---------- loop ---------- */
+let lastT=perfNow();
+function frame(now){
+  let dt=Math.min(0.05,(now-lastT)/1000); lastT=now;
+  if(running){ update(dt*slowmo); }
+  else if(gameOver){ // keep particles/shake animating
+    for(let i=particles.length-1;i>=0;i--){ const p=particles[i]; p.life-=dt; if(p.life<=0){particles.splice(i,1);continue;} p.x+=p.vx*dt;p.y+=p.vy*dt;p.vx*=Math.pow(0.1,dt);p.vy*=Math.pow(0.1,dt);}
+    if(shake>0) shake=Math.max(0,shake-dt*40);
+    slowmo += (1-slowmo)*Math.min(1,dt*2);
+  }
+  render(now);
+  requestAnimationFrame(frame);
+}
+
+/* ---------- buttons ---------- */
+document.getElementById('startBtn').onclick=()=>{ ac(); startGame(); };
+document.getElementById('retryBtn').onclick=()=>{ startGame(); };
+document.getElementById('muteBtn').onclick=function(){ muted=!muted; this.textContent=muted?'🔇':'🔊'; if(!muted) ac(); };
+
+/* ---------- boot ---------- */
+layout(); placePillars();
+player={x:W*0.5,y:H*0.62,vx:0,vy:0,r:9};
+resetWaves();
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>
