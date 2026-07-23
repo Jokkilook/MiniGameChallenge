@@ -1,0 +1,276 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+<title>튕김 · Ricochet</title>
+<style>
+  :root{ --ink:#eef1ff; --muted:#8b90c4; --amber:#ffd27a; --wisp:#9ff0ff; --hot:#ff6b8a; --panel:rgba(16,18,38,.92); }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%;background:radial-gradient(120% 120% at 50% 0%,#12162c 0%,#05060c 72%);color:var(--ink);
+    font-family:"Segoe UI",-apple-system,BlinkMacSystemFont,"Malgun Gothic",sans-serif;overflow:hidden;-webkit-user-select:none;user-select:none;touch-action:none}
+  #wrap{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;padding:8px}
+  #stage{position:relative;border-radius:16px;overflow:hidden;box-shadow:0 30px 90px rgba(0,0,0,.65),0 0 0 1px rgba(255,255,255,.04)}
+  canvas{display:block;background:#07080f;border-radius:16px;cursor:crosshair}
+  #hud{position:absolute;left:0;right:0;top:0;display:flex;align-items:center;gap:18px;padding:12px 16px;z-index:5;pointer-events:none}
+  .stat .k{font-size:11px;letter-spacing:1.5px;color:var(--muted);text-transform:uppercase}
+  .stat .v{font-size:22px;font-weight:800;font-variant-numeric:tabular-nums}
+  #shots .v{color:var(--wisp)} #best .v{color:var(--amber)} #tg .v{color:var(--amber)}
+  #hud .spacer{flex:1} #lvl{font-size:13px;color:var(--muted)}
+  #resetBtn{pointer-events:auto;cursor:pointer;border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.05);color:var(--ink);border-radius:10px;padding:7px 12px;font-size:13px;font-weight:700}
+  #hint{position:absolute;left:0;right:0;bottom:14px;text-align:center;color:var(--muted);font-size:13px;z-index:5;pointer-events:none;text-shadow:0 2px 10px #000} #hint b{color:var(--wisp)}
+  .overlay{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;z-index:10;background:radial-gradient(60% 60% at 50% 45%,rgba(8,9,18,.5),rgba(4,5,11,.95));opacity:0;visibility:hidden;transition:opacity .35s}
+  .overlay.show{opacity:1;visibility:visible}
+  .card{width:min(560px,90%);background:var(--panel);border:1px solid rgba(255,255,255,.08);border-radius:20px;padding:30px 30px 26px;text-align:center;box-shadow:0 26px 70px rgba(0,0,0,.55)}
+  .card h1{margin:0;font-size:38px;letter-spacing:3px} .card h1 small{display:block;font-size:12px;letter-spacing:6px;color:var(--wisp);margin-top:10px;font-weight:600}
+  .card p{color:var(--muted);line-height:1.75;font-size:14.5px;margin:16px 0 18px}
+  .keys{display:flex;gap:10px;justify-content:center;flex-wrap:wrap;margin:14px 0 22px}
+  .key{border:1px solid rgba(255,255,255,.14);border-radius:8px;padding:6px 11px;font-size:12.5px;background:rgba(255,255,255,.04)} .key b{color:var(--wisp)}
+  .cta{cursor:pointer;border:none;border-radius:12px;padding:13px 32px;font-size:15px;font-weight:800;letter-spacing:.5px;color:#221600;background:linear-gradient(180deg,var(--amber),#ff9e5e);box-shadow:0 10px 30px rgba(255,158,94,.35);transition:.15s}
+  .cta:hover{transform:translateY(-2px)}
+  .tag{display:inline-block;color:var(--wisp);font-size:12px;letter-spacing:3px;margin-bottom:6px}
+</style>
+</head>
+<body>
+<div id="wrap">
+  <div id="stage">
+    <canvas id="cv"></canvas>
+    <div id="hud">
+      <div class="stat" id="tg"><div class="k">표적</div><div class="v" id="tgV">0/0</div></div>
+      <div class="stat" id="shots"><div class="k">발사</div><div class="v" id="shotsV">0</div></div>
+      <div class="spacer"></div><div id="lvl">1</div><div class="spacer"></div>
+      <button id="resetBtn">다시 (R)</button>
+    </div>
+    <div id="hint"></div>
+
+    <div class="overlay show" id="startOv">
+      <div class="card">
+        <span class="tag">AIM · PREDICT · RICOCHET</span>
+        <h1>튕김<small>R I C O C H E T</small></h1>
+        <p>구슬을 조준해 쏘면 벽에 튕기며 날아간다.<br>
+           궤도(예측선)를 보며, 한 발로 <b>여러 표적</b>을 꿰어<br>
+           <b>최소 발사</b>로 모든 표적을 맞혀라.</p>
+        <div class="keys"><span class="key"><b>마우스</b>로 조준</span><span class="key"><b>클릭/Space</b> 발사</span><span class="key"><b>← →</b> 미세조정 · <b>R</b> 다시</span></div>
+        <button class="cta" id="startBtn">시작</button>
+      </div>
+    </div>
+    <div class="overlay" id="winOv">
+      <div class="card">
+        <span class="tag" id="winTag">CLEAR</span>
+        <h1 id="winTitle" style="font-size:26px;letter-spacing:1px">·</h1>
+        <p id="winMsg">·</p>
+        <button class="cta" id="nextBtn">다음 →</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+"use strict";
+/* ============================================================
+   튕김 · Ricochet — aim an orb; it reflects off walls along an exact,
+   deterministic path. Read the geometry, find the one angle that
+   threads every target in a single shot. No RNG — pure prediction.
+   ============================================================ */
+const AW=860, AH=600;
+const cv=document.getElementById('cv'), ctx=cv.getContext('2d');
+let DPR=Math.max(1,Math.min(2,devicePixelRatio||1));
+let scale=1;
+const BALLR=7, MAXLEN=2600, HITR=23;
+
+/* ---- levels ----
+   emitter {x,y}; walls: rectangles {x,y,w,h} (obstacles); targets [{x,y}]. */
+const LEVELS=[
+  { name:"직선", par:1, hint:"마우스로 조준, 예측선이 표적을 지나면 <b>발사</b>. 최소 발사로 모두 맞혀라.",
+    emitter:{x:70,y:300}, walls:[], targets:[{x:430,y:300},{x:700,y:300}] },
+  { name:"튕겨서", par:2, hint:"한 번의 튕김으로 <b>여러 표적</b>을 꿰면 발사가 줄어든다.",
+    emitter:{x:70,y:120}, walls:[{x:400,y:280,w:60,h:320}], targets:[{x:250,y:120},{x:640,y:120},{x:300,y:470},{x:680,y:470}] },
+  { name:"방", par:1, hint:"기둥 사이로 튕겨 <b>다섯 표적을 한 궤도</b>에 담을 각이 있다. 찾아라.",
+    emitter:{x:70,y:540}, walls:[{x:300,y:0,w:60,h:360},{x:520,y:240,w:60,h:360}],
+    targets:[{x:180,y:300},{x:430,y:120},{x:430,y:500},{x:720,y:300},{x:180,y:520}] },
+  { name:"지그재그", par:2, hint:"여러 번 튕겨 흩어진 표적을 <b>효율적으로</b> 쓸어담아라.",
+    emitter:{x:70,y:70}, walls:[{x:260,y:0,w:50,h:420},{x:520,y:180,w:50,h:420}],
+    targets:[{x:160,y:480},{x:400,y:120},{x:400,y:520},{x:700,y:120},{x:700,y:480}] },
+];
+
+/* ---- state ---- */
+let phase='intro', li=0, walls=[], targets=[], emitter, aim=0, shots=0, best=[];
+try{ best=JSON.parse(localStorage.getItem('ricochet_best')||'[]'); }catch(e){ best=[]; }
+let segs=[], firing=null, particles=[], mouse={x:AW*0.6,y:AH*0.4};
+
+/* ---- audio ---- */
+let AC=null,muted=false;
+function ac(){ if(!AC){try{AC=new (AudioContext||webkitAudioContext)();}catch(e){}} return AC; }
+function tone(f,d=0.07,t='sine',v=0.035,to){ if(muted)return; const a=ac();if(!a)return; const o=a.createOscillator(),g=a.createGain();
+  o.type=t;o.frequency.value=f;if(to)o.frequency.exponentialRampToValueAtTime(to,a.currentTime+d);
+  g.gain.value=0;o.connect(g);g.connect(a.destination);const n=a.currentTime;g.gain.linearRampToValueAtTime(v,n+0.006);g.gain.exponentialRampToValueAtTime(0.0001,n+d);o.start(n);o.stop(n+d+0.02); }
+const SFX={ fire(){tone(300,0.12,'sawtooth',0.04,520);}, bounce(){tone(500,0.04,'sine',0.02);}, hit(n){tone(500+n*70,0.09,'triangle',0.045);}, win(){[523,659,784,1047].forEach((f,i)=>setTimeout(()=>tone(f,0.22,'sine',0.05),i*95));}, miss(){tone(180,0.2,'sawtooth',0.04,90);} };
+
+/* ---- layout ---- */
+function layout(){ scale=Math.min((Math.max(320,innerWidth)-16)/AW,(Math.max(240,innerHeight)-16)/AH,1.4);
+  cv.style.width=(AW*scale)+'px'; cv.style.height=(AH*scale)+'px'; cv.width=Math.round(AW*scale*DPR); cv.height=Math.round(AH*scale*DPR); ctx.setTransform(scale*DPR,0,0,scale*DPR,0,0); }
+addEventListener('resize',layout);
+
+/* ---- build wall segments (axis-aligned, tagged v/h) ---- */
+function buildSegs(){ segs=[];
+  // arena border (inward)
+  segs.push({o:'v',x:BALLR,y0:0,y1:AH}); segs.push({o:'v',x:AW-BALLR,y0:0,y1:AH});
+  segs.push({o:'h',y:BALLR,x0:0,x1:AW}); segs.push({o:'h',y:AH-BALLR,x0:0,x1:AW});
+  for(const w of walls){ const x0=w.x-BALLR,x1=w.x+w.w+BALLR,y0=w.y-BALLR,y1=w.y+w.h+BALLR;
+    segs.push({o:'v',x:x0,y0:w.y,y1:w.y+w.h}); segs.push({o:'v',x:x1,y0:w.y,y1:w.y+w.h});
+    segs.push({o:'h',y:y0,x0:w.x,x1:w.x+w.w}); segs.push({o:'h',y:y1,x0:w.x,x1:w.x+w.w});
+  }
+}
+/* ---- trace reflected path -> polyline of points ---- */
+function trace(px,py,dx,dy){
+  const pts=[{x:px,y:py}]; let remaining=MAXLEN;
+  for(let b=0;b<48 && remaining>1;b++){
+    let bestT=Infinity, hitSeg=null;
+    for(const s of segs){
+      if(s.o==='v'){ if(Math.abs(dx)<1e-9) continue; const t=(s.x-px)/dx; if(t<=1e-4) continue;
+        const yy=py+dy*t; if(yy>=s.y0-0.01&&yy<=s.y1+0.01 && t<bestT){ bestT=t; hitSeg=s; } }
+      else { if(Math.abs(dy)<1e-9) continue; const t=(s.y-py)/dy; if(t<=1e-4) continue;
+        const xx=px+dx*t; if(xx>=s.x0-0.01&&xx<=s.x1+0.01 && t<bestT){ bestT=t; hitSeg=s; } }
+    }
+    if(hitSeg===null || bestT>remaining){ pts.push({x:px+dx*remaining,y:py+dy*remaining}); break; }
+    px+=dx*bestT; py+=dy*bestT; remaining-=bestT; pts.push({x:px,y:py,bounce:true});
+    if(hitSeg.o==='v') dx=-dx; else dy=-dy;
+    px+=dx*1e-3; py+=dy*1e-3;
+  }
+  return pts;
+}
+/* ---- which targets does a polyline hit, in order along the path ---- */
+function targetsOnPath(pts){
+  const order=[];
+  for(let i=0;i<pts.length-1;i++){ const a=pts[i],b=pts[i+1];
+    for(let ti=0;ti<targets.length;ti++){ const t=targets[ti]; if(order.some(o=>o.i===ti)) continue;
+      // distance from target to segment a-b, and param
+      const dx=b.x-a.x,dy=b.y-a.y,L2=dx*dx+dy*dy; let u=L2?((t.x-a.x)*dx+(t.y-a.y)*dy)/L2:0; u=Math.max(0,Math.min(1,u));
+      const cx=a.x+dx*u,cy=a.y+dy*u; if(Math.hypot(t.x-cx,t.y-cy)<HITR){ order.push({i:ti, seg:i, u}); } }
+  }
+  return order;
+}
+
+/* ---- flow ---- */
+function loadLevel(i){ li=i; const L=LEVELS[i]; emitter={...L.emitter}; walls=L.walls.map(w=>({...w}));
+  targets=L.targets.map(t=>({...t,hit:false})); shots=0; firing=null; particles=[]; buildSegs();
+  document.getElementById('lvl').textContent=(i+1)+' · '+L.name; document.getElementById('hint').innerHTML=L.hint;
+  document.getElementById('shotsV').textContent=0; updateTg();
+}
+function resetLevel(){ loadLevel(li); }
+function updateTg(){ document.getElementById('tgV').textContent=targets.filter(t=>t.hit).length+'/'+targets.length; }
+function fire(){
+  if(phase!=='play'||firing) return;
+  const dx=Math.cos(aim), dy=Math.sin(aim);
+  const pts=trace(emitter.x,emitter.y,dx,dy);
+  shots++; document.getElementById('shotsV').textContent=shots; SFX.fire();
+  // hits accumulate ACROSS shots — clear every target in as few shots as possible
+  firing={pts, seg:0, u:0, len:0, speed:900, done:false, hitOrder:targetsOnPath(pts), popped:0};
+}
+function afterShot(){
+  const allHit=targets.every(t=>t.hit);
+  if(allHit) win(); else { SFX.miss(); firing=null; } // re-aim
+}
+function win(){ phase='win'; SFX.win();
+  const isBest=(best[li]==null||shots<best[li]); if(isBest){ best[li]=shots; localStorage.setItem('ricochet_best',JSON.stringify(best)); }
+  const last=li===LEVELS.length-1;
+  document.getElementById('winTag').textContent=last?'ALL CLEAR':'CLEAR';
+  document.getElementById('winTitle').textContent=last?'모든 궤도를 읽었다':'명중!';
+  document.getElementById('winMsg').innerHTML=`${shots}발 사용 (목표 ${LEVELS[li].par})`+(isBest?' · <b style="color:var(--amber)">최소 기록!</b>':'');
+  document.getElementById('nextBtn').textContent=last?'처음부터':'다음 →';
+  setTimeout(()=>document.getElementById('winOv').classList.add('show'),450);
+}
+function rand(a,b){return a+Math.random()*(b-a);}
+
+/* ---- input ---- */
+function updateAim(){ aim=Math.atan2(mouse.y-emitter.y, mouse.x-emitter.x); }
+cv.addEventListener('mousemove',e=>{ const r=cv.getBoundingClientRect(); mouse.x=(e.clientX-r.left)/scale; mouse.y=(e.clientY-r.top)/scale; if(phase==='play'&&!firing)updateAim(); });
+cv.addEventListener('click',()=>{ if(phase==='play')fire(); });
+addEventListener('keydown',e=>{ if(phase!=='play')return;
+  if(e.key===' '){ fire(); e.preventDefault(); }
+  else if(e.key==='r'||e.key==='R'){ resetLevel(); }
+  else if(e.key==='ArrowLeft'){ aim-=0.006; e.preventDefault(); }
+  else if(e.key==='ArrowRight'){ aim+=0.006; e.preventDefault(); }
+});
+
+/* ---- loop ---- */
+let lastT=perf(); function perf(){return performance?performance.now():0;}
+function frame(t){ const dt=Math.min(0.033,(t-lastT)/1000); lastT=t;
+  if(firing) stepFire(dt);
+  for(let i=particles.length-1;i>=0;i--){const p=particles[i];p.life-=dt;if(p.life<=0){particles.splice(i,1);continue;}p.x+=p.vx*dt;p.y+=p.vy*dt;}
+  render(t); requestAnimationFrame(frame);
+}
+function stepFire(dt){
+  let adv=firing.speed*dt;
+  while(adv>0 && firing.seg<firing.pts.length-1){
+    const a=firing.pts[firing.seg], b=firing.pts[firing.seg+1]; const segLen=Math.hypot(b.x-a.x,b.y-a.y);
+    const rem=segLen*(1-firing.u);
+    if(adv<rem){ firing.u+=adv/segLen; adv=0; }
+    else { adv-=rem; firing.seg++; firing.u=0; if(firing.seg<firing.pts.length-1&&firing.pts[firing.seg].bounce) SFX.bounce(); }
+  }
+  // ball position
+  const a=firing.pts[Math.min(firing.seg,firing.pts.length-1)], b=firing.pts[Math.min(firing.seg+1,firing.pts.length-1)];
+  firing.bx=a.x+(b.x-a.x)*firing.u; firing.by=a.y+(b.y-a.y)*firing.u;
+  // pop targets whose path-position we've passed
+  for(const h of firing.hitOrder){ if(h.done)continue;
+    if(firing.seg>h.seg || (firing.seg===h.seg && firing.u>=h.u)){ h.done=true; const t=targets[h.i]; if(!t.hit){ t.hit=true; firing.popped++; SFX.hit(firing.popped); updateTg();
+      for(let k=0;k<10;k++)particles.push({x:t.x,y:t.y,vx:rand(-1,1)*140,vy:rand(-1,1)*140,life:rand(0.3,0.6),r:rand(1,2.6),c:'255,210,122'}); } } }
+  if(firing.seg>=firing.pts.length-1){ afterShot(); }
+}
+
+/* ---- render ---- */
+function render(t){
+  const tt=t/1000; ctx.clearRect(0,0,AW,AH);
+  if(!emitter) return;
+  ctx.fillStyle='#07080f'; ctx.fillRect(0,0,AW,AH);
+  ctx.strokeStyle='rgba(255,255,255,.02)'; for(let x=40;x<AW;x+=40){ctx.beginPath();ctx.moveTo(x,0);ctx.lineTo(x,AH);ctx.stroke();} for(let y=40;y<AH;y+=40){ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(AW,y);ctx.stroke();}
+  // walls
+  for(const w of walls){ const g=ctx.createLinearGradient(w.x,w.y,w.x,w.y+w.h); g.addColorStop(0,'#20244a'); g.addColorStop(1,'#151834');
+    ctx.fillStyle=g; roundRect(w.x,w.y,w.w,w.h,7); ctx.fill(); ctx.strokeStyle='rgba(159,240,255,.12)'; ctx.lineWidth=1.5; ctx.stroke(); }
+  // targets
+  for(const tg of targets){ const p=0.5+0.5*Math.sin(tt*3+tg.x*0.02);
+    if(tg.hit){ ctx.strokeStyle='rgba(150,255,210,.5)'; ctx.lineWidth=2; ctx.beginPath(); ctx.arc(tg.x,tg.y,HITR*0.7,0,6.283); ctx.stroke(); }
+    else { ctx.save();ctx.globalCompositeOperation='lighter'; const g=ctx.createRadialGradient(tg.x,tg.y,1,tg.x,tg.y,HITR*1.5);
+      g.addColorStop(0,`rgba(255,120,150,${.8*p})`);g.addColorStop(1,'rgba(255,120,150,0)'); ctx.fillStyle=g;ctx.beginPath();ctx.arc(tg.x,tg.y,HITR*1.5,0,6.283);ctx.fill();ctx.restore();
+      ctx.strokeStyle='rgba(255,120,150,.95)';ctx.lineWidth=2.5;ctx.beginPath();ctx.arc(tg.x,tg.y,HITR*0.7,0,6.283);ctx.stroke();
+      ctx.fillStyle='rgba(255,150,175,.9)';ctx.beginPath();ctx.arc(tg.x,tg.y,3,0,6.283);ctx.fill(); }
+  }
+  // aim preview (when not firing)
+  if(phase==='play'&&!firing){ const pts=trace(emitter.x,emitter.y,Math.cos(aim),Math.sin(aim));
+    const newHits=targetsOnPath(pts).filter(h=>!targets[h.i].hit).length;
+    ctx.save(); ctx.setLineDash([2,9]); ctx.lineWidth=newHits>=2?2.6:2;
+    ctx.strokeStyle=newHits>=2?'rgba(150,255,210,.9)':newHits===1?'rgba(205,255,175,.7)':'rgba(159,240,255,.45)';
+    ctx.beginPath(); ctx.moveTo(pts[0].x,pts[0].y); for(let i=1;i<pts.length;i++)ctx.lineTo(pts[i].x,pts[i].y); ctx.stroke();
+    ctx.setLineDash([]); ctx.restore();
+    // bounce dots
+    for(const p of pts){ if(p.bounce){ ctx.fillStyle='rgba(159,240,255,.6)'; ctx.beginPath(); ctx.arc(p.x,p.y,2.5,0,6.283); ctx.fill(); } }
+  }
+  // firing ball + trail
+  if(firing){ ctx.save();ctx.globalCompositeOperation='lighter';
+    // draw traveled trail
+    ctx.strokeStyle='rgba(255,210,122,.5)';ctx.lineWidth=2.5;ctx.beginPath();ctx.moveTo(firing.pts[0].x,firing.pts[0].y);
+    for(let i=1;i<=firing.seg;i++)ctx.lineTo(firing.pts[i].x,firing.pts[i].y); if(firing.bx!=null)ctx.lineTo(firing.bx,firing.by); ctx.stroke();
+    if(firing.bx!=null){ const g=ctx.createRadialGradient(firing.bx,firing.by,1,firing.bx,firing.by,18); g.addColorStop(0,'rgba(255,235,180,.9)');g.addColorStop(1,'rgba(255,200,120,0)');
+      ctx.fillStyle=g;ctx.beginPath();ctx.arc(firing.bx,firing.by,18,0,6.283);ctx.fill(); } ctx.restore();
+    if(firing.bx!=null){ ctx.fillStyle='#fff3d6';ctx.beginPath();ctx.arc(firing.bx,firing.by,BALLR,0,6.283);ctx.fill(); }
+  }
+  // emitter
+  ctx.save();ctx.globalCompositeOperation='lighter'; const eg=ctx.createRadialGradient(emitter.x,emitter.y,1,emitter.x,emitter.y,20);
+  eg.addColorStop(0,'rgba(159,240,255,.7)');eg.addColorStop(1,'rgba(159,240,255,0)');ctx.fillStyle=eg;ctx.beginPath();ctx.arc(emitter.x,emitter.y,20,0,6.283);ctx.fill();ctx.restore();
+  ctx.fillStyle='#0c1224';ctx.beginPath();ctx.arc(emitter.x,emitter.y,10,0,6.283);ctx.fill(); ctx.strokeStyle='rgba(159,240,255,.95)';ctx.lineWidth=2.5;ctx.stroke();
+  if(phase==='play'&&!firing){ ctx.strokeStyle='rgba(159,240,255,.9)';ctx.lineWidth=2;ctx.beginPath();ctx.moveTo(emitter.x,emitter.y);ctx.lineTo(emitter.x+Math.cos(aim)*22,emitter.y+Math.sin(aim)*22);ctx.stroke(); }
+  // particles
+  ctx.save();ctx.globalCompositeOperation='lighter'; for(const p of particles){ctx.globalAlpha=Math.max(0,Math.min(1,p.life));ctx.fillStyle='rgb('+p.c+')';ctx.beginPath();ctx.arc(p.x,p.y,p.r,0,6.283);ctx.fill();}ctx.globalAlpha=1;ctx.restore();
+}
+function roundRect(x,y,w,h,r){ ctx.beginPath();ctx.moveTo(x+r,y);ctx.arcTo(x+w,y,x+w,y+h,r);ctx.arcTo(x+w,y+h,x,y+h,r);ctx.arcTo(x,y+h,x,y,r);ctx.arcTo(x,y,x+w,y,r);ctx.closePath(); }
+
+/* ---- buttons ---- */
+document.getElementById('startBtn').onclick=()=>{ ac(); document.getElementById('startOv').classList.remove('show'); phase='play'; loadLevel(0); updateAim(); };
+document.getElementById('resetBtn').onclick=()=>{ if(phase==='play')resetLevel(); };
+document.getElementById('nextBtn').onclick=()=>{ document.getElementById('winOv').classList.remove('show'); const last=li===LEVELS.length-1; phase='play'; loadLevel(last?0:li+1); updateAim(); };
+
+/* ---- boot ---- */
+layout(); loadLevel(0); requestAnimationFrame(frame);
+</script>
+</body>
+</html>
