@@ -43,6 +43,46 @@
 
   footer{max-width:1080px;margin:44px auto 0;text-align:center;color:var(--muted);font-size:12.5px;line-height:1.8}
   footer code{background:rgba(255,255,255,.06);padding:2px 7px;border-radius:6px;color:var(--wisp);font-size:12px}
+
+  .cardfoot{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:auto}
+  .cbtn{position:relative;z-index:2;pointer-events:auto;cursor:pointer;font:inherit;font-size:12px;font-weight:700;
+    color:var(--muted);background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.1);border-radius:20px;
+    padding:6px 12px;display:inline-flex;align-items:center;gap:5px;transition:color .15s,border-color .15s,background .15s}
+  .cbtn:hover{color:var(--ac);border-color:var(--ac);background:rgba(255,255,255,.09)}
+  .cbtn b{color:var(--wisp);font-weight:800}
+
+  /* comments modal */
+  #cmodal{position:fixed;inset:0;z-index:50;display:none;align-items:center;justify-content:center;padding:18px;
+    background:rgba(4,5,12,.74);backdrop-filter:blur(4px)}
+  #cmodal.on{display:flex}
+  .cbox{width:min(94vw,470px);max-height:88vh;display:flex;flex-direction:column;background:#12152c;
+    border:1px solid rgba(130,150,240,.3);border-radius:18px;overflow:hidden;box-shadow:0 24px 70px rgba(0,0,0,.6)}
+  .chead{display:flex;align-items:center;gap:11px;padding:15px 18px;border-bottom:1px solid rgba(255,255,255,.07)}
+  .chead .cico{width:40px;height:40px;border-radius:12px;display:flex;align-items:center;justify-content:center;font-size:21px;
+    background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.08)}
+  .chead h3{margin:0;font-size:17px}
+  .chead .csub{font-size:11px;color:var(--muted);letter-spacing:1px;text-transform:uppercase}
+  .chead .cx{margin-left:auto;cursor:pointer;color:var(--muted);font-size:24px;line-height:1;padding:2px 9px;border-radius:8px}
+  .chead .cx:hover{background:rgba(255,255,255,.08);color:#fff}
+  .clist{flex:1;overflow-y:auto;padding:14px 18px;display:flex;flex-direction:column;gap:10px;min-height:90px}
+  .cstate{color:var(--muted);font-size:13px;text-align:center;padding:22px 0;line-height:1.6}
+  .citem{background:rgba(255,255,255,.035);border:1px solid rgba(255,255,255,.06);border-radius:12px;padding:10px 13px}
+  .citem .cmeta{display:flex;justify-content:space-between;gap:8px;font-size:11px;margin-bottom:4px}
+  .citem .cname{color:var(--amber);font-weight:700}
+  .citem .ctime{color:var(--muted);flex:none}
+  .citem .ctext{font-size:13.5px;line-height:1.55;color:var(--ink);white-space:pre-wrap;word-break:break-word}
+  .cform{border-top:1px solid rgba(255,255,255,.07);padding:12px 18px;display:flex;flex-direction:column;gap:8px}
+  .cform .crow{display:flex;gap:8px}
+  .cform input,.cform textarea{background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.12);
+    border-radius:10px;color:var(--ink);font:inherit;font-size:13.5px;padding:9px 11px;resize:none}
+  .cform input:focus,.cform textarea:focus{outline:none;border-color:var(--wisp)}
+  .cform .cname-in{flex:0 0 128px;min-width:0}
+  .cform textarea{width:100%;min-height:46px}
+  .cform .cbottom{display:flex;gap:8px;align-items:center}
+  .cform .cnote{flex:1;font-size:11px;color:var(--muted)}
+  .cpost{cursor:pointer;font:inherit;font-weight:800;font-size:14px;color:#0a1220;
+    background:linear-gradient(180deg,#bff0ff,#63d6ff);border:0;padding:11px 20px;border-radius:10px;white-space:nowrap}
+  .cpost:disabled{opacity:.5;cursor:default}
 </style>
 </head>
 <body>
@@ -58,8 +98,8 @@
 <main class="grid" id="grid"></main>
 
 <footer>
-  새 게임을 추가하려면 이 파일의 <code>GAMES</code> 배열에 한 줄만 넣으면 카드가 자동으로 생깁니다.<br>
-  <span style="opacity:.6">2026 미니게임 메이커스 챌린지 / 경기게임오디션</span>
+  각 게임 카드의 <code>💬 댓글</code>을 눌러 자유롭게 의견을 남겨주세요. 여러분의 피드백이 큰 힘이 됩니다!<br>
+  <span style="opacity:.6">2026 미니게임 메이커스 챌린지</span>
 </footer>
 
 <script>
@@ -122,7 +162,12 @@ for(const g of GAMES){
     <h2>${g.ko}</h2>
     <div class="en">${g.en}</div>
     <div class="desc">${g.desc}</div>
-    <span class="play">플레이 <span class="arw">→</span></span>`;
+    <div class="cardfoot">
+      <span class="play">플레이 <span class="arw">→</span></span>
+      <button class="cbtn" type="button">💬 <b data-cnt="${g.folder}">·</b></button>
+    </div>`;
+  const cb=a.querySelector('.cbtn');
+  cb.addEventListener('click',e=>{ e.preventDefault(); e.stopPropagation(); openComments(g); });
   grid.appendChild(a);
 }
 document.getElementById('n').textContent=GAMES.length;
@@ -133,6 +178,111 @@ for(let i=0;i<70;i++){ const s=document.createElement('span');
   s.style.left=(Math.random()*100)+'%'; s.style.top=(Math.random()*100)+'%';
   s.style.animationDelay=(Math.random()*4)+'s'; s.style.transform='scale('+(0.5+Math.random()*1.6)+')';
   bg.appendChild(s); }
+
+/* ================= 댓글 (Supabase REST, 라이브러리 없이 fetch) ================= */
+const SUPA_URL='https://lokayuzrvziyixclxopw.supabase.co';
+const SUPA_KEY='sb_publishable_7Ob8NQor65RZIcWlXVqOKg_BfNYW8ny';
+const SUPA_H={apikey:SUPA_KEY,Authorization:'Bearer '+SUPA_KEY};
+const GMETA={}; GAMES.forEach(g=>GMETA[g.folder]=g);
+
+function timeAgo(iso){ const d=(Date.now()-new Date(iso).getTime())/1000;
+  if(d<60)return '방금'; if(d<3600)return Math.floor(d/60)+'분 전';
+  if(d<86400)return Math.floor(d/3600)+'시간 전'; if(d<2592000)return Math.floor(d/86400)+'일 전';
+  return new Date(iso).toLocaleDateString('ko-KR'); }
+
+// 카드 댓글 수 로드
+async function loadCounts(){
+  try{
+    const r=await fetch(SUPA_URL+'/rest/v1/comments?select=game',{headers:SUPA_H});
+    if(!r.ok)return; const rows=await r.json(); const cnt={};
+    rows.forEach(x=>{ cnt[x.game]=(cnt[x.game]||0)+1; });
+    document.querySelectorAll('[data-cnt]').forEach(b=>{ b.textContent=cnt[b.dataset.cnt]||0; });
+  }catch(e){ document.querySelectorAll('[data-cnt]').forEach(b=>{ b.textContent='0'; }); }
+}
+
+// 모달 DOM 1회 생성
+const modal=document.createElement('div'); modal.id='cmodal';
+modal.innerHTML=`
+  <div class="cbox">
+    <div class="chead">
+      <div class="cico" id="cIco">🎮</div>
+      <div><h3 id="cTitle">게임</h3><div class="csub" id="cSub">COMMENTS</div></div>
+      <div class="cx" id="cClose">×</div>
+    </div>
+    <div class="clist" id="cList"></div>
+    <div class="cform">
+      <div class="crow">
+        <input class="cname-in" id="cName" maxlength="24" placeholder="닉네임 (선택)">
+      </div>
+      <textarea id="cBody" maxlength="500" placeholder="이 게임 어땠나요? 의견을 남겨주세요"></textarea>
+      <div class="cbottom">
+        <span class="cnote" id="cNote">누구나 로그인 없이 남길 수 있어요</span>
+        <button class="cpost" id="cPost">등록</button>
+      </div>
+    </div>
+  </div>`;
+document.body.appendChild(modal);
+const cList=modal.querySelector('#cList'), cName=modal.querySelector('#cName'),
+      cBody=modal.querySelector('#cBody'), cPost=modal.querySelector('#cPost'), cNote=modal.querySelector('#cNote');
+let curFolder=null;
+
+modal.querySelector('#cClose').addEventListener('click',closeComments);
+modal.addEventListener('click',e=>{ if(e.target===modal) closeComments(); });
+window.addEventListener('keydown',e=>{ if(e.key==='Escape'&&modal.classList.contains('on')) closeComments(); });
+
+function openComments(g){
+  curFolder=g.folder;
+  modal.querySelector('#cIco').textContent=g.icon;
+  modal.querySelector('#cTitle').textContent=g.ko;
+  modal.querySelector('#cSub').textContent=g.en+' · 댓글';
+  cBody.value=''; cNote.textContent='누구나 로그인 없이 남길 수 있어요'; cNote.style.color='';
+  modal.classList.add('on');
+  loadComments(g.folder);
+}
+function closeComments(){ modal.classList.remove('on'); }
+
+function setState(msg){ cList.innerHTML=''; const d=document.createElement('div'); d.className='cstate'; d.textContent=msg; cList.appendChild(d); }
+
+async function loadComments(folder){
+  setState('불러오는 중…');
+  try{
+    const r=await fetch(SUPA_URL+'/rest/v1/comments?game=eq.'+encodeURIComponent(folder)+
+      '&select=*&order=created_at.desc&limit=200',{headers:SUPA_H});
+    if(!r.ok){ setState('댓글을 불러오지 못했어요 😢'); return; }
+    const rows=await r.json();
+    if(!rows.length){ setState('아직 댓글이 없어요.\n첫 의견의 주인공이 되어보세요! ✨'); return; }
+    cList.innerHTML='';
+    rows.forEach(row=>{
+      const it=document.createElement('div'); it.className='citem';
+      const meta=document.createElement('div'); meta.className='cmeta';
+      const nm=document.createElement('span'); nm.className='cname'; nm.textContent=row.name||'익명';
+      const tm=document.createElement('span'); tm.className='ctime'; tm.textContent=timeAgo(row.created_at);
+      meta.appendChild(nm); meta.appendChild(tm);
+      const tx=document.createElement('div'); tx.className='ctext'; tx.textContent=row.body; // XSS 방지: textContent
+      it.appendChild(meta); it.appendChild(tx); cList.appendChild(it);
+    });
+  }catch(e){ setState('네트워크 오류가 발생했어요.'); }
+}
+
+async function postComment(){
+  const body=cBody.value.trim(), name=cName.value.trim();
+  if(body.length<1){ cNote.textContent='내용을 입력해주세요'; cNote.style.color='#ff8a8a'; return; }
+  cPost.disabled=true; cPost.textContent='등록 중…';
+  try{
+    const r=await fetch(SUPA_URL+'/rest/v1/comments',{method:'POST',
+      headers:Object.assign({},SUPA_H,{'Content-Type':'application/json',Prefer:'return=minimal'}),
+      body:JSON.stringify({game:curFolder, name:name||null, body:body})});
+    if(r.ok){ cBody.value=''; cNote.textContent='등록됐어요! 고마워요 💙'; cNote.style.color='#6cff9e';
+      await loadComments(curFolder);
+      const b=document.querySelector('[data-cnt="'+curFolder+'"]'); if(b) b.textContent=(parseInt(b.textContent,10)||0)+1;
+    } else { cNote.textContent='등록 실패 ('+r.status+')'; cNote.style.color='#ff8a8a'; }
+  }catch(e){ cNote.textContent='네트워크 오류로 등록 실패'; cNote.style.color='#ff8a8a'; }
+  cPost.disabled=false; cPost.textContent='등록';
+}
+cPost.addEventListener('click',postComment);
+cBody.addEventListener('keydown',e=>{ if((e.ctrlKey||e.metaKey)&&e.key==='Enter') postComment(); });
+
+loadCounts();
 </script>
 </body>
 </html>
