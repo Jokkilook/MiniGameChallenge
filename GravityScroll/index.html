@@ -1,0 +1,565 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+<title>그라비티 스크롤 · Gravity Scroll</title>
+<style>
+  :root{ --ink:#eaf0ff; --muted:#8791bd; }
+  *{box-sizing:border-box; -webkit-tap-highlight-color:transparent}
+  html,body{margin:0;height:100%;overflow:hidden;background:#05060d;color:var(--ink);
+    font-family:"Segoe UI",-apple-system,BlinkMacSystemFont,"Malgun Gothic",sans-serif;
+    -webkit-font-smoothing:antialiased;-webkit-user-select:none;user-select:none;touch-action:none;overscroll-behavior:none}
+  #wrap{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:#05060d}
+  canvas{display:block;touch-action:none}
+
+  #hud{position:fixed;top:0;left:0;right:0;padding:11px 14px;display:flex;gap:9px;align-items:center;
+    justify-content:center;pointer-events:none;z-index:5;font-size:13px}
+  #hud .pill{background:rgba(12,16,36,.6);border:1px solid rgba(120,150,230,.25);border-radius:20px;
+    padding:5px 12px;letter-spacing:.5px;backdrop-filter:blur(5px);white-space:nowrap}
+  #hpwrap{width:120px;height:9px;background:rgba(255,255,255,.12);border-radius:6px;overflow:hidden}
+  #hpbar{height:100%;width:100%;background:linear-gradient(90deg,#6cff9e,#b6f36a);transition:width .15s}
+  #hud .pill b{color:#9ff0ff}
+  #btnReset{pointer-events:auto;cursor:pointer}
+
+  #toast{position:fixed;top:50%;left:50%;transform:translate(-50%,-50%) scale(.8);z-index:8;pointer-events:none;
+    font-weight:800;font-size:clamp(18px,5vw,26px);opacity:0;text-align:center;text-shadow:0 2px 12px rgba(0,0,0,.7)}
+  #toast.show{animation:toastA 1.1s ease-out}
+  @keyframes toastA{0%{opacity:0;transform:translate(-50%,-50%) scale(.6)}20%{opacity:1;transform:translate(-50%,-50%) scale(1.05)}75%{opacity:1}100%{opacity:0}}
+
+  .screen{position:fixed;inset:0;z-index:20;display:flex;flex-direction:column;align-items:center;justify-content:center;
+    text-align:center;padding:26px;background:radial-gradient(120% 100% at 50% 30%,rgba(12,16,40,.93),rgba(4,5,12,.97))}
+  .screen h1{margin:0 0 4px;font-size:clamp(28px,7.5vw,48px);font-weight:900;letter-spacing:1px;
+    background:linear-gradient(180deg,#fff,#8fb6ff);-webkit-background-clip:text;background-clip:text;color:transparent}
+  .screen .sub{color:#8791bd;letter-spacing:5px;font-size:12px;margin-bottom:16px}
+  .screen p{color:#b3bce4;font-size:14.5px;line-height:1.85;max-width:450px;margin:5px 0}
+  .screen p b{color:#9ff0ff}
+  button.go{margin-top:22px;pointer-events:auto;cursor:pointer;font:inherit;font-weight:800;font-size:16px;letter-spacing:1px;
+    color:#06121e;background:linear-gradient(180deg,#bfe0ff,#5c9cff);border:0;padding:14px 34px;border-radius:30px;
+    box-shadow:0 10px 30px -8px #3a7aff}
+  button.go:active{transform:translateY(1px)}
+  .row{display:flex;gap:10px;margin-top:16px;flex-wrap:wrap;justify-content:center}
+  .row button{pointer-events:auto;cursor:pointer;font:inherit;font-weight:700;font-size:14px;color:#dbe4ff;
+    background:rgba(20,26,58,.85);border:1px solid rgba(120,150,230,.3);border-radius:12px;padding:11px 20px}
+  .hint{color:#5c648f;font-size:12px;margin-top:16px;line-height:1.7}
+  .stars{font-size:30px;letter-spacing:8px;margin:4px 0 6px}
+  .wheelanim{font-size:34px;margin:6px 0;animation:wsp 1.2s infinite}
+  @keyframes wsp{0%,100%{transform:translateY(0)}50%{transform:translateY(10px)}}
+
+  #tut{position:fixed;left:50%;bottom:8%;transform:translateX(-50%);z-index:15;width:min(88vw,420px);
+    background:rgba(14,18,44,.95);border:1px solid rgba(120,150,230,.4);border-radius:16px;padding:14px 18px;
+    text-align:center;display:none;box-shadow:0 16px 46px rgba(0,0,0,.6)}
+  #tut .st{font-size:11px;letter-spacing:2px;color:#5c9cff;font-weight:800;margin-bottom:5px}
+  #tut .tx{font-size:14.5px;line-height:1.6} #tut .tx b{color:#9ff0ff}
+  #tut button{margin-top:11px;cursor:pointer;font:inherit;font-weight:800;font-size:13px;color:#06121e;
+    background:linear-gradient(180deg,#bfe0ff,#5c9cff);border:0;padding:8px 20px;border-radius:18px}
+  #tut .skip{background:none;color:#7078a8;text-decoration:underline;box-shadow:none;margin-left:8px}
+</style>
+</head>
+<body>
+<div id="wrap"><canvas id="cv"></canvas></div>
+
+<div id="hud">
+  <span class="pill" id="stagePill">STAGE 1</span>
+  <span class="pill" style="display:flex;align-items:center;gap:7px">HP <span id="hpwrap"><span id="hpbar"></span></span></span>
+  <span class="pill" id="depthPill">0%</span>
+  <span class="pill" id="btnReset">↺</span>
+</div>
+
+<div id="toast"></div>
+
+<div class="screen" id="title">
+  <div class="sub">GRAVITY SCROLL</div>
+  <h1>그라비티 스크롤</h1>
+  <p style="color:#8fb6ff;letter-spacing:2px;margin-top:-2px">붕괴의 탑</p>
+  <p>무너지는 100층 탑. <b>휠을 굴려 중력을 조작</b>해 최하층까지 탈출하라.<br>
+     휠 <b>아래</b>=급강하 · 휠 <b>위</b>=역중력 상승 · 빠를수록 강하게.</p>
+  <div class="wheelanim">🖱️↕</div>
+  <button class="go" id="startBtn">튜토리얼 시작</button>
+  <div class="hint">PC: 마우스 휠(중력) + 좌우 이동은 마우스/←→ · 모바일: 세로 스와이프(중력) + 좌우 터치</div>
+</div>
+
+<div class="screen" id="result" style="display:none">
+  <div class="sub" id="resSub">CLEAR</div>
+  <div class="stars" id="resStars"></div>
+  <h1 id="resTitle">클리어!</h1>
+  <p id="resMsg"></p>
+  <div class="row" id="resRow"></div>
+</div>
+
+<div id="tut">
+  <div class="st" id="tutStep">STEP 1 / 3</div>
+  <div class="tx" id="tutTx"></div>
+  <div><button id="tutSkip" class="skip">건너뛰기</button></div>
+</div>
+
+<script>
+"use strict";
+(function(){
+/* =========================================================================
+   그라비티 스크롤 : 붕괴의 탑 — Pure Canvas 2D (단일 파일)
+   휠/스와이프 가속도 → 중력 조작. 좌우는 포인터/키 보조.
+   ========================================================================= */
+var cv=document.getElementById('cv'), ctx=cv.getContext('2d');
+var AW=460, AH=760, DPR=1, SC=1, OX=0, OY=0;
+function layout(){
+  DPR=Math.min(2,window.devicePixelRatio||1);
+  var vw=window.innerWidth, vh=window.innerHeight;
+  SC=Math.min(vw/AW,vh/AH);
+  var w=Math.round(AW*SC), h=Math.round(AH*SC);
+  OX=Math.round((vw-w)/2); OY=Math.round((vh-h)/2);
+  cv.style.width=w+'px'; cv.style.height=h+'px';
+  cv.width=Math.round(w*DPR); cv.height=Math.round(h*DPR);
+  ctx.setTransform(DPR*SC,0,0,DPR*SC,0,0);
+}
+window.addEventListener('resize',layout);
+
+/* ---------- 오디오 ---------- */
+var AC=null, wind=null, windGain=null, windFilt=null;
+function audio(){ if(!AC){try{AC=new (window.AudioContext||window.webkitAudioContext)();}catch(e){}}
+  if(AC&&AC.state==='suspended')AC.resume(); return AC; }
+function startWind(){ var ac=audio(); if(!ac||wind)return;
+  // 화이트노이즈 → 밴드패스 = 바람
+  var n=ac.sampleRate*2, b=ac.createBuffer(1,n,ac.sampleRate), d=b.getChannelData(0);
+  for(var i=0;i<n;i++)d[i]=Math.random()*2-1;
+  wind=ac.createBufferSource(); wind.buffer=b; wind.loop=true;
+  windFilt=ac.createBiquadFilter(); windFilt.type='bandpass'; windFilt.frequency.value=400; windFilt.Q.value=0.7;
+  windGain=ac.createGain(); windGain.gain.value=0;
+  wind.connect(windFilt); windFilt.connect(windGain); windGain.connect(ac.destination); wind.start();
+}
+function updWind(speed){ if(!windGain)return; var ac=AC;
+  var s=Math.min(1,Math.abs(speed)/1300);
+  windGain.gain.setTargetAtTime(s*0.12, ac.currentTime, 0.1);
+  windFilt.frequency.setTargetAtTime(300+s*1400, ac.currentTime, 0.08);
+}
+function tone(freq,dur,type,vol,to){ var ac=audio(); if(!ac)return;
+  var t=ac.currentTime,o=ac.createOscillator(),g=ac.createGain();
+  o.type=type||'sine'; o.frequency.setValueAtTime(freq,t);
+  if(to)o.frequency.exponentialRampToValueAtTime(Math.max(30,to),t+dur);
+  g.gain.setValueAtTime(0.0001,t); g.gain.exponentialRampToValueAtTime(vol||0.15,t+0.008);
+  g.gain.exponentialRampToValueAtTime(0.0001,t+dur);
+  o.connect(g); g.connect(ac.destination); o.start(t); o.stop(t+dur+0.02); }
+function vibrate(ms){ try{if(navigator.vibrate)navigator.vibrate(ms);}catch(e){} }
+
+/* ---------- 상수 ---------- */
+var PR=14, WL=30, WR=AW-30;
+var G0=540;          // 기본 중력 가속(px/s^2)
+var VDRAG=1.0;       // 공기저항
+var VYMAX=1400;
+var WHEEL_IMP=300;   // 휠 1노치 속도 임펄스
+var KACC=1700;       // 키보드 가속
+var HSTIFF=115, HDAMP=21;  // 좌우 스프링
+var SAFE_VY=700;     // 이하 충격은 무피해
+var HAZ_DMG=26, INVULN=0.8;
+
+/* ---------- 스테이지 정의 ---------- */
+var STAGES=[
+  {name:'STAGE 1', sub:'스크롤 감각', build:'s1', D:2100, rocks:false},
+  {name:'STAGE 2', sub:'붕괴 · 낙하물', build:'s2', D:2350, rocks:true},
+  {name:'STAGE 3', sub:'가시 풍차 · 레이저', build:'s3', D:2500, rocks:false},
+];
+
+function buildObstacles(kind){
+  var obs=[], y, i;
+  if(kind==='tut'){
+    obs.push({type:'beam',y:900,gx0:WL+90,gx1:WL+90+150,h:20,spike:false});
+    return {obs:obs, D:1250, rocks:false, ceilSpikeY:520};
+  }
+  if(kind==='s1'){
+    y=330;
+    for(i=0;i<7;i++){ var c=(i%2===0)?(WL+120):(WR-120); obs.push({type:'beam',y:y,gx0:c-78,gx1:c+78,h:20,spike:i>=3}); y+=252; }
+    return {obs:obs};
+  }
+  if(kind==='s2'){
+    // 넓은 낙하 구역 + 착지/브레이크용 발판 몇 개(가시 없음)
+    obs.push({type:'beam',y:520,gx0:WL+30,gx1:WL+30+150,h:18,spike:false});
+    obs.push({type:'beam',y:1150,gx0:WR-180,gx1:WR-30,h:18,spike:false});
+    obs.push({type:'beam',y:1750,gx0:WL+110,gx1:WL+110+160,h:18,spike:false});
+    return {obs:obs};
+  }
+  if(kind==='s3'){
+    obs.push({type:'laser',y:430,period:2.4,onDur:1.0,phase:0.0,h:8});
+    obs.push({type:'spinner',x:(WL+WR)/2,y:820,len:96,spd:1.7,phase:0});
+    obs.push({type:'beam',y:1120,gx0:WL+120,gx1:WL+120+150,h:18,spike:false});
+    obs.push({type:'laser',y:1450,period:2.6,onDur:1.05,phase:1.3,h:8});
+    obs.push({type:'spinner',x:(WL+WR)/2,y:1850,len:96,spd:-1.9,phase:1.0});
+    return {obs:obs};
+  }
+  return {obs:obs};
+}
+
+/* ---------- 시뮬레이션 ---------- */
+function makeSim(si,tut){
+  var st= tut? {name:'TUTORIAL',build:'tut',D:1250,rocks:false} : STAGES[si];
+  var b=buildObstacles(st.build);
+  return {
+    stage:si, tut:!!tut, name:st.name, D:b.D||st.D, hasRocks: b.rocks!=null?b.rocks:st.rocks,
+    WL:WL, WR:WR, ceilSpikeY: b.ceilSpikeY||null,
+    player:{x:AW/2, y:70, vx:0, vy:0, tx:AW/2, hp:100, invuln:0, landedSoft:false, maxDown:0, maxUp:0},
+    obstacles:b.obs, rocks:[], t:0, rockTimer:0, result:null, goalY:(b.D||st.D)-70,
+    lastLandVy:0, shake:0, dust:[],
+  };
+}
+
+function circCirc(ax,ay,ar,bx,by,br){ var dx=ax-bx,dy=ay-by; return dx*dx+dy*dy < (ar+br)*(ar+br); }
+function distSegPt(px,py,ax,ay,bx,by){ var dx=bx-ax,dy=by-ay,l2=dx*dx+dy*dy;
+  var t=l2>0?((px-ax)*dx+(py-ay)*dy)/l2:0; t=Math.max(0,Math.min(1,t));
+  return Math.hypot(px-(ax+dx*t),py-(ay+dy*t)); }
+
+function hurt(sim,dmg,reason){ var p=sim.player; if(p.invuln>0)return;
+  p.hp-=dmg; p.invuln=INVULN; sim.shake=Math.min(16,4+dmg*0.4);
+  if(p.hp<=0){ p.hp=0; sim.result={dead:true,reason:reason}; }
+}
+
+function stepSim(sim,dt){
+  var p=sim.player; if(sim.result) return;
+  sim.t+=dt;
+  if(p.invuln>0)p.invuln-=dt;
+  if(sim.shake>0)sim.shake=Math.max(0,sim.shake-dt*40);
+
+  // 중력 + 저항
+  p.vy+=G0*dt; p.vy*=Math.exp(-VDRAG*dt);
+  p.vy=Math.max(-VYMAX,Math.min(VYMAX,p.vy));
+  // 좌우 스프링
+  var ax=(p.tx-p.x)*HSTIFF - p.vx*HDAMP; p.vx+=ax*dt;
+
+  // 통계(튜토리얼 감지용)
+  if(p.vy>p.maxDown)p.maxDown=p.vy; if(-p.vy>p.maxUp)p.maxUp=-p.vy;
+
+  // 서브스텝 이동(터널링 방지)
+  var speed=Math.max(Math.abs(p.vy),Math.abs(p.vx));
+  var nsub=Math.max(1,Math.min(8,Math.ceil(speed*dt/7)));
+  var sdt=dt/nsub;
+  for(var s=0;s<nsub;s++){
+    p.x+=p.vx*sdt; p.y+=p.vy*sdt;
+    // 벽
+    if(p.x<WL+PR){ p.x=WL+PR; p.vx=-p.vx*0.5; }
+    if(p.x>WR-PR){ p.x=WR-PR; p.vx=-p.vx*0.5; }
+    // 천장(월드 최상단)
+    if(p.y<40+PR){ p.y=40+PR; if(p.vy<0){ softHit(sim,-p.vy); p.vy=-p.vy*0.35; } }
+    // 빔
+    for(var i=0;i<sim.obstacles.length;i++){ var o=sim.obstacles[i]; if(o.type!=='beam')continue;
+      if(p.y+PR>o.y && p.y-PR<o.y+o.h){
+        var inGap = p.x>o.gx0 && p.x<o.gx1;
+        if(!inGap){
+          if(p.vy>=0){ // 위에서 착지
+            if(p.y < o.y+o.h){ p.y=o.y-PR; landBeam(sim,o,p.vy); p.vy=-p.vy*0.28; }
+          } else { // 아래에서 충돌
+            p.y=o.y+o.h+PR; landBeam(sim,o,-p.vy); p.vy=-p.vy*0.28;
+          }
+        }
+      }
+    }
+  }
+  // 천장 가시(튜토리얼)
+  if(sim.ceilSpikeY!=null && p.y-PR < sim.ceilSpikeY && p.x>AW/2-60 && p.x<AW/2+60){ hurt(sim,HAZ_DMG,'가시'); }
+
+  // 스피너/레이저
+  for(var j=0;j<sim.obstacles.length;j++){ var ob=sim.obstacles[j];
+    if(ob.type==='spinner'){
+      var ang=sim.t*ob.spd+ob.phase;
+      for(var k=0;k<4;k++){ var a=ang+k*Math.PI/2; var ex=ob.x+Math.cos(a)*ob.len, ey=ob.y+Math.sin(a)*ob.len;
+        if(distSegPt(p.x,p.y,ob.x,ob.y,ex,ey) < PR+7){ hurt(sim,HAZ_DMG,'가시 풍차'); } }
+      if(circCirc(p.x,p.y,PR,ob.x,ob.y,10)) hurt(sim,HAZ_DMG,'가시 풍차');
+    } else if(ob.type==='laser'){
+      var on=((sim.t+ob.phase)%ob.period)<ob.onDur;
+      if(on && Math.abs(p.y-ob.y) < PR+ob.h/2 && p.x>WL && p.x<WR) hurt(sim,HAZ_DMG,'레이저');
+      ob._on=on;
+    }
+  }
+
+  // 낙하물(Stage 2)
+  if(sim.hasRocks){
+    sim.rockTimer-=dt;
+    if(sim.rockTimer<=0 && p.y < sim.D-500){ sim.rockTimer=0.42+Math.random()*0.3;
+      sim.rocks.push({x:WL+PR+Math.random()*(WR-WL-2*PR), y:p.y-430, vy:340+Math.random()*160, r:15+Math.random()*5}); }
+  }
+  for(var r=sim.rocks.length-1;r>=0;r--){ var rk=sim.rocks[r];
+    rk.vy+=780*dt; rk.y+=rk.vy*dt;
+    if(circCirc(p.x,p.y,PR,rk.x,rk.y,rk.r)){ hurt(sim,HAZ_DMG,'낙하물'); sim.rocks.splice(r,1); continue; }
+    if(rk.y > p.y+540) sim.rocks.splice(r,1);
+  }
+
+  // 먼지 파티클
+  for(var d=sim.dust.length-1;d>=0;d--){ var D=sim.dust[d]; D.life-=dt*2.2; D.x+=D.vx*dt; D.y+=D.vy*dt; D.vy+=300*dt; if(D.life<=0)sim.dust.splice(d,1); }
+
+  // 목표 도달
+  if(p.y >= sim.goalY){ sim.result={win:true}; }
+  // 이탈(옆으로 빠질 순 없지만 안전장치)
+  if(p.hp<=0 && !sim.result) sim.result={dead:true,reason:'손상'};
+}
+function landBeam(sim,o,impact){
+  if(o.spike){ hurt(sim,HAZ_DMG,'가시'); return; }
+  if(impact>SAFE_VY){ hurt(sim, Math.min(55,(impact-SAFE_VY)/22), '강한 충돌'); sim.shake=Math.max(sim.shake,6);
+    spawnDust(sim,sim.player.x,o.y); tone(90,0.12,'square',0.16,50); vibrate(20); }
+  else { sim.player.landedSoft=true; if(impact>200){ spawnDust(sim,sim.player.x,o.y); tone(220,0.06,'sine',0.06); } }
+  sim.lastLandVy=impact;
+}
+function softHit(sim,impact){ if(impact>SAFE_VY){ hurt(sim,Math.min(50,(impact-SAFE_VY)/22),'천장 충돌'); sim.shake=Math.max(sim.shake,6);} }
+function spawnDust(sim,x,y){ for(var i=0;i<10;i++){ var a=-Math.PI/2+(Math.random()-0.5)*2.2, sp=50+Math.random()*120;
+  sim.dust.push({x:x+(Math.random()*20-10),y:y,vx:Math.cos(a)*sp,vy:Math.sin(a)*sp*0.5,life:1}); } }
+
+/* ---------- 오토파일럿(검증 전용) ---------- */
+function autopilot(sim){
+  var p=sim.player, tx=p.x, vt=520, mid=(WL+WR)/2;
+  var beams=sim.obstacles.filter(function(o){return o.type==='beam'&&o.y>p.y-10;}).sort(function(a,b){return a.y-b.y;});
+  if(beams.length){ var nb=beams[0], gapC=(nb.gx0+nb.gx1)/2, dy=nb.y-p.y; tx=gapC;
+    if(dy<240){ if(Math.abs(p.x-gapC)>36) vt=130; else vt=Math.min(vt,340); } }
+  // 낙하물 회피
+  for(var i=0;i<sim.rocks.length;i++){ var rk=sim.rocks[i];
+    if(rk.y>p.y-40 && rk.y<p.y+300 && Math.abs(rk.x-p.x)<70){ tx=(rk.x>mid)?WL+PR+18:WR-PR-18; vt=1050; } }
+  // 레이저
+  for(var j=0;j<sim.obstacles.length;j++){ var o=sim.obstacles[j];
+    if(o.type==='laser'){ var dy2=o.y-p.y;
+      if(dy2>-10 && dy2<150){ var arrive=sim.t+Math.max(0.05,dy2/650);
+        var willOn=((arrive+o.phase)%o.period)<o.onDur+0.12;
+        var nowOn=((sim.t+o.phase)%o.period)<o.onDur;
+        if(nowOn||willOn) vt=-40; else vt=760; }
+    } else if(o.type==='spinner'){ var dy3=o.y-p.y;
+      if(dy3>-30 && dy3<170){ tx=(p.x<mid)?WL+PR+16:WR-PR-16;
+        // 팔이 벽쪽을 안 볼 때 통과: 근사로 감속 후 하강
+        var ang=sim.t*o.spd+o.phase, side=(tx<mid)?Math.PI:0;
+        var near=Math.min(Math.abs(((ang-side)%(Math.PI*2)+Math.PI*2)%(Math.PI*2)), Math.abs(((side-ang)%(Math.PI*2)+Math.PI*2)%(Math.PI*2)));
+        vt = (near<0.7)? -30 : 700; }
+    }
+  }
+  p.tx=tx;
+  if(p.vy<vt-30) p.vy+=WHEEL_IMP*0.5; else if(p.vy>vt+30) p.vy-=WHEEL_IMP*0.5;
+}
+
+/* ---------- 라이브 상태 ---------- */
+var sim=null, mode='title', tutStep=0, keys={};
+function startStage(i){ sim=makeSim(i,false); mode='play';
+  document.getElementById('stagePill').textContent=STAGES[i].name;
+  updHud(); toast(STAGES[i].name+' — '+STAGES[i].sub,'#9ff0ff'); }
+function startTut(){ sim=makeSim(0,true); mode='tut'; tutStep=0;
+  document.getElementById('stagePill').textContent='TUTORIAL';
+  document.getElementById('tut').style.display='block'; loadTut(); updHud(); }
+
+/* ---------- 입력 ---------- */
+function wheelImpulse(dy){ if(!sim||mode==='title'||mode==='result'||sim.result)return;
+  var m=Math.max(-1,Math.min(1,dy/100)); sim.player.vy+=m*WHEEL_IMP; startWind(); }
+cv.addEventListener('wheel',function(e){ e.preventDefault(); wheelImpulse(e.deltaY); },{passive:false});
+window.addEventListener('wheel',function(e){ if(mode==='play'||mode==='tut'){ e.preventDefault(); wheelImpulse(e.deltaY);} },{passive:false});
+// 마우스 X = 좌우 목표
+cv.addEventListener('mousemove',function(e){ if(!sim)return; var x=(e.clientX-OX)/SC; sim.player.tx=Math.max(WL+PR,Math.min(WR-PR,x)); });
+// 키보드
+window.addEventListener('keydown',function(e){ keys[e.key.toLowerCase()]=true;
+  if(['arrowup','arrowdown','arrowleft','arrowright',' '].indexOf(e.key.toLowerCase())>=0)e.preventDefault(); });
+window.addEventListener('keyup',function(e){ keys[e.key.toLowerCase()]=false; });
+// 터치: 세로 스와이프=중력, x=좌우
+var lastTy=null, lastTt=0;
+cv.addEventListener('touchstart',function(e){ var t=e.touches[0]; lastTy=t.clientY; lastTt=performance.now();
+  if(sim){var x=(t.clientX-OX)/SC; sim.player.tx=Math.max(WL+PR,Math.min(WR-PR,x));} startWind(); e.preventDefault(); },{passive:false});
+cv.addEventListener('touchmove',function(e){ if(!sim)return; var t=e.touches[0]; var now=performance.now();
+  var x=(t.clientX-OX)/SC; sim.player.tx=Math.max(WL+PR,Math.min(WR-PR,x));
+  if(lastTy!=null){ var dy=(t.clientY-lastTy); if(mode==='play'||mode==='tut'){ sim.player.vy+=dy*3.2; } }
+  lastTy=t.clientY; lastTt=now; e.preventDefault(); },{passive:false});
+cv.addEventListener('touchend',function(){ lastTy=null; });
+document.getElementById('btnReset').addEventListener('click',function(){ if(mode==='tut')loadTut(); else if(sim)startStage(sim.stage); });
+
+/* ---------- 튜토리얼 ---------- */
+var TUT=[
+  {tx:'마우스 휠을 <b>아래로</b> 굴려(또는 아래로 스와이프) 빠르게 <b>하강</b>하세요!', check:function(s){return s.player.maxDown>760;}},
+  {tx:'휠을 <b>위로</b> 굴려 <b>역중력</b>으로 떠올라 천장 가시를 넘어보세요!', check:function(s){return s.player.maxUp>300;}},
+  {tx:'착지 직전 <b>반대로 스크롤</b>해 속도를 줄여 <b>부드럽게 착지</b>하세요!', check:function(s){return s.player.landedSoft;}},
+];
+function loadTut(){ sim=makeSim(0,true); mode='tut';
+  sim.player.maxDown=0; sim.player.maxUp=0; sim.player.landedSoft=false;
+  document.getElementById('tutStep').textContent='STEP '+(tutStep+1)+' / 3';
+  document.getElementById('tutTx').innerHTML=TUT[tutStep].tx; updHud(); }
+function tutTick(){ if(mode!=='tut'||!sim)return;
+  if(TUT[tutStep].check(sim)){ tutStep++; tone(880,0.1,'triangle',0.14,1320);
+    if(tutStep>=TUT.length){ mode='play'; document.getElementById('tut').style.display='none'; toast('튜토리얼 완료! 🎉','#6cff9e'); setTimeout(function(){startStage(0);},700); }
+    else { setTimeout(loadTut,300); mode='tutwait'; }
+  }
+}
+document.getElementById('tutSkip').addEventListener('click',function(){ mode='play'; document.getElementById('tut').style.display='none'; startStage(0); });
+
+/* ---------- HUD/결과 ---------- */
+function updHud(){ if(!sim)return;
+  document.getElementById('hpbar').style.width=Math.max(0,sim.player.hp)+'%';
+  var d=Math.max(0,Math.min(100,Math.round(sim.player.y/sim.goalY*100)));
+  document.getElementById('depthPill').textContent=d+'%';
+  document.getElementById('hpbar').style.background = sim.player.hp<30?'linear-gradient(90deg,#ff5a6a,#ff9e5e)':'linear-gradient(90deg,#6cff9e,#b6f36a)';
+}
+function endStage(){ var st=STAGES[sim.stage], win=sim.result.win;
+  mode='result';
+  var res=document.getElementById('result');
+  if(win){ document.getElementById('resSub').textContent=st.name+' CLEAR';
+    var stars=sim.player.hp>=80?'★★★':sim.player.hp>=40?'★★☆':'★☆☆';
+    document.getElementById('resStars').textContent=stars;
+    document.getElementById('resTitle').textContent='탈출 성공! 🎉';
+    document.getElementById('resMsg').textContent='HP '+Math.round(sim.player.hp)+' 남기고 최하층 도달!';
+    tone(660,0.12,'triangle',0.16,990); setTimeout(function(){tone(990,0.16,'triangle',0.15);},110);
+  } else { document.getElementById('resSub').textContent=st.name+' 실패';
+    document.getElementById('resStars').textContent='☆☆☆';
+    document.getElementById('resTitle').textContent='추락…';
+    document.getElementById('resMsg').textContent=(sim.result.reason||'')+' — 다시 도전!';
+    tone(200,0.3,'sawtooth',0.18,70);
+  }
+  var row=document.getElementById('resRow'); row.innerHTML='';
+  var last=sim.stage>=STAGES.length-1;
+  if(win&&!last) row.appendChild(mkbtn('다음 스테이지 →',function(){hide('result');startStage(sim.stage+1);}));
+  if(win&&last) row.appendChild(mkbtn('처음부터',function(){hide('result');startStage(0);}));
+  row.appendChild(mkbtn(win?'이 판 다시':'다시 도전',function(){hide('result');startStage(sim.stage);}));
+  show('result');
+}
+function mkbtn(t,fn){ var b=document.createElement('button'); b.textContent=t; b.onclick=fn; return b; }
+function show(id){document.getElementById(id).style.display='flex';}
+function hide(id){document.getElementById(id).style.display='none';}
+function toast(msg,c){ var el=document.getElementById('toast'); el.textContent=msg; el.style.color=c||'#fff';
+  el.classList.remove('show'); void el.offsetWidth; el.classList.add('show'); }
+
+/* ---------- 루프 ---------- */
+var last=0, trail=[];
+function loop(ts){ if(!last)last=ts; var dt=Math.min(0.04,(ts-last)/1000); last=ts;
+  if((mode==='play'||mode==='tut'||mode==='tutwait') && sim && !sim.result){
+    // 키보드 중력/좌우
+    if(keys['arrowdown']||keys['s']) sim.player.vy+=KACC*dt;
+    if(keys['arrowup']||keys['w']) sim.player.vy-=KACC*dt;
+    if(keys['arrowleft']||keys['a']) sim.player.tx=Math.max(WL+PR,sim.player.tx-360*dt);
+    if(keys['arrowright']||keys['d']) sim.player.tx=Math.min(WR-PR,sim.player.tx+360*dt);
+    stepSim(sim,dt);
+    updWind(sim.player.vy);
+    // 트레일
+    trail.push({x:sim.player.x,y:sim.player.y,vy:sim.player.vy}); if(trail.length>16)trail.shift();
+    updHud();
+    if(mode==='tut'||mode==='tutwait') tutTick();
+    if(sim.result){ if(mode!=='tut'&&mode!=='tutwait') setTimeout(endStage,500);
+      else { /* 튜토리얼 중 사망 시 리셋 */ if(sim.result.dead){ toast('앗! 다시 해볼까요','#ff8a8a'); setTimeout(loadTut,700);} } }
+  } else { updWind(0); }
+  render();
+  requestAnimationFrame(loop);
+}
+
+/* ---------- 렌더 ---------- */
+function render(){
+  ctx.clearRect(0,0,AW,AH);
+  ctx.fillStyle='#070810'; ctx.fillRect(0,0,AW,AH);
+  if(!sim){ return; }
+  var p=sim.player;
+  var cam=Math.max(0,Math.min(sim.D-AH, p.y-AH*0.42));
+  ctx.save();
+  if(sim.shake>0.3) ctx.translate((Math.random()*2-1)*sim.shake,(Math.random()*2-1)*sim.shake);
+  ctx.translate(0,-cam);
+
+  // 배경 벽돌 라인(속도감)
+  ctx.strokeStyle='rgba(90,110,180,.08)'; ctx.lineWidth=1;
+  var y0=Math.floor(cam/60)*60;
+  for(var yy=y0; yy<cam+AH; yy+=60){ ctx.beginPath(); ctx.moveTo(WL,yy); ctx.lineTo(WR,yy); ctx.stroke(); }
+  // 좌우 벽
+  ctx.fillStyle='rgba(50,60,110,.55)'; ctx.fillRect(0,cam,WL,AH); ctx.fillRect(WR,cam,AW-WR,AH);
+  ctx.strokeStyle='rgba(140,170,255,.4)'; ctx.lineWidth=2;
+  ctx.beginPath(); ctx.moveTo(WL,cam); ctx.lineTo(WL,cam+AH); ctx.moveTo(WR,cam); ctx.lineTo(WR,cam+AH); ctx.stroke();
+
+  // 목표
+  var gy=sim.goalY;
+  var gg=ctx.createLinearGradient(0,gy,0,gy+80); gg.addColorStop(0,'rgba(108,255,158,.5)'); gg.addColorStop(1,'rgba(108,255,158,0)');
+  ctx.fillStyle=gg; ctx.fillRect(WL,gy,WR-WL,80);
+  ctx.fillStyle='#6cff9e'; ctx.font='bold 16px Segoe UI'; ctx.textAlign='center';
+  ctx.fillText('▼ EXIT ▼',AW/2,gy+30);
+
+  // 천장 가시(튜토리얼)
+  if(sim.ceilSpikeY!=null){ drawSpikes(AW/2-60,sim.ceilSpikeY,120,true); }
+
+  // 장애물
+  for(var i=0;i<sim.obstacles.length;i++){ var o=sim.obstacles[i];
+    if(cam-120>o.y || o.y>cam+AH+120) { if(o.type!=='laser') continue; }
+    if(o.type==='beam'){
+      // 왼쪽/오른쪽 솔리드
+      ctx.fillStyle=o.spike?'rgba(150,70,80,.9)':'rgba(70,86,140,.9)';
+      ctx.fillRect(WL,o.y,o.gx0-WL,o.h); ctx.fillRect(o.gx1,o.y,WR-o.gx1,o.h);
+      ctx.strokeStyle=o.spike?'#ff7a8a':'rgba(150,180,255,.6)'; ctx.lineWidth=2;
+      ctx.strokeRect(WL,o.y+.5,o.gx0-WL,o.h-1); ctx.strokeRect(o.gx1,o.y+.5,WR-o.gx1,o.h-1);
+      if(o.spike){ drawSpikes(WL,o.y-8,o.gx0-WL,false); drawSpikes(o.gx1,o.y-8,WR-o.gx1,false); }
+    } else if(o.type==='laser'){
+      var on=o._on;
+      ctx.save();
+      if(on){ ctx.shadowColor='#ff3a4a'; ctx.shadowBlur=16; ctx.fillStyle='rgba(255,60,80,.9)'; ctx.fillRect(WL,o.y-o.h/2,WR-WL,o.h);
+        ctx.fillStyle='#fff'; ctx.fillRect(WL,o.y-1,WR-WL,2); }
+      else { ctx.fillStyle='rgba(255,80,90,.22)'; ctx.fillRect(WL,o.y-1,WR-WL,2);
+        // 이미터
+        ctx.fillStyle='rgba(255,90,100,.5)'; }
+      ctx.fillStyle='rgba(255,90,100,.8)'; ctx.fillRect(WL-6,o.y-7,6,14); ctx.fillRect(WR,o.y-7,6,14);
+      ctx.restore();
+    } else if(o.type==='spinner'){
+      var ang=sim.t*o.spd+o.phase;
+      ctx.save(); ctx.translate(o.x,o.y); ctx.rotate(ang);
+      ctx.strokeStyle='#ff6a7a'; ctx.lineWidth=6; ctx.lineCap='round'; ctx.shadowColor='#ff3a4a'; ctx.shadowBlur=10;
+      for(var k=0;k<4;k++){ ctx.save(); ctx.rotate(k*Math.PI/2);
+        ctx.beginPath(); ctx.moveTo(0,0); ctx.lineTo(o.len,0); ctx.stroke();
+        // 가시 팁
+        ctx.fillStyle='#ff8a96'; ctx.beginPath(); ctx.moveTo(o.len,-7); ctx.lineTo(o.len+12,0); ctx.lineTo(o.len,7); ctx.fill();
+        ctx.restore(); }
+      ctx.fillStyle='#ffd27a'; ctx.beginPath(); ctx.arc(0,0,9,0,6.28); ctx.fill();
+      ctx.restore();
+    }
+  }
+
+  // 낙하물
+  for(var r=0;r<sim.rocks.length;r++){ var rk=sim.rocks[r];
+    ctx.save(); ctx.fillStyle='#8a7560'; ctx.strokeStyle='#c8a880'; ctx.lineWidth=2; ctx.shadowColor='rgba(0,0,0,.4)'; ctx.shadowBlur=6;
+    ctx.beginPath(); for(var a=0;a<7;a++){ var an=a/7*6.28; var rr=rk.r*(a%2?0.8:1); var px=rk.x+Math.cos(an)*rr, py=rk.y+Math.sin(an)*rr; if(a===0)ctx.moveTo(px,py); else ctx.lineTo(px,py);} ctx.closePath(); ctx.fill(); ctx.stroke();
+    ctx.restore();
+  }
+
+  // 먼지
+  for(var dd=0;dd<sim.dust.length;dd++){ var Du=sim.dust[dd]; ctx.globalAlpha=Math.max(0,Du.life); ctx.fillStyle='#b9c0d8';
+    ctx.beginPath(); ctx.arc(Du.x,Du.y,2.4,0,6.28); ctx.fill(); }
+  ctx.globalAlpha=1;
+
+  // 트레일(모션블러)
+  for(var t2=0;t2<trail.length;t2++){ var T=trail[t2]; var al=t2/trail.length*0.5;
+    ctx.globalAlpha=al; ctx.fillStyle='#7fbaff'; ctx.beginPath(); ctx.arc(T.x,T.y,PR*(0.5+al),0,6.28); ctx.fill(); }
+  ctx.globalAlpha=1;
+
+  // 플레이어
+  ctx.save();
+  var blink=(p.invuln>0 && Math.floor(sim.t*20)%2===0);
+  if(!blink){
+    var spd=Math.min(1,Math.abs(p.vy)/1000), sq=spd*0.28*(p.vy>0?1:-1);
+    ctx.translate(p.x,p.y); ctx.scale(1-Math.abs(sq)*0.5,1+sq*0.0+Math.abs(sq));
+    ctx.shadowColor='#7fbaff'; ctx.shadowBlur=16;
+    var grd=ctx.createRadialGradient(-4,-4,2,0,0,PR); grd.addColorStop(0,'#eaf4ff'); grd.addColorStop(1,'#4d8cff');
+    ctx.fillStyle=grd; ctx.beginPath(); ctx.arc(0,0,PR,0,6.28); ctx.fill();
+    ctx.fillStyle='#22303a'; ctx.beginPath(); ctx.arc(-4,-2,2,0,6.28); ctx.arc(4,-2,2,0,6.28); ctx.fill();
+    // 방향 화살표
+    ctx.strokeStyle='rgba(255,255,255,.6)'; ctx.lineWidth=2; ctx.beginPath();
+    if(p.vy>60){ ctx.moveTo(0,PR+3);ctx.lineTo(-4,PR-1);ctx.moveTo(0,PR+3);ctx.lineTo(4,PR-1);}
+    else if(p.vy<-60){ ctx.moveTo(0,-PR-3);ctx.lineTo(-4,-PR+1);ctx.moveTo(0,-PR-3);ctx.lineTo(4,-PR+1);} ctx.stroke();
+  }
+  ctx.restore();
+  ctx.restore(); // cam
+}
+function drawSpikes(x,y,w,down){
+  if(w<=0)return; ctx.save(); ctx.fillStyle='#ff5a6a';
+  var n=Math.max(1,Math.floor(w/16)), sw=w/n;
+  for(var i=0;i<n;i++){ ctx.beginPath();
+    if(down){ ctx.moveTo(x+i*sw,y); ctx.lineTo(x+i*sw+sw/2,y+12); ctx.lineTo(x+(i+1)*sw,y); }
+    else { ctx.moveTo(x+i*sw,y+8); ctx.lineTo(x+i*sw+sw/2,y); ctx.lineTo(x+(i+1)*sw,y+8); }
+    ctx.closePath(); ctx.fill(); }
+  ctx.restore();
+}
+
+document.getElementById('startBtn').addEventListener('click',function(){ audio(); startWind(); hide('title'); startTut(); });
+
+layout(); requestAnimationFrame(loop);
+
+/* ---------- 검증 노출 ---------- */
+window.__grav={ makeSim:makeSim, stepSim:stepSim, autopilot:autopilot, STAGES:STAGES,
+  consts:{G0:G0,VDRAG:VDRAG,VYMAX:VYMAX,WHEEL_IMP:WHEEL_IMP,SAFE_VY:SAFE_VY},
+  runBot:function(si){ var s=makeSim(si,false); var dt=1/120, n=0;
+    while(n<120*45){ autopilot(s); stepSim(s,dt); if(s.result)break; n++; }
+    return {result: s.result?(s.result.win?'win':'dead'):'timeout', reason:s.result&&s.result.reason,
+      hp:Math.round(s.player.hp), depthPct:Math.round(s.player.y/s.goalY*100), t:Math.round(s.t*10)/10}; },
+  // 레이저 통과 창 검증
+  laserCheck:function(){ var out=[]; var s=makeSim(2,false);
+    s.obstacles.filter(function(o){return o.type==='laser';}).forEach(function(o){
+      out.push({y:o.y, period:o.period, onDur:o.onDur, offDur:Math.round((o.period-o.onDur)*100)/100, passable:(o.period-o.onDur)>0.6}); });
+    return out; }
+};
+})();
+</script>
+</body>
+</html>
