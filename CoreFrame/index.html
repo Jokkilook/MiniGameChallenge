@@ -188,14 +188,13 @@ function stepDrone(d, dt, inp, grav){
   // 각 방향 추진기
   var keys=['w','s','a','d'];
   for(var i=0;i<keys.length;i++){ if(!inp[keys[i]])continue; var slot=KEYSLOT[keys[i]]; if(d.loadout[slot]!=='thr')continue;
-    if(d.en<=0)continue;
     var p=SLOTPOS[slot]; var dir=[-p[0]/A,-p[1]/A]; // 슬롯 반대방향으로 분사→그 방향으로 추진
     var fl=[dir[0]*THRUST, dir[1]*THRUST];
     var fw=rot(fl[0],fl[1],d.ang);
     ax+=fw[0]/d.mass; ay+=fw[1]/d.mass;
     var rl=[p[0]-d.com[0], p[1]-d.com[1]]; var rw=rot(rl[0],rl[1],d.ang);
     torque += rw[0]*fw[1]-rw[1]*fw[0];
-    d.en=Math.max(0,d.en-6*dt); firing++;
+    firing++; // 추진은 에너지 무료(스펙: 에너지는 Shift 댐퍼만 소모)
     d._exhaust=d._exhaust||[]; d._exhaust.push({slot:slot});
   }
   // 중력
@@ -219,8 +218,8 @@ function stepDrone(d, dt, inp, grav){
   // 관성 댐퍼
   if(inp.shift && d.en>0){ var k2=Math.pow(0.02,dt); d.vx*=k2; d.vy*=k2; d.av*=Math.pow(0.01,dt); d.en=Math.max(0,d.en-14*dt); }
   d.x+=d.vx*dt; d.y+=d.vy*dt; d.ang+=d.av*dt;
-  // 에너지 재생
-  if(!firing && !inp.shift) d.en=Math.min(100,d.en+12*dt);
+  // 에너지 재생(Shift 안 쓸 때)
+  if(!inp.shift) d.en=Math.min(100,d.en+18*dt);
   d._firing=firing;
   return {firing:firing, torque:torque, ax:ax, ay:ay};
 }
@@ -364,15 +363,16 @@ document.getElementById('launchBtn').addEventListener('click',function(){ var tm
 function startStage(i,loadout){ sim=makeSim(i,loadout); curLoadout=loadout||Object.assign({},STAGES[i].loadout); mode='play';
   document.getElementById('stagePill').textContent=STAGES[i].name; updHud(); }
 function startTut(){ tutStep=0; mode='tut'; document.getElementById('tut').style.display='block'; loadTut(); }
+function BORD(){ return [Rrect(0,0,AW,40),Rrect(0,AH-40,AW,40),Rrect(0,0,40,AH),Rrect(AW-40,0,40,AH)]; }
 var TUT=[
-  {tx:'단일 추진 관성 제어! <b>W</b>로 추진하고 <b>Shift</b>로 관성을 잡아 목표(➤)에 정차하세요.',
-    setup:function(){ sim=makeSim(0,{U:null,D:'thr',L:null,R:null}); sim.walls=[Rrect(0,0,AW,40),Rrect(0,AH-40,AW,40),Rrect(0,0,40,AH),Rrect(AW-40,0,40,AH)]; sim.gears=[]; sim.grav=[0,0];sim.baseGrav=[0,0];
-      sim.drone.x=AW/2; sim.drone.y=AH-120; sim.goal=Rrect(AW/2-40,120,80,80); },
-    check:function(s){ return pointInRect(s.drone.x,s.drone.y,s.goal) && Math.hypot(s.drone.vx,s.drone.vy)<30; }},
-  {tx:'좌측에만 추진기 2개! 비대칭 <b>무게중심</b>으로 회전이 생깁니다. 반대 추진으로 균형을 잡아 목표로!',
-    setup:function(){ sim=makeSim(0,{U:'thr',D:'thr',L:'thr',R:null}); sim.walls=[Rrect(0,0,AW,40),Rrect(0,AH-40,AW,40),Rrect(0,0,40,AH),Rrect(AW-40,0,40,AH)];sim.gears=[];sim.grav=[0,0];sim.baseGrav=[0,0];
-      sim.drone.x=150; sim.drone.y=AH/2; sim.goal=Rrect(AW-160,AH/2-40,80,80); },
-    check:function(s){ return pointInRect(s.drone.x,s.drone.y,s.goal); }},
+  {tx:'하단 추진기 하나! <b>W</b>로 띄우고 <b>Shift</b>로 관성을 잡아 목표(➤)에 살포시 안착하세요. (놓으면 중력에 스르륵 내려와요)',
+    setup:function(){ sim=makeSim(0,{U:null,D:'thr',L:null,R:null}); sim.walls=BORD(); sim.gears=[]; sim.grav=[0,70];sim.baseGrav=[0,70];
+      sim.drone.x=AW/2; sim.drone.y=AH-110; sim.goal=Rrect(AW/2-45,150,90,90); },
+    check:function(s){ return pointInRect(s.drone.x,s.drone.y,s.goal) && Math.hypot(s.drone.vx,s.drone.vy)<48; }},
+  {tx:'4방향 추진기 장착! <b>A/D</b> 좌우 · <b>W/S</b> 상하로 미세하게 밀고 <b>Shift</b>로 관성을 잡아 반대편 목표까지. (파츠 배치가 무게중심·회전력을 바꾼다는 걸 기억!)',
+    setup:function(){ sim=makeSim(0,{U:'thr',D:'thr',L:'thr',R:'thr'}); sim.walls=BORD(); sim.gears=[]; sim.grav=[0,55];sim.baseGrav=[0,55];
+      sim.drone.x=130; sim.drone.y=AH-110; sim.goal=Rrect(AW-200,150,90,90); },
+    check:function(s){ return pointInRect(s.drone.x,s.drone.y,s.goal) && Math.hypot(s.drone.vx,s.drone.vy)<80; }},
   {tx:'좋습니다! 이제 정비소에서 기체를 꾸미고 <b>실전 미션</b>에 출격하세요!', setup:function(){}, check:function(s){return true;}},
 ];
 function loadTut(){ var st=TUT[tutStep]; st.setup&&st.setup();
