@@ -1,0 +1,524 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+<title>탭 다이버 · Tab Diver</title>
+<style>
+  :root{ --ink:#eef1ff; --muted:#8791bd; }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  html,body{margin:0;height:100%;overflow:hidden;background:#06060f;color:var(--ink);
+    font-family:"Segoe UI",-apple-system,BlinkMacSystemFont,"Malgun Gothic",sans-serif;
+    -webkit-font-smoothing:antialiased;-webkit-user-select:none;user-select:none;touch-action:none}
+  #wrap{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:#06060f}
+  canvas{display:block;touch-action:none}
+
+  #hud{position:fixed;top:0;left:0;right:0;padding:9px 12px;display:flex;gap:8px;align-items:center;justify-content:center;
+    pointer-events:none;z-index:5;font-size:12.5px}
+  #hud .pill{background:rgba(12,16,36,.6);border:1px solid rgba(120,150,230,.25);border-radius:20px;padding:5px 11px;
+    letter-spacing:.5px;backdrop-filter:blur(5px);white-space:nowrap}
+  #hud .pill b{color:#9ff0ff}
+  #btnReset{pointer-events:auto;cursor:pointer}
+
+  /* mobile controls */
+  #mob{position:fixed;inset:0;z-index:6;pointer-events:none}
+  .mbtn{position:absolute;pointer-events:auto;width:64px;height:64px;border-radius:50%;
+    background:rgba(20,26,54,.6);border:1px solid rgba(140,160,240,.35);color:#cdd6ff;font-size:24px;font-weight:800;
+    display:flex;align-items:center;justify-content:center;backdrop-filter:blur(4px)}
+  .mbtn:active{background:rgba(50,60,110,.85)}
+  #mLeft{left:16px;bottom:24px} #mRight{left:92px;bottom:24px}
+  #mJump{right:16px;bottom:78px} #mAct{right:92px;bottom:24px}
+  #mJump{background:rgba(40,70,120,.6)} #mAct{background:rgba(90,60,120,.6)}
+
+  #toast{position:fixed;top:52%;left:50%;transform:translate(-50%,-50%) scale(.8);z-index:8;pointer-events:none;
+    font-weight:800;font-size:clamp(18px,5vw,26px);opacity:0;text-align:center;text-shadow:0 2px 12px rgba(0,0,0,.7)}
+  #toast.show{animation:toastA 1.2s ease-out}
+  @keyframes toastA{0%{opacity:0;transform:translate(-50%,-50%) scale(.6)}18%{opacity:1;transform:translate(-50%,-50%) scale(1.05)}75%{opacity:1}100%{opacity:0}}
+
+  .screen{position:fixed;inset:0;z-index:20;display:flex;flex-direction:column;align-items:center;justify-content:center;
+    text-align:center;padding:26px;background:radial-gradient(120% 100% at 50% 30%,rgba(14,14,42,.93),rgba(4,4,12,.97))}
+  .screen h1{margin:0 0 4px;font-size:clamp(28px,7.5vw,48px);font-weight:900;letter-spacing:1px;
+    background:linear-gradient(180deg,#fff,#c9a0ff);-webkit-background-clip:text;background-clip:text;color:transparent}
+  .screen .sub{color:#8791bd;letter-spacing:5px;font-size:12px;margin-bottom:16px}
+  .screen p{color:#b3bce4;font-size:14.5px;line-height:1.85;max-width:460px;margin:5px 0}
+  .screen p b{color:#9ff0ff} .screen p .w{color:#ffb774} .screen p .c{color:#7fe6ff}
+  button.go{margin-top:22px;pointer-events:auto;cursor:pointer;font:inherit;font-weight:800;font-size:16px;letter-spacing:1px;
+    color:#1a0f2e;background:linear-gradient(180deg,#e6ccff,#a878ff);border:0;padding:14px 34px;border-radius:30px;box-shadow:0 10px 30px -8px #7a4fd6}
+  button.go:active{transform:translateY(1px)}
+  .row{display:flex;gap:10px;margin-top:16px;flex-wrap:wrap;justify-content:center}
+  .row button{pointer-events:auto;cursor:pointer;font:inherit;font-weight:700;font-size:14px;color:#dbe4ff;
+    background:rgba(26,26,58,.85);border:1px solid rgba(140,120,220,.3);border-radius:12px;padding:11px 20px}
+  .hint{color:#5c648f;font-size:12px;margin-top:16px;line-height:1.7}
+  .stars{font-size:30px;letter-spacing:8px;margin:4px 0 6px}
+  #tut{position:fixed;left:50%;bottom:9%;transform:translateX(-50%);z-index:15;width:min(88vw,430px);
+    background:rgba(16,16,44,.95);border:1px solid rgba(150,130,230,.4);border-radius:16px;padding:14px 18px;text-align:center;
+    display:none;box-shadow:0 16px 46px rgba(0,0,0,.6)}
+  #tut .st{font-size:11px;letter-spacing:2px;color:#b98cff;font-weight:800;margin-bottom:5px}
+  #tut .tx{font-size:14.5px;line-height:1.6} #tut .tx b{color:#9ff0ff}
+  #tut button{margin-top:11px;cursor:pointer;font:inherit;font-weight:800;font-size:13px;color:#1a0f2e;
+    background:linear-gradient(180deg,#e6ccff,#a878ff);border:0;padding:8px 20px;border-radius:18px}
+  #tut .skip{background:none;color:#7078a8;text-decoration:underline;box-shadow:none;margin-left:8px}
+</style>
+</head>
+<body>
+<div id="wrap"><canvas id="cv"></canvas></div>
+
+<div id="hud">
+  <span class="pill" id="stagePill">STAGE 1</span>
+  <span class="pill" id="exitPill">출구 0/2</span>
+  <span class="pill" id="btnReset">↺</span>
+</div>
+
+<div id="mob">
+  <div class="mbtn" id="mLeft">◀</div>
+  <div class="mbtn" id="mRight">▶</div>
+  <div class="mbtn" id="mJump">⤒</div>
+  <div class="mbtn" id="mAct">✦</div>
+</div>
+
+<div id="toast"></div>
+
+<div class="screen" id="title">
+  <div class="sub">TAB DIVER</div>
+  <h1>탭 다이버</h1>
+  <p style="color:#c9a0ff;letter-spacing:2px;margin-top:-2px">멀티버스</p>
+  <p>상단의 두 탭 <span class="w">과거</span> ↔ <span class="c">미래</span>를 넘나들며,<br>
+     한 차원에 남긴 흔적으로 다른 차원의 길을 연다.<br>양쪽 세계의 출구에 모두 도달하라!</p>
+  <p style="font-size:13px;color:#8791bd">Q/E · 상단 탭 = 차원 이동 · ←→ 이동 · Space 점프 · F 상호작용</p>
+  <button class="go" id="startBtn">튜토리얼 시작</button>
+</div>
+
+<div class="screen" id="result" style="display:none">
+  <div class="sub" id="resSub">CLEAR</div>
+  <div class="stars" id="resStars"></div>
+  <h1 id="resTitle">클리어!</h1>
+  <p id="resMsg"></p>
+  <div class="row" id="resRow"></div>
+</div>
+
+<div id="tut">
+  <div class="st" id="tutStep">STEP 1 / 3</div>
+  <div class="tx" id="tutTx"></div>
+  <div><button id="tutSkip" class="skip">건너뛰기</button></div>
+</div>
+
+<script>
+"use strict";
+(function(){
+/* =========================================================================
+   탭 다이버 : 멀티버스 — 탭 스위칭 차원이동 플랫포머 (Pure Canvas 2D)
+   ========================================================================= */
+var cv=document.getElementById('cv'), ctx=cv.getContext('2d');
+var AW=800, AH=520, TAB_H=42, DPR=1, SC=1, OX=0, OY=0;
+function layout(){
+  DPR=Math.min(2,window.devicePixelRatio||1);
+  var vw=window.innerWidth, vh=window.innerHeight;
+  SC=Math.min(vw/AW,vh/AH);
+  var w=Math.round(AW*SC), h=Math.round(AH*SC);
+  OX=Math.round((vw-w)/2); OY=Math.round((vh-h)/2);
+  cv.style.width=w+'px'; cv.style.height=h+'px';
+  cv.width=Math.round(w*DPR); cv.height=Math.round(h*DPR);
+  ctx.setTransform(DPR*SC,0,0,DPR*SC,0,0);
+}
+window.addEventListener('resize',layout);
+
+/* ---------- 오디오 ---------- */
+var AC=null;
+function audio(){ if(!AC){try{AC=new (window.AudioContext||window.webkitAudioContext)();}catch(e){}}
+  if(AC&&AC.state==='suspended')AC.resume(); return AC; }
+function tone(freq,dur,type,vol,to){ var ac=audio(); if(!ac)return;
+  var t=ac.currentTime,o=ac.createOscillator(),g=ac.createGain();
+  o.type=type||'sine'; o.frequency.setValueAtTime(freq,t);
+  if(to)o.frequency.exponentialRampToValueAtTime(Math.max(30,to),t+dur);
+  g.gain.setValueAtTime(0.0001,t); g.gain.exponentialRampToValueAtTime(vol||0.15,t+0.008);
+  g.gain.exponentialRampToValueAtTime(0.0001,t+dur);
+  o.connect(g); g.connect(ac.destination); o.start(t); o.stop(t+dur+0.02); }
+function sndSwitch(to){ tone(to?300:900,0.14,'sawtooth',0.14, to?900:300); tone(to?600:1200,0.1,'square',0.06); }
+function vibrate(ms){ try{if(navigator.vibrate)navigator.vibrate(ms);}catch(e){} }
+
+/* ---------- 물리 상수 ---------- */
+var GY=1900, MOVE=205, JUMPV=640;
+var PW=20, PH=28;
+// 최대 점프 높이 ≈ JUMPV^2/(2GY) ≈ 108px, 수평 도달 ≈ MOVE*2*JUMPV/GY ≈ 138px
+
+/* ---------- 스테이지 빌더 ---------- */
+function R(x,y,w,h){ return {x:x,y:y,w:w,h:h}; }
+var GY0=440; // 지면 top
+function buildStage(n){
+  if(n===0){ // 튜토리얼
+    return {
+      start:{x:60,y:400},
+      dims:[
+        { solids:[R(0,GY0,800,80)], hazards:[], exit:R(730,GY0-58,34,58), switchPad:R(360,GY0-14,44,14) },
+        { solids:[R(0,GY0,800,80)], hazards:[], exit:R(730,GY0-58,34,58), door:R(600,GY0-90,20,90) }
+      ],
+      mech:'switch'
+    };
+  }
+  if(n===1){ // Stage1: 미래 가시 기둥, 과거 평지
+    return {
+      start:{x:50,y:400},
+      dims:[
+        { solids:[R(0,GY0,800,80)], hazards:[], exit:R(740,GY0-58,34,58) },
+        { solids:[R(0,GY0,800,80)], hazards:[R(360,220,70,GY0-220)], exit:R(740,GY0-58,34,58) }
+      ],
+      mech:'none'
+    };
+  }
+  if(n===2){ // Stage2: 씨앗 → 미래 덩굴 계단
+    var vine=[R(120,380,80,16),R(150,315,80,16),R(115,250,80,16),R(150,185,80,16),R(90,150,150,16)];
+    return {
+      start:{x:600,y:400},
+      dims:[
+        { solids:[R(0,GY0,800,80)], hazards:[], exit:R(740,GY0-58,34,58), seedPad:R(150,GY0-12,50,12) },
+        { solids:[R(0,GY0,800,80)], hazards:[], exit:R(120,92,34,58), vine:vine }
+      ],
+      mech:'seed'
+    };
+  }
+  if(n===3){ // Stage3: 교차 발판 + 붕괴
+    var pastP=[R(0,GY0,240,80), R(240,GY0,90,20), R(390,GY0,90,20), R(560,GY0,240,80)];
+    var futP =[R(0,GY0,240,80), R(310,GY0,90,20), R(470,GY0,90,20), R(560,GY0,240,80)];
+    return {
+      start:{x:40,y:400},
+      dims:[
+        { solids:pastP, hazards:[], exit:R(750,GY0-58,34,58), crumble:true },
+        { solids:futP,  hazards:[], exit:R(750,GY0-58,34,58), crumble:true }
+      ],
+      mech:'crumble'
+    };
+  }
+}
+
+/* ---------- 시뮬레이션 ---------- */
+function makeSim(n){
+  var data=buildStage(n);
+  // 발판 붕괴 상태 초기화(깊은 복사 보장)
+  return {
+    stage:n, data:data, dim:1, // 시작은 미래(과거로 넘어가 조작하는 흐름 유도 위해도 되지만 기본 미래)
+    player:{x:data.start.x,y:data.start.y,vx:0,vy:0,onGround:false},
+    reached:[false,false], planted:false, switchOn:false,
+    t:0, glitch:0, dead:false, win:false, leftTimes:[null,null]
+  };
+}
+function activeSolids(sim){
+  var d=sim.dim, S=sim.data.dims[d], solids=S.solids.slice();
+  if(d===1 && sim.data.mech==='seed' && sim.planted && S.vine) solids=solids.concat(S.vine);
+  if(sim.data.mech==='crumble') solids=solids.filter(function(p){ return !p._gone; });
+  return solids;
+}
+function activeHazards(sim){ return sim.data.dims[sim.dim].hazards||[]; }
+
+function intersect(a,b){ return a.x<b.x+b.w && a.x+a.w>b.x && a.y<b.y+b.h && a.y+a.h>b.y; }
+
+function switchDim(sim,to){
+  if(to===sim.dim)return;
+  // 붕괴: 떠나는 차원에서 딛고 있던 발판 1초 후 붕괴
+  if(sim.data.mech==='crumble'){
+    var from=sim.dim, S=sim.data.dims[from], p=sim.player;
+    for(var i=0;i<S.solids.length;i++){ var s=S.solids[i];
+      if(!s._gone && p.x+PW>s.x && p.x<s.x+s.w && Math.abs((p.y+PH)-s.y)<6 && s.h<=30){ s._crumbleAt=sim.t+1.0; }
+    }
+  }
+  sim.dim=to; sim.glitch=0.28;
+}
+
+function stepSim(sim,dt,inp){
+  if(sim.win||sim.dead) return;
+  sim.t+=dt; if(sim.glitch>0)sim.glitch-=dt;
+  var p=sim.player;
+  // 차원 전환 입력
+  if(inp.dim!=null && inp.dim!==sim.dim) switchDim(sim,inp.dim);
+  // 상호작용
+  if(inp.action){
+    var S=sim.data.dims[sim.dim];
+    if(sim.dim===0 && sim.data.mech==='seed' && S.seedPad && intersect(playerRect(p),inflate(S.seedPad,10,40)) && !sim.planted){
+      sim.planted=true; sim._plantFx=sim.t;
+    }
+    if(sim.dim===0 && sim.data.mech==='switch' && S.switchPad && intersect(playerRect(p),inflate(S.switchPad,10,40))){
+      sim.switchOn=true;
+    }
+  }
+  // 붕괴 처리
+  if(sim.data.mech==='crumble'){ for(var di=0;di<2;di++){ var ss=sim.data.dims[di].solids;
+    for(var k=0;k<ss.length;k++){ if(ss[k]._crumbleAt!=null && sim.t>ss[k]._crumbleAt) ss[k]._gone=true; } } }
+
+  // 수평 입력
+  p.vx = (inp.mx||0)*MOVE;
+  // 점프
+  if(inp.jump && p.onGround){ p.vy=-JUMPV; p.onGround=false; tone(520,0.08,'square',0.1,720); }
+  // 중력
+  p.vy+=GY*dt; if(p.vy>1400)p.vy=1400;
+
+  var solids=activeSolids(sim);
+  // 서브스텝 이동
+  var speed=Math.max(Math.abs(p.vx),Math.abs(p.vy));
+  var ns=Math.max(1,Math.min(6,Math.ceil(speed*dt/8))), sdt=dt/ns;
+  for(var s=0;s<ns;s++){
+    // X
+    p.x+=p.vx*sdt;
+    var pr=playerRect(p);
+    for(var i=0;i<solids.length;i++){ var so=solids[i]; if(intersect(pr,so)){
+      if(p.vx>0) p.x=so.x-PW; else if(p.vx<0) p.x=so.x+so.w; p.vx=0; pr=playerRect(p); } }
+    // 좌우 경계
+    if(p.x<0)p.x=0; if(p.x>AW-PW)p.x=AW-PW;
+    // Y
+    p.y+=p.vy*sdt; pr=playerRect(p); p.onGround=false;
+    for(var j=0;j<solids.length;j++){ var s2=solids[j]; if(intersect(pr,s2)){
+      if(p.vy>0){ p.y=s2.y-PH; p.onGround=true; } else if(p.vy<0){ p.y=s2.y+s2.h; } p.vy=0; pr=playerRect(p); } }
+  }
+  // 바닥 아래로 추락
+  if(p.y>AH+80){ sim.dead=true; sim.deadReason='추락'; }
+  // 가시
+  var hz=activeHazards(sim), prr=playerRect(p);
+  for(var h=0;h<hz.length;h++){ if(intersect(prr,hz[h])){ sim.dead=true; sim.deadReason='가시'; } }
+  // 출구
+  var ex=sim.data.dims[sim.dim].exit;
+  if(ex && intersect(prr,ex) && !sim.reached[sim.dim]){ sim.reached[sim.dim]=true; sim._exitFx=sim.t;
+    if(sim.reached[0]&&sim.reached[1]) sim.win=true; }
+}
+function playerRect(p){ return {x:p.x,y:p.y,w:PW,h:PH}; }
+function inflate(r,dx,dy){ return {x:r.x-dx,y:r.y-dy,w:r.w+2*dx,h:r.h+2*dy}; }
+
+/* ---------- 라이브 상태 ---------- */
+var sim=null, mode='title', tutStep=0, keys={}, mob={left:false,right:false}, justJump=false, justAct=false;
+var STAGES=[{name:'STAGE 1',sub:'탭 스위칭 기초'},{name:'STAGE 2',sub:'시간과 씨앗'},{name:'STAGE 3',sub:'동시 붕괴'}];
+
+function startStage(i){ sim=makeSim(i+1); mode='play';
+  document.getElementById('stagePill').textContent=STAGES[i].name;
+  updHud(); toast(STAGES[i].name+' — '+STAGES[i].sub, sim.dim?'#7fe6ff':'#ffb774'); }
+function startTut(){ sim=makeSim(0); sim.dim=0; mode='tut'; tutStep=0;
+  document.getElementById('stagePill').textContent='TUTORIAL';
+  document.getElementById('tut').style.display='block'; loadTut(); updHud(); }
+
+/* ---------- 입력 수집 → step ---------- */
+function collectInput(){
+  var mx=0;
+  if(keys['arrowleft']||keys['a']||mob.left)mx-=1;
+  if(keys['arrowright']||keys['d']||mob.right)mx+=1;
+  var inp={mx:mx, jump:justJump, action:justAct, dim:null};
+  justJump=false; justAct=false;
+  return inp;
+}
+function doSwitch(to){ if(!sim||sim.win||sim.dead)return; if(to===sim.dim)return; sndSwitch(to); vibrate(15);
+  // step 에 dim 전달
+  pendingDim=to; }
+var pendingDim=null;
+
+window.addEventListener('keydown',function(e){ var k=e.key.toLowerCase(); keys[k]=true;
+  if(['arrowleft','arrowright','arrowup','arrowdown',' ','q','e','f'].indexOf(k)>=0)e.preventDefault();
+  if(mode==='title'||mode==='result')return;
+  if(k==='q') doSwitch(0);
+  if(k==='e') doSwitch(1);
+  if(k===' '||k==='arrowup'||k==='w') justJump=true;
+  if(k==='f') justAct=true;
+});
+window.addEventListener('keyup',function(e){ keys[e.key.toLowerCase()]=false; });
+
+// 상단 탭 클릭
+cv.addEventListener('pointerdown',function(e){ var x=(e.clientX-OX)/SC, y=(e.clientY-OY)/SC;
+  if(y<TAB_H){ if(x<AW/2) doSwitch(0); else doSwitch(1); } });
+
+// 모바일 버튼
+function hold(id,on){ var el=document.getElementById(id);
+  el.addEventListener('touchstart',function(e){on(true);e.preventDefault();},{passive:false});
+  el.addEventListener('touchend',function(e){on(false);e.preventDefault();},{passive:false});
+  el.addEventListener('mousedown',function(){on(true);}); el.addEventListener('mouseup',function(){on(false);}); }
+hold('mLeft',function(v){mob.left=v;}); hold('mRight',function(v){mob.right=v;});
+document.getElementById('mJump').addEventListener('touchstart',function(e){justJump=true;e.preventDefault();},{passive:false});
+document.getElementById('mJump').addEventListener('mousedown',function(){justJump=true;});
+document.getElementById('mAct').addEventListener('touchstart',function(e){justAct=true;e.preventDefault();},{passive:false});
+document.getElementById('mAct').addEventListener('mousedown',function(){justAct=true;});
+document.getElementById('btnReset').addEventListener('click',function(){ if(mode==='tut'||mode==='tutwait')loadTut(); else if(sim)startStage(sim.stage-1); });
+
+/* ---------- 튜토리얼 ---------- */
+var TUT=[
+  {tx:'상단 <b>[미래 ▶]</b> 탭을 클릭하거나 <b>E</b> 키로 차원을 이동해보세요!', check:function(s){return s.dim===1;}, dim:0},
+  {tx:'<b>과거</b>로 돌아가(<b>Q</b>) 스위치(✦/F) 위에서 눌러 미래의 문을 여세요!', check:function(s){return s.switchOn;}, dim:0},
+  {tx:'좋아요! 이제 지형 차이를 이용해 <b>양쪽 출구</b>로 이동해요!', check:function(s){return s.reached[0]&&s.reached[1];}, dim:0},
+];
+function loadTut(){ sim=makeSim(0); sim.dim=(TUT[tutStep].dim!=null?TUT[tutStep].dim:0); mode='tut';
+  if(tutStep>=1) sim.switchOn=false;
+  document.getElementById('tutStep').textContent='STEP '+(tutStep+1)+' / 3';
+  document.getElementById('tutTx').innerHTML=TUT[tutStep].tx; updHud(); }
+function tutTick(){ if((mode!=='tut'&&mode!=='tutwait')||!sim)return;
+  if(TUT[tutStep].check(sim)){ tone(880,0.1,'triangle',0.14,1320); tutStep++;
+    if(tutStep>=TUT.length){ mode='play'; document.getElementById('tut').style.display='none';
+      toast('튜토리얼 완료! 🎉','#6cff9e'); setTimeout(function(){startStage(0);},700); }
+    else { mode='tutwait'; setTimeout(loadTut,350); }
+  }
+}
+document.getElementById('tutSkip').addEventListener('click',function(){ mode='play'; document.getElementById('tut').style.display='none'; startStage(0); });
+
+/* ---------- HUD/결과 ---------- */
+function updHud(){ if(!sim)return; var n=(sim.reached[0]?1:0)+(sim.reached[1]?1:0);
+  document.getElementById('exitPill').innerHTML='출구 <b>'+n+'/2</b>'; }
+function endStage(){ mode='result'; var i=sim.stage-1, st=STAGES[i];
+  document.getElementById('resSub').textContent=st.name+' CLEAR';
+  document.getElementById('resStars').textContent='★★★';
+  document.getElementById('resTitle').textContent='양쪽 차원 클리어! 🎉';
+  document.getElementById('resMsg').textContent='두 세계의 출구에 모두 도달했다!';
+  tone(660,0.12,'triangle',0.16,990); setTimeout(function(){tone(990,0.16,'triangle',0.15);},110);
+  var row=document.getElementById('resRow'); row.innerHTML='';
+  var last=i>=STAGES.length-1;
+  if(!last) row.appendChild(mkbtn('다음 스테이지 →',function(){hide('result');startStage(i+1);}));
+  else row.appendChild(mkbtn('처음부터',function(){hide('result');startStage(0);}));
+  row.appendChild(mkbtn('이 판 다시',function(){hide('result');startStage(i);}));
+  show('result');
+}
+function mkbtn(t,fn){ var b=document.createElement('button'); b.textContent=t; b.onclick=fn; return b; }
+function show(id){document.getElementById(id).style.display='flex';}
+function hide(id){document.getElementById(id).style.display='none';}
+function toast(msg,c){ var el=document.getElementById('toast'); el.textContent=msg; el.style.color=c||'#fff';
+  el.classList.remove('show'); void el.offsetWidth; el.classList.add('show'); }
+
+/* ---------- 루프 ---------- */
+var last=0;
+function loop(ts){ if(!last)last=ts; var dt=Math.min(0.04,(ts-last)/1000); last=ts;
+  if((mode==='play'||mode==='tut'||mode==='tutwait') && sim){
+    var inp=collectInput();
+    if(pendingDim!=null){ inp.dim=pendingDim; pendingDim=null; }
+    stepSim(sim,dt,inp);
+    updHud();
+    if(mode==='tut'||mode==='tutwait') tutTick();
+    if(sim.dead){ toast((sim.deadReason||'')+' — 다시!','#ff8a8a'); vibrate([40,30,60]);
+      if(mode==='play') setTimeout(function(){startStage(sim.stage-1);},650);
+      else setTimeout(loadTut,650); sim.dead=false; sim._resetting=true; }
+    if(sim.win && !sim._done){ sim._done=true; setTimeout(endStage,500); }
+  }
+  render();
+  requestAnimationFrame(loop);
+}
+
+/* ---------- 렌더 ---------- */
+function render(){
+  ctx.clearRect(0,0,AW,AH);
+  if(!sim){ ctx.fillStyle='#06060f'; ctx.fillRect(0,0,AW,AH); return; }
+  var future=sim.dim===1;
+  // 배경(웜톤 과거 / 쿨톤 미래)
+  var bg=ctx.createLinearGradient(0,0,0,AH);
+  if(future){ bg.addColorStop(0,'#0a1030'); bg.addColorStop(1,'#160a2e'); }
+  else { bg.addColorStop(0,'#2a1c12'); bg.addColorStop(1,'#1a1008'); }
+  ctx.fillStyle=bg; ctx.fillRect(0,TAB_H,AW,AH-TAB_H);
+
+  var acc = future?'#7fe6ff':'#ffb774';
+  var acc2= future?'#c07bff':'#ff8a5a';
+
+  // 배경 격자/스캔라인
+  ctx.strokeStyle= future?'rgba(120,230,255,.06)':'rgba(255,180,110,.06)'; ctx.lineWidth=1;
+  for(var gx=0;gx<AW;gx+=40){ ctx.beginPath();ctx.moveTo(gx,TAB_H);ctx.lineTo(gx,AH);ctx.stroke(); }
+  if(future){ for(var sy=TAB_H;sy<AH;sy+=3){ ctx.strokeStyle='rgba(120,230,255,.03)'; ctx.beginPath();ctx.moveTo(0,sy);ctx.lineTo(AW,sy);ctx.stroke(); } }
+
+  // 솔리드
+  var solids=activeSolids(sim);
+  for(var i=0;i<solids.length;i++){ var s=solids[i];
+    var isVine = future && sim.data.dims[1].vine && sim.data.dims[1].vine.indexOf(s)>=0;
+    var crumbling = s._crumbleAt!=null && !s._gone;
+    ctx.save();
+    if(isVine){ ctx.fillStyle='rgba(90,220,120,.85)'; ctx.strokeStyle='#6cff9e'; }
+    else if(future){ ctx.fillStyle='rgba(40,60,110,.9)'; ctx.strokeStyle=crumbling?'#ff6a6a':'rgba(120,200,255,.6)'; }
+    else { ctx.fillStyle='rgba(90,64,36,.95)'; ctx.strokeStyle=crumbling?'#ff6a6a':'rgba(220,160,90,.7)'; }
+    if(crumbling){ ctx.save(); ctx.translate((Math.random()*2-1)*2,0); }
+    ctx.lineWidth=2; ctx.fillRect(s.x,s.y,s.w,s.h); ctx.strokeRect(s.x+.5,s.y+.5,s.w-1,s.h-1);
+    if(future && !isVine){ ctx.fillStyle='rgba(120,200,255,.5)'; ctx.fillRect(s.x,s.y,s.w,2); }
+    if(crumbling)ctx.restore();
+    ctx.restore();
+  }
+
+  // 씨앗 패드 / 스위치 패드
+  var Sd=sim.data.dims[sim.dim];
+  if(sim.dim===0 && Sd.seedPad){ var sp=Sd.seedPad;
+    ctx.fillStyle= sim.planted?'#6cff9e':'#ffd27a'; ctx.font='16px serif'; ctx.textAlign='center';
+    ctx.fillText(sim.planted?'🌱':'⊙', sp.x+sp.w/2, sp.y-2);
+    ctx.fillStyle='rgba(255,210,122,.5)'; ctx.fillRect(sp.x,sp.y,sp.w,sp.h); }
+  if(sim.dim===0 && Sd.switchPad){ var swp=Sd.switchPad;
+    ctx.fillStyle= sim.switchOn?'#6cff9e':'#ffd27a'; ctx.font='15px serif'; ctx.textAlign='center';
+    ctx.fillText(sim.switchOn?'✔':'✦', swp.x+swp.w/2, swp.y-2);
+    ctx.fillStyle=sim.switchOn?'rgba(108,255,158,.5)':'rgba(255,210,122,.5)'; ctx.fillRect(swp.x,swp.y,swp.w,swp.h); }
+
+  // 가시
+  var hz=activeHazards(sim);
+  for(var h=0;h<hz.length;h++){ var z=hz[h]; ctx.fillStyle='#ff4a5a';
+    var n=Math.max(1,Math.floor(z.w/16));
+    for(var t2=0;t2<n;t2++){ ctx.beginPath(); var sw=z.w/n;
+      ctx.moveTo(z.x+t2*sw,z.y); ctx.lineTo(z.x+t2*sw+sw/2,z.y+14); ctx.lineTo(z.x+(t2+1)*sw,z.y); ctx.fill(); }
+    ctx.fillStyle='rgba(255,74,90,.35)'; ctx.fillRect(z.x,z.y,z.w,z.h);
+    // 세로 가시(기둥)
+    var m=Math.max(1,Math.floor(z.h/16));
+    ctx.fillStyle='#ff4a5a';
+    for(var u=0;u<m;u++){ ctx.beginPath(); var sh=z.h/m;
+      ctx.moveTo(z.x,z.y+u*sh); ctx.lineTo(z.x-12,z.y+u*sh+sh/2); ctx.lineTo(z.x,z.y+(u+1)*sh); ctx.fill(); } }
+
+  // 출구
+  var ex=Sd.exit; if(ex){ var got=sim.reached[sim.dim];
+    ctx.save(); ctx.shadowColor=got?'#6cff9e':acc; ctx.shadowBlur=16;
+    ctx.strokeStyle=got?'#6cff9e':acc; ctx.lineWidth=2.5; ctx.strokeRect(ex.x,ex.y,ex.w,ex.h);
+    ctx.fillStyle=got?'rgba(108,255,158,.25)':'rgba(255,255,255,.08)'; ctx.fillRect(ex.x,ex.y,ex.w,ex.h);
+    ctx.restore();
+    ctx.fillStyle=got?'#6cff9e':acc; ctx.font='bold 11px Segoe UI'; ctx.textAlign='center';
+    ctx.fillText(got?'✔ OUT':'EXIT', ex.x+ex.w/2, ex.y-6); }
+
+  // 플레이어
+  var p=sim.player;
+  if(!sim._resetting){
+    ctx.save(); ctx.shadowColor=acc; ctx.shadowBlur=12;
+    var pg=ctx.createLinearGradient(p.x,p.y,p.x,p.y+PH); pg.addColorStop(0,'#fff'); pg.addColorStop(1,acc);
+    ctx.fillStyle=pg; roundRect(p.x,p.y,PW,PH,5); ctx.fill();
+    ctx.fillStyle='#1a1030'; ctx.fillRect(p.x+5,p.y+8,3,4); ctx.fillRect(p.x+PW-8,p.y+8,3,4);
+    ctx.restore();
+  }
+  sim._resetting=false;
+
+  // 상단 탭 UI
+  drawTabs(future);
+
+  // 글리치 전환
+  if(sim.glitch>0){ var g=sim.glitch/0.28;
+    for(var s2=0;s2<10;s2++){ var yy=TAB_H+Math.random()*(AH-TAB_H), hh=3+Math.random()*16, off=(Math.random()*2-1)*24*g;
+      ctx.drawImage(cv,0,yy*DPR*SC,cv.width,hh*DPR*SC, off,yy,AW,hh); }
+    ctx.fillStyle='rgba('+(future?'120,230,255':'255,180,110')+','+(0.15*g)+')'; ctx.fillRect(0,TAB_H,AW,AH-TAB_H); }
+}
+function drawTabs(future){
+  ctx.fillStyle='#0a0a16'; ctx.fillRect(0,0,AW,TAB_H);
+  ctx.strokeStyle='rgba(255,255,255,.08)'; ctx.beginPath(); ctx.moveTo(0,TAB_H);ctx.lineTo(AW,TAB_H); ctx.stroke();
+  // 과거 탭
+  drawTab(0,0,AW/2,TAB_H,'◀ 과거 (Q)','#ffb774', !future, sim.reached[0]);
+  drawTab(AW/2,0,AW/2,TAB_H,'미래 (E) ▶','#7fe6ff', future, sim.reached[1]);
+}
+function drawTab(x,y,w,h,label,color,active,done){
+  ctx.fillStyle= active? 'rgba('+hexToRgb(color)+',.18)':'rgba(255,255,255,.03)';
+  ctx.fillRect(x+3,y+4,w-6,h-4);
+  if(active){ ctx.fillStyle=color; ctx.fillRect(x+3,y+4,w-6,3); }
+  ctx.fillStyle= active?color:'#6b7099'; ctx.font='bold 14px Segoe UI'; ctx.textAlign='center'; ctx.textBaseline='middle';
+  ctx.fillText(label+(done?'  ✔':''), x+w/2, y+h/2+2); ctx.textBaseline='alphabetic';
+}
+function hexToRgb(h){ h=h.replace('#',''); return parseInt(h.substr(0,2),16)+','+parseInt(h.substr(2,2),16)+','+parseInt(h.substr(4,2),16); }
+function roundRect(x,y,w,h,r){ ctx.beginPath(); ctx.moveTo(x+r,y); ctx.arcTo(x+w,y,x+w,y+h,r); ctx.arcTo(x+w,y+h,x,y+h,r);
+  ctx.arcTo(x,y+h,x,y,r); ctx.arcTo(x,y,x+w,y,r); ctx.closePath(); }
+
+document.getElementById('startBtn').addEventListener('click',function(){ audio(); hide('title'); startTut(); });
+
+layout(); requestAnimationFrame(loop);
+
+/* ---------- 검증 노출 ---------- */
+window.__tab={ makeSim:makeSim, stepSim:stepSim, buildStage:buildStage,
+  consts:{GY:GY,MOVE:MOVE,JUMPV:JUMPV,PW:PW,PH:PH},
+  // 스크립트 솔버: 액션열 실행 → 양쪽 출구 도달?
+  runScript:function(stageN, script){
+    var s=makeSim(stageN); var dt=1/120, t=0, si=0, cur=null, curEnd=0;
+    // script: [{until, mx, jump, action, dim}]
+    for(var f=0; f<120*40; f++){
+      if(!cur || t>=curEnd){ if(si<script.length){ cur=script[si++]; curEnd=t+(cur.dur||0.1); } }
+      var inp={mx:cur?cur.mx||0:0, jump:false, action:false, dim:null};
+      if(cur){ if(cur.jump && !cur._j){inp.jump=true; cur._j=true;} if(cur.action && !cur._a){inp.action=true; cur._a=true;} if(cur.dim!=null && cur._dimDone!==true){ inp.dim=cur.dim; cur._dimDone=true; } }
+      stepSim(s,dt,inp); t+=dt;
+      if(s.win) return {win:true, t:Math.round(t*10)/10, reached:s.reached.slice()};
+      if(s.dead) return {win:false, dead:true, reason:s.deadReason, t:Math.round(t*10)/10, reached:s.reached.slice(), px:Math.round(s.player.x),py:Math.round(s.player.y),dim:s.dim};
+    }
+    return {win:false, timeout:true, reached:s.reached.slice(), px:Math.round(s.player.x), py:Math.round(s.player.y), dim:s.dim};
+  }
+};
+})();
+</script>
+</body>
+</html>
