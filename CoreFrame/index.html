@@ -1,0 +1,520 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>코어 프레임 · Core Frame</title>
+<style>
+  :root{ --ink:#dfe9ff; --muted:#7d88b0; --acc:#4fd6ff; }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  html,body{margin:0;height:100%;overflow:hidden;background:#05070e;color:var(--ink);
+    font-family:"Segoe UI",-apple-system,BlinkMacSystemFont,"Malgun Gothic",sans-serif;
+    -webkit-font-smoothing:antialiased;-webkit-user-select:none;user-select:none}
+  #wrap{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:#05070e}
+  canvas{display:block;cursor:crosshair}
+
+  #hud{position:fixed;top:0;left:0;right:0;padding:10px 14px;display:flex;gap:8px;align-items:center;justify-content:center;
+    pointer-events:none;z-index:5;font-size:12.5px}
+  #hud .pill{background:rgba(14,20,40,.6);border:1px solid rgba(80,200,255,.28);border-radius:16px;padding:5px 11px;
+    letter-spacing:.5px;backdrop-filter:blur(5px);white-space:nowrap;font-weight:600}
+  #hud .bar{width:96px;height:8px;background:rgba(255,255,255,.12);border-radius:5px;overflow:hidden;display:inline-block;vertical-align:middle}
+  #hpbar{height:100%;background:linear-gradient(90deg,#4fd6ff,#6cff9e)} #enbar{height:100%;background:linear-gradient(90deg,#ffd24a,#ff9a3d)}
+  #btnReset{pointer-events:auto;cursor:pointer}
+
+  .screen{position:fixed;inset:0;z-index:20;display:flex;flex-direction:column;align-items:center;justify-content:center;
+    text-align:center;padding:24px;background:radial-gradient(120% 100% at 50% 30%,rgba(10,18,38,.94),rgba(4,5,12,.97))}
+  .screen h1{margin:0 0 4px;font-size:clamp(26px,7vw,46px);font-weight:900;letter-spacing:2px;
+    background:linear-gradient(180deg,#fff,#4fd6ff);-webkit-background-clip:text;background-clip:text;color:transparent}
+  .screen .sub{color:#7d88b0;letter-spacing:5px;font-size:12px;margin-bottom:14px}
+  .screen p{color:#aeb9dd;font-size:14px;line-height:1.8;max-width:500px;margin:5px 0}
+  .screen p b{color:#4fd6ff} .screen kbd{background:rgba(255,255,255,.1);border:1px solid rgba(255,255,255,.2);border-radius:4px;padding:1px 6px;font-size:12px}
+  button.go{margin-top:20px;pointer-events:auto;cursor:pointer;font:inherit;font-weight:800;font-size:16px;letter-spacing:1px;
+    color:#04121e;background:linear-gradient(180deg,#a8ecff,#3fc4ff);border:0;padding:13px 34px;border-radius:28px;box-shadow:0 10px 30px -8px #2a9fd6}
+  button.go:active{transform:translateY(1px)}
+  .row{display:flex;gap:10px;margin-top:14px;flex-wrap:wrap;justify-content:center}
+  .row button{pointer-events:auto;cursor:pointer;font:inherit;font-weight:700;font-size:14px;color:#dbe4ff;
+    background:rgba(18,26,50,.85);border:1px solid rgba(80,200,255,.3);border-radius:12px;padding:10px 18px}
+  .hint{color:#4a5378;font-size:12px;margin-top:14px;line-height:1.7}
+  .stars{font-size:30px;letter-spacing:8px;margin:4px 0}
+
+  /* 정비소 */
+  #hangar{position:fixed;inset:0;z-index:18;display:none;flex-direction:column;align-items:center;justify-content:center;
+    background:radial-gradient(120% 100% at 50% 20%,rgba(10,20,42,.96),rgba(4,6,14,.98));padding:20px}
+  #hangar h2{margin:0 0 2px;font-size:24px;font-weight:900;letter-spacing:1px;color:#4fd6ff}
+  #hangar .desc{color:#8592b8;font-size:13px;margin-bottom:16px}
+  #slots{position:relative;width:220px;height:220px;margin:6px 0}
+  .slot{position:absolute;width:64px;height:64px;border-radius:12px;border:2px solid rgba(80,200,255,.4);
+    background:rgba(20,30,58,.8);display:flex;flex-direction:column;align-items:center;justify-content:center;cursor:pointer;
+    font-size:11px;font-weight:700;color:#cdd9ff;transition:transform .1s,border-color .1s}
+  .slot:hover{border-color:#4fd6ff;transform:scale(1.05)} .slot .ic{font-size:22px}
+  .slot.core{border-color:#ffd24a;cursor:default} .slot.core:hover{transform:none}
+  #sU{left:78px;top:0} #sD{left:78px;top:156px} #sL{left:0;top:78px} #sR{left:156px;top:78px} #sC{left:78px;top:78px}
+  #hangar .stat{color:#aeb9dd;font-size:13px;margin:4px 0} #hangar .stat b{color:#4fd6ff}
+  #hangar .cost{font-size:14px;font-weight:800} #hangar .cost.over{color:#ff6a6a}
+  #hangar .legend{color:#6a749c;font-size:11px;margin-top:8px;line-height:1.6}
+
+  #tut{position:fixed;left:50%;bottom:6%;transform:translateX(-50%);z-index:15;width:min(92vw,520px);
+    background:rgba(12,18,40,.95);border:1px solid rgba(80,200,255,.4);border-radius:14px;padding:13px 18px;text-align:center;
+    display:none;box-shadow:0 12px 40px rgba(0,0,0,.6)}
+  #tut .st{font-size:11px;letter-spacing:2px;color:#4fd6ff;font-weight:800;margin-bottom:4px}
+  #tut .tx{font-size:14px;line-height:1.5} #tut .tx b{color:#4fd6ff}
+  #tut button{margin-top:9px;cursor:pointer;font:inherit;font-weight:800;font-size:12.5px;color:#04121e;
+    background:linear-gradient(180deg,#a8ecff,#3fc4ff);border:0;padding:7px 18px;border-radius:16px}
+  #tut .skip{background:none;color:#5a6488;text-decoration:underline;box-shadow:none;margin-left:8px}
+</style>
+</head>
+<body>
+<div id="wrap"><canvas id="cv"></canvas></div>
+
+<div id="hud">
+  <span class="pill" id="stagePill">STAGE 1</span>
+  <span class="pill">HP <span class="bar"><span id="hpbar"></span></span></span>
+  <span class="pill">EN <span class="bar"><span id="enbar"></span></span></span>
+  <span class="pill" id="goalPill">GOAL</span>
+  <span class="pill" id="btnReset">↺</span>
+</div>
+
+<div class="screen" id="title">
+  <div class="sub">CORE FRAME</div>
+  <h1>코어 프레임</h1>
+  <p style="color:#4fd6ff;letter-spacing:2px;margin-top:-2px">중력 조향사</p>
+  <p>코어 드론에 <b>모듈 파츠</b>를 4방향에 장착하고, <b>무게중심과 토크</b>를 이해하며<br>
+     미세 추진·회전 관성을 제어해 정밀 통로를 돌파하라.</p>
+  <p style="font-size:12.5px;color:#7d88b0"><kbd>W A S D</kbd> 방향별 추진 · <kbd>Shift</kbd> 관성 브레이크 · <kbd>마우스</kbd> 그랩 암</p>
+  <button class="go" id="startBtn">시스템 부팅</button>
+</div>
+
+<div class="screen" id="result" style="display:none">
+  <div class="sub" id="resSub">MISSION CLEAR</div>
+  <div class="stars" id="resStars"></div>
+  <h1 id="resTitle" style="font-size:clamp(24px,5vw,36px)">돌파 성공</h1>
+  <p id="resMsg"></p>
+  <div class="row" id="resRow"></div>
+</div>
+
+<div id="hangar">
+  <h2>⚙ 정비소 · HANGAR</h2>
+  <div class="desc">슬롯을 클릭해 모듈을 바꾸세요. 배치가 무게중심과 회전력을 바꿉니다.</div>
+  <div id="slots">
+    <div class="slot core" id="sC"><span class="ic">🔷</span>CORE</div>
+    <div class="slot" id="sU" data-slot="U"></div>
+    <div class="slot" id="sD" data-slot="D"></div>
+    <div class="slot" id="sL" data-slot="L"></div>
+    <div class="slot" id="sR" data-slot="R"></div>
+  </div>
+  <div class="stat">질량 <b id="hMass">0</b> · 무게중심 <b id="hCom">0,0</b> · 관성 <b id="hInertia">0</b></div>
+  <div class="cost" id="hCost">COST 0 / 6</div>
+  <div class="legend">🚀추진기(1) · 🛡️쉴드(2,무겁고 충격흡수) · 🦾그랩암(2) · ⬜빈칸<br>추진기가 없는 방향으로는 그 방향 추진 불가!</div>
+  <button class="go" id="launchBtn" style="margin-top:16px">출격 →</button>
+</div>
+
+<div id="tut">
+  <div class="st" id="tutStep">STEP 1 / 3</div>
+  <div class="tx" id="tutTx"></div>
+  <div><button id="tutSkip" class="skip">건너뛰기</button></div>
+</div>
+
+<script>
+"use strict";
+(function(){
+/* =========================================================================
+   코어 프레임 : 중력 조향사 — Custom 2D Rigid-body 드론 (COM·관성·토크)
+   ========================================================================= */
+var cv=document.getElementById('cv'), ctx=cv.getContext('2d');
+var AW=960, AH=540, DPR=1, SC=1, OX=0, OY=0;
+function layout(){
+  DPR=Math.min(2,window.devicePixelRatio||1);
+  var vw=window.innerWidth, vh=window.innerHeight;
+  SC=Math.min(vw/AW,vh/AH);
+  var w=Math.round(AW*SC), h=Math.round(AH*SC);
+  OX=Math.round((vw-w)/2); OY=Math.round((vh-h)/2);
+  cv.style.width=w+'px'; cv.style.height=h+'px';
+  cv.width=Math.round(w*DPR); cv.height=Math.round(h*DPR);
+  ctx.setTransform(DPR*SC,0,0,DPR*SC,0,0);
+}
+window.addEventListener('resize',layout);
+
+/* ---------- 오디오 ---------- */
+var AC=null;
+function audio(){ if(!AC){try{AC=new (window.AudioContext||window.webkitAudioContext)();}catch(e){}}
+  if(AC&&AC.state==='suspended')AC.resume(); return AC; }
+var thrOsc=null, thrGain=null;
+function thrusterSound(on,intensity){ var ac=audio(); if(!ac)return;
+  if(on){ if(!thrOsc){ thrOsc=ac.createOscillator(); thrGain=ac.createGain(); thrOsc.type='sawtooth';
+      var f=ac.createBiquadFilter(); f.type='lowpass'; f.frequency.value=500; thrOsc.connect(f); f.connect(thrGain); thrGain.connect(ac.destination); thrGain.gain.value=0; thrOsc.frequency.value=90; thrOsc.start(); }
+    thrGain.gain.setTargetAtTime(0.04*intensity, ac.currentTime, 0.05); thrOsc.frequency.setTargetAtTime(80+intensity*40,ac.currentTime,0.1);
+  } else if(thrGain){ thrGain.gain.setTargetAtTime(0, ac.currentTime, 0.08); } }
+function tone(freq,dur,type,vol,to){ var ac=audio(); if(!ac)return;
+  var t=ac.currentTime,o=ac.createOscillator(),g=ac.createGain();
+  o.type=type||'sine'; o.frequency.setValueAtTime(freq,t); if(to)o.frequency.exponentialRampToValueAtTime(Math.max(30,to),t+dur);
+  g.gain.setValueAtTime(0.0001,t); g.gain.exponentialRampToValueAtTime(vol||0.15,t+0.008); g.gain.exponentialRampToValueAtTime(0.0001,t+dur);
+  o.connect(g); g.connect(ac.destination); o.start(t); o.stop(t+dur+0.02); }
+function sndClang(v){ tone(120,0.16,'square',Math.min(0.25,0.06+v*0.01),50); tone(200,0.1,'sawtooth',0.1); }
+function sndWin(){ [440,660,880,1100].forEach(function(f,i){setTimeout(function(){tone(f,0.14,'triangle',0.13);},i*90);}); }
+
+/* ---------- 모듈/슬롯 ---------- */
+var A=28; // 슬롯 암 길이
+var SLOTPOS={ C:[0,0], U:[0,-A], D:[0,A], L:[-A,0], R:[A,0] };
+var MOD={ thr:{mass:1,cost:1,ic:'🚀'}, shd:{mass:3,cost:2,ic:'🛡️'}, grb:{mass:2,cost:2,ic:'🦾'}, null:{mass:0,cost:0,ic:'⬜'} };
+// 키 → (원하는 추진 방향을 내는) 슬롯
+var KEYSLOT={ 'w':'D','s':'U','a':'R','d':'L' };
+
+function makeDrone(loadout){
+  var d={ x:0,y:0,vx:0,vy:0, ang:0, av:0, hp:100, en:100, loadout:loadout||{U:'thr',D:'thr',L:'thr',R:'thr'},
+    grab:null, armAng:0, r:26 };
+  recompute(d); return d;
+}
+function recompute(d){
+  var mass=4, mx=0, my=0; // core mass 4 at (0,0)
+  var slots=['U','D','L','R'];
+  for(var i=0;i<slots.length;i++){ var t=d.loadout[slots[i]]; if(!t)continue; var m=MOD[t].mass, p=SLOTPOS[slots[i]];
+    mass+=m; mx+=m*p[0]; my+=m*p[1]; }
+  d.mass=mass; d.com=[mx/mass,my/mass];
+  // 관성모멘트: Σ m|p-com|² (+코어)
+  var I= 4*(d.com[0]*d.com[0]+d.com[1]*d.com[1]) + 40; // 코어 자체 관성 40
+  for(var j=0;j<slots.length;j++){ var t2=d.loadout[slots[j]]; if(!t2)continue; var m2=MOD[t2].mass, p2=SLOTPOS[slots[j]];
+    var dx=p2[0]-d.com[0], dy=p2[1]-d.com[1]; I+=m2*(dx*dx+dy*dy); }
+  d.I=I;
+  d.thrusters=slots.filter(function(s){return d.loadout[s]==='thr';});
+  d.hasGrab=slots.some(function(s){return d.loadout[s]==='grb';});
+  d.shields=slots.filter(function(s){return d.loadout[s]==='shd';});
+  d.cost=slots.reduce(function(a,s){return a+(d.loadout[s]?MOD[d.loadout[s]].cost:0);},0);
+}
+function rot(x,y,a){ var c=Math.cos(a),s=Math.sin(a); return [x*c-y*s, x*s+y*c]; }
+
+var THRUST=520;         // 추진력(force)
+function stepDrone(d, dt, inp, grav){
+  var ax=0, ay=0, torque=0, firing=0;
+  // 각 방향 추진기
+  var keys=['w','s','a','d'];
+  for(var i=0;i<keys.length;i++){ if(!inp[keys[i]])continue; var slot=KEYSLOT[keys[i]]; if(d.loadout[slot]!=='thr')continue;
+    if(d.en<=0)continue;
+    var p=SLOTPOS[slot]; var dir=[-p[0]/A,-p[1]/A]; // 슬롯 반대방향으로 분사→그 방향으로 추진
+    var fl=[dir[0]*THRUST, dir[1]*THRUST];
+    var fw=rot(fl[0],fl[1],d.ang);
+    ax+=fw[0]/d.mass; ay+=fw[1]/d.mass;
+    var rl=[p[0]-d.com[0], p[1]-d.com[1]]; var rw=rot(rl[0],rl[1],d.ang);
+    torque += rw[0]*fw[1]-rw[1]*fw[0];
+    d.en=Math.max(0,d.en-6*dt); firing++;
+    d._exhaust=d._exhaust||[]; d._exhaust.push({slot:slot});
+  }
+  // 중력
+  ax+=grav[0]; ay+=grav[1];
+  // 그랩 화물(스프링 펜듈럼)
+  if(d.grab){ var tipL=[d.com[0]+ (d.hasGrab? armLocal(d):[0,0])[0], 0];
+    var tip=armTipWorld(d); var g=d.grab;
+    g.vy+=grav[1]; g.vx+=grav[0];
+    var sx=tip[0]-g.x, sy=tip[1]-g.y, sd=Math.hypot(sx,sy)||0.01; var stretch=sd-g.len;
+    var k=60; var fx=sx/sd*stretch*k, fy=sy/sd*stretch*k;
+    g.vx+=fx/g.mass*dt; g.vy+=fy/g.mass*dt; g.vx*=0.99; g.vy*=0.99;
+    g.x+=g.vx*dt; g.y+=g.vy*dt;
+    // 반작용을 드론 팁에 적용 → 토크
+    var reff=[-fx,-fy]; ax+=reff[0]/d.mass*dt*0; ay+=reff[1]/d.mass*dt*0;
+    var rl2=[armLocal(d)[0]-d.com[0], armLocal(d)[1]-d.com[1]]; var rw2=rot(rl2[0],rl2[1],d.ang);
+    torque += (rw2[0]*(-fy)-rw2[1]*(-fx))*0.02;
+    ax+=(-fx)/d.mass; ay+=(-fy)/d.mass;
+  }
+  // 적분
+  d.vx+=ax*dt; d.vy+=ay*dt; d.av+=(torque/d.I)*dt;
+  // 관성 댐퍼
+  if(inp.shift && d.en>0){ var k2=Math.pow(0.02,dt); d.vx*=k2; d.vy*=k2; d.av*=Math.pow(0.01,dt); d.en=Math.max(0,d.en-14*dt); }
+  d.x+=d.vx*dt; d.y+=d.vy*dt; d.ang+=d.av*dt;
+  // 에너지 재생
+  if(!firing && !inp.shift) d.en=Math.min(100,d.en+12*dt);
+  d._firing=firing;
+  return {firing:firing, torque:torque, ax:ax, ay:ay};
+}
+function armLocal(d){ // 그랩암 슬롯 위치(로컬)
+  var s=['U','D','L','R'].find(function(x){return d.loadout[x]==='grb';}); return s?SLOTPOS[s]:[0,0]; }
+function armTipWorld(d){ var al=armLocal(d); var aw=rot(al[0]-d.com[0],al[1]-d.com[1],d.ang);
+  return [d.x+aw[0]+Math.cos(d.armAng)*22, d.y+aw[1]+Math.sin(d.armAng)*22]; }
+
+/* ---------- 스테이지 ---------- */
+function Rrect(x,y,w,h){ return {x:x,y:y,w:w,h:h}; }
+var STAGES=[
+  { name:'STAGE 1', sub:'정밀 운전', grav:[0,0], budget:6,
+    loadout:{U:'thr',D:'thr',L:'thr',R:'thr'},
+    walls:[ Rrect(0,0,AW,40),Rrect(0,AH-40,AW,40),Rrect(0,0,40,AH),Rrect(AW-40,0,40,AH),
+            Rrect(230,40,40,300), Rrect(470,AH-40-300,40,300), Rrect(700,40,40,300) ],
+    start:[110,270], goal:Rrect(AW-110,AH-120,60,80),
+    waypoints:[[110,270],[180,440],[360,440],[430,120],[560,120],[640,120],[680,440],[790,440],[AW-80,AH-80]] },
+  { name:'STAGE 2', sub:'회전 톱니', grav:[0,120], budget:6,
+    loadout:{U:'thr',D:'thr',L:'thr',R:'thr'},
+    walls:[ Rrect(0,0,AW,40),Rrect(0,AH-40,AW,40),Rrect(0,0,40,AH),Rrect(AW-40,0,40,AH) ],
+    gears:[ {x:360,y:270,r:120,spd:0.7,spokes:5}, {x:640,y:270,r:120,spd:-0.9,spokes:5} ],
+    start:[110,270], goal:Rrect(AW-110,AH/2-40,60,80),
+    waypoints:[[110,270],[250,150],[360,110],[500,270],[640,430],[760,270],[AW-90,AH/2]] },
+  { name:'STAGE 3', sub:'중력 이상 · 화물', grav:[0,90], budget:8, gravShift:true,
+    loadout:{U:'thr',D:'thr',L:'thr',R:'grb'},
+    walls:[ Rrect(0,0,AW,40),Rrect(0,AH-40,AW,40),Rrect(0,0,40,AH),Rrect(AW-40,0,40,AH),
+            Rrect(300,40,40,180), Rrect(620,AH-40-180,40,180) ],
+    cargo:[220,300], start:[120,150], goal:Rrect(AW-110,120,60,80),
+    waypoints:[[120,150],[220,300],[430,270],[560,180],[760,270],[AW-90,160]] },
+];
+
+/* ---------- 시뮬 ---------- */
+function makeSim(i,loadout){
+  var st=STAGES[i];
+  var d=makeDrone(loadout||Object.assign({},st.loadout));
+  d.x=st.start[0]; d.y=st.start[1]; d.vx=0;d.vy=0;d.ang=0;d.av=0;
+  var sim={ stage:i, drone:d, walls:st.walls||[], gears:st.gears?st.gears.map(function(g){return Object.assign({ang:0},g);}):[],
+    goal:st.goal, grav:st.grav.slice(), baseGrav:st.grav.slice(), gravShift:!!st.gravShift, waypoints:st.waypoints,
+    cargo:null, t:0, win:false, dead:false, sparks:[], trail:[], gravT:0 };
+  if(st.cargo){ sim.cargo={x:st.cargo[0],y:st.cargo[1],vx:0,vy:0,mass:6,r:16,len:34,grabbed:false}; }
+  return sim;
+}
+
+function circleRect(cx,cy,cr,r){
+  var nx=Math.max(r.x,Math.min(cx,r.x+r.w)), ny=Math.max(r.y,Math.min(cy,r.y+r.h));
+  var dx=cx-nx, dy=cy-ny, d2=dx*dx+dy*dy;
+  if(d2>=cr*cr)return null; var d=Math.sqrt(d2)||0.001; return {nx:dx/d,ny:dy/d,pen:cr-d}; }
+
+function stepSim(sim,dt){
+  if(sim.win||sim.dead)return; sim.t+=dt;
+  var d=sim.drone;
+  // 중력 이상(주기적 변화)
+  if(sim.gravShift){ sim.gravT+=dt; var g=Math.sin(sim.gravT*0.6); sim.grav=[Math.sin(sim.gravT*0.4)*40, 90*g]; }
+  // 입력
+  var inp=sim._inp||{};
+  var info=stepDrone(d,dt,inp,sim.grav);
+  if(info.firing){ // 배기 파티클
+    for(var e=0;e<(d._exhaust||[]).length;e++){ var slot=d._exhaust[e].slot; var p=SLOTPOS[slot];
+      var pw=rot(p[0]-d.com[0],p[1]-d.com[1],d.ang); var dir=rot(p[0]/A,p[1]/A,d.ang);
+      sim.sparks.push({x:d.x+pw[0],y:d.y+pw[1],vx:dir[0]*160+d.vx*0.3,vy:dir[1]*160+d.vy*0.3,life:0.5,c:'#4fd6ff'}); }
+  }
+  d._exhaust=[];
+  // 기어
+  for(var g2=0;g2<sim.gears.length;g2++){ sim.gears[g2].ang+=sim.gears[g2].spd*dt; }
+  // 트레일
+  sim.trail.push({x:d.x,y:d.y,life:1}); if(sim.trail.length>40)sim.trail.shift();
+  for(var tr=sim.trail.length-1;tr>=0;tr--){ sim.trail[tr].life-=dt*1.2; if(sim.trail[tr].life<=0)sim.trail.splice(tr,1); }
+  // 벽 충돌
+  for(var w=0;w<sim.walls.length;w++){ var col=circleRect(d.x,d.y,d.r,sim.walls[w]);
+    if(col){ var impact=Math.abs(d.vx*col.nx+d.vy*col.ny);
+      d.x+=col.nx*col.pen; d.y+=col.ny*col.pen;
+      var vn=d.vx*col.nx+d.vy*col.ny; d.vx-=vn*col.nx*1.4; d.vy-=vn*col.ny*1.4;
+      var dmg=Math.max(0,(impact-40)/6); if(d.shields.length)dmg*=0.4;
+      if(dmg>0.5){ d.hp-=dmg; sparkBurst(sim,d.x+ -col.nx*d.r,d.y-col.ny*d.r,impact); sndClang(impact);
+        if(d.hp<=0){ d.hp=0; sim.dead=true; sim.deadReason='기체 파괴'; } } }
+  }
+  // 기어 스포크 충돌(회전 세그먼트)
+  for(var g3=0;g3<sim.gears.length;g3++){ var ge=sim.gears[g3];
+    for(var sp=0;sp<ge.spokes;sp++){ var a=ge.ang+sp/ge.spokes*Math.PI*2;
+      var ex=ge.x+Math.cos(a)*ge.r, ey=ge.y+Math.sin(a)*ge.r;
+      if(distSegPt(d.x,d.y,ge.x,ge.y,ex,ey)<d.r+6){ var imp=Math.hypot(d.vx,d.vy)+60;
+        var nx=(d.x-ge.x), ny=(d.y-ge.y), nn=Math.hypot(nx,ny)||1; nx/=nn;ny/=nn;
+        d.vx+=nx*120; d.vy+=ny*120; d.hp-=8; sparkBurst(sim,d.x,d.y,imp); sndClang(imp);
+        if(d.hp<=0){d.hp=0;sim.dead=true;sim.deadReason='톱니에 갈림';} } }
+    // 허브
+    if(Math.hypot(d.x-ge.x,d.y-ge.y)<28+d.r){ var nx2=(d.x-ge.x),ny2=(d.y-ge.y),nn2=Math.hypot(nx2,ny2)||1;
+      d.x=ge.x+nx2/nn2*(28+d.r); d.y=ge.y+ny2/nn2*(28+d.r); }
+  }
+  // 스파크
+  for(var s=sim.sparks.length-1;s>=0;s--){ var sk=sim.sparks[s]; sk.life-=dt*2; sk.x+=sk.vx*dt; sk.y+=sk.vy*dt; sk.vx*=0.92;sk.vy*=0.92; if(sk.life<=0)sim.sparks.splice(s,1); }
+  // 목표
+  if(pointInRect(d.x,d.y,sim.goal)){ sim.win=true; }
+  // 화면 밖
+  if(d.y>AH+100||d.y<-100||d.x<-100||d.x>AW+100){ sim.dead=true; sim.deadReason='이탈'; }
+}
+function distSegPt(px,py,ax,ay,bx,by){ var dx=bx-ax,dy=by-ay,l2=dx*dx+dy*dy;
+  var t=l2>0?((px-ax)*dx+(py-ay)*dy)/l2:0; t=Math.max(0,Math.min(1,t)); return Math.hypot(px-(ax+dx*t),py-(ay+dy*t)); }
+function pointInRect(x,y,r){ return x>r.x&&x<r.x+r.w&&y>r.y&&y<r.y+r.h; }
+function sparkBurst(sim,x,y,v){ for(var i=0;i<Math.min(20,6+v/6);i++){ var a=Math.random()*6.28,s=60+Math.random()*180;
+  sim.sparks.push({x:x,y:y,vx:Math.cos(a)*s,vy:Math.sin(a)*s,life:0.6,c:i%2?'#ffd24a':'#ff7a3a'}); } }
+
+/* ---------- 라이브 ---------- */
+var sim=null, mode='title', tutStep=0, keys={}, curLoadout=null, editStage=0;
+function updHud(){ if(!sim)return; var d=sim.drone;
+  document.getElementById('hpbar').style.width=Math.max(0,d.hp)+'%';
+  document.getElementById('enbar').style.width=Math.max(0,d.en)+'%';
+  document.getElementById('goalPill').textContent='➤ GOAL'; }
+
+/* 입력 */
+window.addEventListener('keydown',function(e){ var k=e.key.toLowerCase(); keys[k]=true; if(k==='shift')keys['shift']=true;
+  if(['w','a','s','d',' '].indexOf(k)>=0 && (mode==='play'||mode==='tut'))e.preventDefault(); });
+window.addEventListener('keyup',function(e){ var k=e.key.toLowerCase(); keys[k]=false; if(e.key==='Shift')keys['shift']=false; });
+cv.addEventListener('mousemove',function(e){ if(sim){ var mx=(e.clientX-OX)/SC,my=(e.clientY-OY)/SC; sim.drone.armAng=Math.atan2(my-sim.drone.y,mx-sim.drone.x); } });
+cv.addEventListener('mousedown',function(e){ audio(); if(!sim||mode!=='play'&&mode!=='tut')return; grabAction(); });
+function grabAction(){ var d=sim.drone; if(!d.hasGrab)return;
+  if(d.grab){ d.grab=null; } // 놓기
+  else if(sim.cargo && !sim.cargo.grabbed){ var tip=armTipWorld(d);
+    if(Math.hypot(sim.cargo.x-tip[0],sim.cargo.y-tip[1])<70){ sim.cargo.grabbed=true; d.grab=sim.cargo; d.grab.len=34; tone(300,0.1,'square',0.1,600); } } }
+document.getElementById('btnReset').addEventListener('click',function(){ if(mode==='tut'||mode==='tutwait')loadTut(); else if(sim)startStage(sim.stage,curLoadout); });
+
+/* 정비소 */
+var CYCLE=[null,'thr','shd','grb'];
+function openHangar(i){ editStage=i; mode='hangar'; curLoadout=Object.assign({},STAGES[i].loadout);
+  document.getElementById('hangar').style.display='flex'; renderHangar(); }
+function renderHangar(){ ['U','D','L','R'].forEach(function(s){ var el=document.getElementById('s'+s); var t=curLoadout[s];
+    el.innerHTML='<span class="ic">'+MOD[t].ic+'</span>'+(t?({thr:'추진',shd:'쉴드',grb:'그랩'})[t]:'빈칸'); });
+  var tmp=makeDrone(curLoadout);
+  document.getElementById('hMass').textContent=tmp.mass;
+  document.getElementById('hCom').textContent=Math.round(tmp.com[0])+','+Math.round(tmp.com[1]);
+  document.getElementById('hInertia').textContent=Math.round(tmp.I);
+  var budget=STAGES[editStage].budget; var ce=document.getElementById('hCost'); ce.textContent='COST '+tmp.cost+' / '+budget;
+  ce.classList.toggle('over',tmp.cost>budget);
+  document.getElementById('launchBtn').style.opacity=tmp.cost>budget?0.4:1;
+}
+['U','D','L','R'].forEach(function(s){ document.getElementById('s'+s).addEventListener('click',function(){
+  var cur=curLoadout[s]; var idx=CYCLE.indexOf(cur); curLoadout[s]=CYCLE[(idx+1)%CYCLE.length]; renderHangar(); }); });
+document.getElementById('launchBtn').addEventListener('click',function(){ var tmp=makeDrone(curLoadout);
+  if(tmp.cost>STAGES[editStage].budget)return; document.getElementById('hangar').style.display='none'; startStage(editStage,curLoadout); });
+
+/* 스테이지/튜토리얼 */
+function startStage(i,loadout){ sim=makeSim(i,loadout); curLoadout=loadout||Object.assign({},STAGES[i].loadout); mode='play';
+  document.getElementById('stagePill').textContent=STAGES[i].name; updHud(); }
+function startTut(){ tutStep=0; mode='tut'; document.getElementById('tut').style.display='block'; loadTut(); }
+var TUT=[
+  {tx:'단일 추진 관성 제어! <b>W</b>로 추진하고 <b>Shift</b>로 관성을 잡아 목표(➤)에 정차하세요.',
+    setup:function(){ sim=makeSim(0,{U:null,D:'thr',L:null,R:null}); sim.walls=[Rrect(0,0,AW,40),Rrect(0,AH-40,AW,40),Rrect(0,0,40,AH),Rrect(AW-40,0,40,AH)]; sim.gears=[]; sim.grav=[0,0];sim.baseGrav=[0,0];
+      sim.drone.x=AW/2; sim.drone.y=AH-120; sim.goal=Rrect(AW/2-40,120,80,80); },
+    check:function(s){ return pointInRect(s.drone.x,s.drone.y,s.goal) && Math.hypot(s.drone.vx,s.drone.vy)<30; }},
+  {tx:'좌측에만 추진기 2개! 비대칭 <b>무게중심</b>으로 회전이 생깁니다. 반대 추진으로 균형을 잡아 목표로!',
+    setup:function(){ sim=makeSim(0,{U:'thr',D:'thr',L:'thr',R:null}); sim.walls=[Rrect(0,0,AW,40),Rrect(0,AH-40,AW,40),Rrect(0,0,40,AH),Rrect(AW-40,0,40,AH)];sim.gears=[];sim.grav=[0,0];sim.baseGrav=[0,0];
+      sim.drone.x=150; sim.drone.y=AH/2; sim.goal=Rrect(AW-160,AH/2-40,80,80); },
+    check:function(s){ return pointInRect(s.drone.x,s.drone.y,s.goal); }},
+  {tx:'좋습니다! 이제 정비소에서 기체를 꾸미고 <b>실전 미션</b>에 출격하세요!', setup:function(){}, check:function(s){return true;}},
+];
+function loadTut(){ var st=TUT[tutStep]; st.setup&&st.setup();
+  document.getElementById('tutStep').textContent='STEP '+(tutStep+1)+' / 3'; document.getElementById('tutTx').innerHTML=st.tx; updHud(); }
+function tutTick(){ if((mode!=='tut'&&mode!=='tutwait')||!sim)return;
+  if(TUT[tutStep].check(sim)){ tone(880,0.1,'triangle',0.14,1320); tutStep++;
+    if(tutStep>=TUT.length){ mode='play'; document.getElementById('tut').style.display='none'; setTimeout(function(){openHangar(0);},600); }
+    else { mode='tutwait'; setTimeout(function(){ mode='tut'; loadTut(); },500); } } }
+document.getElementById('tutSkip').addEventListener('click',function(){ document.getElementById('tut').style.display='none'; openHangar(0); });
+
+function endStage(win){ mode='result'; var i=sim.stage;
+  if(win){ document.getElementById('resSub').textContent=STAGES[i].name+' CLEAR';
+    document.getElementById('resStars').textContent= sim.drone.hp>=70?'★★★':sim.drone.hp>=35?'★★☆':'★☆☆';
+    document.getElementById('resTitle').textContent= i>=2?'구역 탈출! 🛸':'돌파 성공!';
+    document.getElementById('resMsg').textContent='기체 내구도 '+Math.round(sim.drone.hp)+'% 로 통과!'; sndWin();
+  } else { document.getElementById('resSub').textContent=STAGES[i].name+' 실패';
+    document.getElementById('resStars').textContent='☆☆☆'; document.getElementById('resTitle').textContent='미션 실패';
+    document.getElementById('resMsg').textContent=(sim.deadReason||'')+' — 재정비!'; tone(160,0.4,'sawtooth',0.16,50); }
+  var row=document.getElementById('resRow'); row.innerHTML=''; var last=i>=STAGES.length-1;
+  if(win&&!last) row.appendChild(mkbtn('정비 후 다음 →',function(){hide('result');openHangar(i+1);}));
+  if(win&&last) row.appendChild(mkbtn('처음부터',function(){hide('result');openHangar(0);}));
+  row.appendChild(mkbtn(win?'이 판 다시':'재정비',function(){hide('result');openHangar(i);}));
+  show('result');
+}
+function mkbtn(t,fn){ var b=document.createElement('button'); b.textContent=t; b.onclick=fn; return b; }
+function show(id){document.getElementById(id).style.display='flex';}
+function hide(id){document.getElementById(id).style.display='none';}
+
+/* 루프 */
+var last=0, acc=0, STEP=1/120;
+function loop(ts){ if(!last)last=ts; var dt=Math.min(0.05,(ts-last)/1000); last=ts;
+  if((mode==='play'||mode==='tut'||mode==='tutwait') && sim){
+    sim._inp={ w:keys['w'],s:keys['s'],a:keys['a'],d:keys['d'],shift:keys['shift'] };
+    acc+=dt; var guard=0; while(acc>=STEP&&guard<8){ stepSim(sim,STEP); acc-=STEP; guard++; }
+    thrusterSound(sim.drone._firing>0, sim.drone._firing||1);
+    updHud();
+    if(mode==='tut'||mode==='tutwait') tutTick();
+    if(sim.dead&&!sim._done){ sim._done=true; thrusterSound(false); if(mode==='play')setTimeout(function(){endStage(false);},600); else setTimeout(function(){mode='tut';loadTut();},700); }
+    if(sim.win&&!sim._done&&mode==='play'){ sim._done=true; thrusterSound(false); setTimeout(function(){endStage(true);},600); }
+  } else thrusterSound(false);
+  render();
+  requestAnimationFrame(loop);
+}
+
+/* ---------- 렌더 ---------- */
+function render(){
+  ctx.clearRect(0,0,AW,AH); ctx.fillStyle='#080b16'; ctx.fillRect(0,0,AW,AH);
+  if(!sim){ return; }
+  // 격자
+  ctx.strokeStyle='rgba(80,150,255,.05)'; ctx.lineWidth=1;
+  for(var gx=0;gx<AW;gx+=48){ctx.beginPath();ctx.moveTo(gx,0);ctx.lineTo(gx,AH);ctx.stroke();}
+  for(var gy=0;gy<AH;gy+=48){ctx.beginPath();ctx.moveTo(0,gy);ctx.lineTo(AW,gy);ctx.stroke();}
+  // 중력 방향 표시
+  if(sim.grav[0]||sim.grav[1]){ var gm=Math.hypot(sim.grav[0],sim.grav[1]); if(gm>1){ var gx2=sim.grav[0]/gm,gy2=sim.grav[1]/gm;
+    ctx.strokeStyle='rgba(255,120,120,.3)'; ctx.lineWidth=2; ctx.beginPath(); ctx.moveTo(60,60); ctx.lineTo(60+gx2*24,60+gy2*24); ctx.stroke();
+    ctx.fillStyle='rgba(255,120,120,.5)'; ctx.font='10px Segoe UI'; ctx.fillText('G',48,64); } }
+  // 벽
+  for(var w=0;w<sim.walls.length;w++){ var r=sim.walls[w]; ctx.fillStyle='rgba(30,44,80,.95)'; ctx.fillRect(r.x,r.y,r.w,r.h);
+    ctx.strokeStyle='rgba(90,150,255,.5)'; ctx.lineWidth=2; ctx.strokeRect(r.x+.5,r.y+.5,r.w-1,r.h-1);
+    ctx.fillStyle='rgba(90,150,255,.25)'; for(var st=r.x;st<r.x+r.w;st+=14)ctx.fillRect(st,r.y,7,2); }
+  // 기어
+  for(var g=0;g<sim.gears.length;g++){ var ge=sim.gears[g]; ctx.save(); ctx.translate(ge.x,ge.y); ctx.rotate(ge.ang);
+    ctx.strokeStyle='#ff8a5a'; ctx.lineWidth=8; ctx.lineCap='round'; ctx.shadowColor='#ff5a3a'; ctx.shadowBlur=8;
+    for(var sp=0;sp<ge.spokes;sp++){ ctx.save(); ctx.rotate(sp/ge.spokes*Math.PI*2); ctx.beginPath(); ctx.moveTo(0,0); ctx.lineTo(ge.r,0); ctx.stroke();
+      ctx.fillStyle='#ffb08a'; ctx.beginPath(); ctx.arc(ge.r,0,7,0,6.28); ctx.fill(); ctx.restore(); }
+    ctx.fillStyle='#5a3020'; ctx.beginPath(); ctx.arc(0,0,26,0,6.28); ctx.fill(); ctx.strokeStyle='#ff8a5a'; ctx.lineWidth=3; ctx.stroke(); ctx.restore(); }
+  // 목표
+  var go=sim.goal, gp=0.6+0.4*Math.sin(sim.t*3); ctx.save(); ctx.shadowColor='#6cff9e'; ctx.shadowBlur=16;
+  ctx.strokeStyle='#6cff9e'; ctx.lineWidth=2.5; ctx.strokeRect(go.x,go.y,go.w,go.h);
+  ctx.fillStyle='rgba(108,255,158,'+(0.1+gp*0.12)+')'; ctx.fillRect(go.x,go.y,go.w,go.h); ctx.restore();
+  ctx.fillStyle='#6cff9e'; ctx.font='bold 11px Segoe UI'; ctx.textAlign='center'; ctx.fillText('GOAL',go.x+go.w/2,go.y-6);
+  // 트레일
+  for(var tr=0;tr<sim.trail.length;tr++){ var T=sim.trail[tr]; ctx.globalAlpha=T.life*0.3; ctx.fillStyle='#4fd6ff';
+    ctx.beginPath(); ctx.arc(T.x,T.y,3,0,6.28); ctx.fill(); } ctx.globalAlpha=1;
+  // 스파크
+  for(var s=0;s<sim.sparks.length;s++){ var sk=sim.sparks[s]; ctx.globalAlpha=Math.max(0,sk.life); ctx.fillStyle=sk.c;
+    ctx.beginPath(); ctx.arc(sk.x,sk.y,2.4,0,6.28); ctx.fill(); } ctx.globalAlpha=1;
+  // 화물
+  if(sim.cargo){ var cg=sim.cargo; if(cg.grabbed){ var tip=armTipWorld(sim.drone); ctx.strokeStyle='#ffd24a'; ctx.lineWidth=2;
+      ctx.beginPath(); ctx.moveTo(tip[0],tip[1]); ctx.lineTo(cg.x,cg.y); ctx.stroke(); }
+    ctx.fillStyle='#c8a040'; ctx.strokeStyle='#ffd24a'; ctx.lineWidth=2; ctx.fillRect(cg.x-cg.r,cg.y-cg.r,cg.r*2,cg.r*2); ctx.strokeRect(cg.x-cg.r,cg.y-cg.r,cg.r*2,cg.r*2);
+    ctx.fillStyle='#3a2e10'; ctx.font='14px serif'; ctx.textAlign='center'; ctx.fillText('📦',cg.x,cg.y+5); }
+  // 드론
+  drawDrone(sim.drone);
+  ctx.textAlign='left';
+}
+function drawDrone(d){
+  ctx.save(); ctx.translate(d.x,d.y); ctx.rotate(d.ang);
+  // 모듈
+  ['U','D','L','R'].forEach(function(s){ var t=d.loadout[s]; var p=SLOTPOS[s]; var lx=p[0]-d.com[0], ly=p[1]-d.com[1];
+    if(!t){ return; }
+    ctx.save(); ctx.translate(lx,ly);
+    if(t==='thr'){ ctx.fillStyle='#3a5a8a'; ctx.strokeStyle='#4fd6ff'; ctx.lineWidth=2; roundRect(-10,-10,20,20,4); ctx.fill(); ctx.stroke();
+      // 노즐(바깥쪽)
+      var out=[p[0]/A,p[1]/A]; ctx.fillStyle='#ff9a3d'; ctx.beginPath(); ctx.arc(out[0]*9,out[1]*9,4,0,6.28); ctx.fill(); }
+    else if(t==='shd'){ ctx.fillStyle='#2a5a4a'; ctx.strokeStyle='#6cff9e'; ctx.lineWidth=2; roundRect(-12,-12,24,24,5); ctx.fill(); ctx.stroke(); }
+    else if(t==='grb'){ ctx.fillStyle='#5a4a2a'; ctx.strokeStyle='#ffd24a'; ctx.lineWidth=2; roundRect(-11,-11,22,22,4); ctx.fill(); ctx.stroke(); }
+    ctx.restore();
+    // 연결선
+    ctx.strokeStyle='rgba(120,160,220,.5)'; ctx.lineWidth=3; ctx.beginPath(); ctx.moveTo(-d.com[0],-d.com[1]); ctx.lineTo(lx,ly); ctx.stroke();
+  });
+  // 코어
+  var cl=[-d.com[0],-d.com[1]];
+  ctx.fillStyle='#1a2a4a'; ctx.strokeStyle='#ffd24a'; ctx.lineWidth=2.5; ctx.shadowColor='#4fd6ff'; ctx.shadowBlur=10;
+  ctx.beginPath(); ctx.arc(cl[0],cl[1],14,0,6.28); ctx.fill(); ctx.stroke(); ctx.shadowBlur=0;
+  ctx.fillStyle='#4fd6ff'; ctx.beginPath(); ctx.arc(cl[0],cl[1],6,0,6.28); ctx.fill();
+  ctx.restore();
+  // 무게중심 표시(월드)
+  ctx.strokeStyle='rgba(255,210,74,.5)'; ctx.lineWidth=1; ctx.beginPath(); ctx.arc(d.x,d.y,3,0,6.28); ctx.stroke();
+  // 그랩 암(월드, 마우스 방향)
+  if(d.hasGrab){ var al=armLocal(d); var aw=rot(al[0]-d.com[0],al[1]-d.com[1],d.ang);
+    var bx=d.x+aw[0], by=d.y+aw[1]; var tx=bx+Math.cos(d.armAng)*22, ty=by+Math.sin(d.armAng)*22;
+    ctx.strokeStyle='#ffd24a'; ctx.lineWidth=3; ctx.beginPath(); ctx.moveTo(bx,by); ctx.lineTo(tx,ty); ctx.stroke();
+    ctx.fillStyle='#ffd24a'; ctx.beginPath(); ctx.arc(tx,ty,4,0,6.28); ctx.fill(); }
+}
+function roundRect(x,y,w,h,r){ ctx.beginPath(); ctx.moveTo(x+r,y); ctx.arcTo(x+w,y,x+w,y+h,r); ctx.arcTo(x+w,y+h,x,y+h,r);
+  ctx.arcTo(x,y+h,x,y,r); ctx.arcTo(x,y,x+w,y,r); ctx.closePath(); }
+
+document.getElementById('startBtn').addEventListener('click',function(){ audio(); hide('title'); startTut(); });
+layout(); requestAnimationFrame(loop);
+
+/* ---------- 검증 노출 ---------- */
+window.__core={ makeDrone:makeDrone, recompute:recompute, stepDrone:stepDrone, makeSim:makeSim, stepSim:stepSim,
+  SLOTPOS:SLOTPOS, THRUST:THRUST, STAGES:STAGES,
+  // Stage1 오토파일럿(웨이포인트 추종, bang-bang 추진)
+  runBot:function(si,loadout){ var s=makeSim(si,loadout); var dt=1/120; var wp=s.waypoints, wi=1;
+    for(var f=0;f<120*40;f++){
+      var d=s.drone; var tgt=wp[Math.min(wi,wp.length-1)];
+      var ex=tgt[0]-d.x, ey=tgt[1]-d.y, dist=Math.hypot(ex,ey);
+      if(dist<40 && wi<wp.length-1) wi++;
+      // 원하는 속도 = 목표방향 * 상수 - 현재속도 보정
+      var desx=ex*2.2 - d.vx*1.6, desy=ey*2.2 - d.vy*1.6;
+      var inp={ d: desx>25, a: desx<-25, w: desy<-25, s: desy>25, shift:false };
+      // 목표 근처 & 마지막 웨이포인트면 정지 위해 댐퍼
+      if(wi>=wp.length-1 && dist<70) inp.shift=true;
+      s._inp=inp; stepSim(s,dt);
+      if(s.win) return {win:true, hp:Math.round(d.hp), t:Math.round(f/120*10)/10};
+      if(s.dead) return {win:false, dead:true, reason:s.deadReason, x:Math.round(d.x),y:Math.round(d.y), wi:wi};
+    }
+    return {win:false, timeout:true, x:Math.round(s.drone.x), wi:wi}; }
+};
+})();
+</script>
+</body>
+</html>
