@@ -1,0 +1,548 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+<title>심해의 대장간 · Forge of the Deep</title>
+<style>
+  :root{ --ink:#e9e2cf; --muted:#9a8f77; --gold:#ffd24a; --deep:#0a1830;
+    --c0:#9aa0ad; --c1:#5fd06a; --c2:#4fa8ff; --c3:#b47bff; --c4:#ffbe3a; }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  html,body{margin:0;height:100%;overflow:hidden;background:#07101f;color:var(--ink);
+    font-family:"Segoe UI","Malgun Gothic",monospace;-webkit-font-smoothing:antialiased;-webkit-user-select:none;user-select:none;touch-action:manipulation}
+  #app{position:fixed;inset:0;display:flex;align-items:center;justify-content:center}
+  .view{position:absolute;inset:0;display:none;flex-direction:column}
+  .view.on{display:flex}
+
+  /* 공통 상단바 */
+  .topbar{display:flex;align-items:center;gap:8px;padding:10px 14px;background:rgba(8,16,32,.85);
+    border-bottom:1px solid rgba(120,150,220,.2);font-size:13px;font-weight:700;flex-wrap:wrap}
+  .topbar .chip{background:rgba(20,32,58,.9);border:1px solid rgba(120,150,220,.25);border-radius:8px;padding:5px 10px;letter-spacing:.5px}
+  .topbar .chip b{color:var(--gold)}
+  .topbar .back{cursor:pointer;color:#8fd0ff;margin-left:auto}
+
+  /* 허브 */
+  #hub{background:radial-gradient(120% 100% at 50% 0%,#12294a,#07101f 70%)}
+  #hub .hubinner{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;padding:20px;text-align:center}
+  #hub h1{margin:0;font-size:clamp(26px,6vw,44px);font-weight:900;letter-spacing:2px;
+    background:linear-gradient(180deg,#fff,#ffd24a);-webkit-background-clip:text;background-clip:text;color:transparent;text-shadow:0 0 18px rgba(255,210,74,.3)}
+  #hub .sub{color:#7fa8d8;letter-spacing:5px;font-size:12px;margin-top:-6px}
+  #hub .menu{display:grid;grid-template-columns:repeat(2,minmax(150px,1fr));gap:12px;margin-top:8px;max-width:420px;width:100%}
+  .mbtn{cursor:pointer;background:linear-gradient(180deg,rgba(30,50,90,.95),rgba(16,28,52,.95));border:1px solid rgba(120,160,240,.35);
+    border-radius:14px;padding:18px 12px;text-align:center;transition:transform .1s,border-color .1s}
+  .mbtn:hover{transform:translateY(-3px);border-color:var(--gold)}
+  .mbtn .ic{font-size:30px} .mbtn .t{font-weight:800;margin-top:6px;font-size:15px} .mbtn .d{font-size:11px;color:var(--muted);margin-top:2px}
+  #hub .depth{font-size:12px;color:#7fa8d8}
+
+  /* 다이브(캔버스) */
+  #dive{background:#03060e}
+  #diveWrap{flex:1;position:relative;display:flex;align-items:center;justify-content:center}
+  #cv{display:block;background:#03080f;cursor:crosshair}
+  #diveHud{position:absolute;top:8px;left:0;right:0;display:flex;gap:8px;justify-content:center;pointer-events:none;font-size:12px;font-weight:700}
+  #diveHud .chip{background:rgba(6,14,28,.8);border:1px solid rgba(120,160,240,.3);border-radius:8px;padding:4px 10px}
+  #airbar{width:120px;height:8px;background:rgba(255,255,255,.12);border-radius:4px;overflow:hidden;display:inline-block;vertical-align:middle}
+  #airfill{height:100%;background:linear-gradient(90deg,#4fd0ff,#6cff9e)}
+
+  /* 패널(제련/상점/업글) */
+  .panel{flex:1;overflow-y:auto;padding:16px;display:flex;flex-direction:column;gap:12px}
+  .panel h2{margin:0;font-size:18px;color:var(--gold)}
+  .card{background:rgba(16,28,52,.85);border:1px solid rgba(120,150,220,.22);border-radius:12px;padding:12px}
+  .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:8px}
+  .item{background:rgba(24,38,66,.9);border:1px solid rgba(120,150,220,.25);border-radius:10px;padding:8px;cursor:pointer;
+    font-size:12px;text-align:center;transition:transform .08s,border-color .1s;position:relative}
+  .item:hover{transform:translateY(-2px);border-color:var(--gold)}
+  .item.sel{border-color:var(--gold);box-shadow:0 0 0 1px var(--gold)}
+  .item .ic{font-size:22px} .item .nm{font-weight:700;margin-top:2px} .item .st{font-size:11px;color:var(--muted)}
+  .item .cnt{position:absolute;top:2px;right:5px;font-size:11px;color:var(--gold);font-weight:800}
+  .rar0{color:var(--c0)} .rar1{color:var(--c1)} .rar2{color:var(--c2)} .rar3{color:var(--c3)} .rar4{color:var(--c4)}
+  .bd0{border-color:var(--c0)} .bd1{border-color:var(--c1)} .bd2{border-color:var(--c2)} .bd3{border-color:var(--c3)} .bd4{border-color:var(--c4)}
+  .btn{cursor:pointer;font:inherit;font-weight:800;font-size:14px;color:#10131f;background:linear-gradient(180deg,#ffe08a,#ffbe3a);
+    border:0;padding:11px 20px;border-radius:10px;box-shadow:0 6px 18px -6px #d69838}
+  .btn:disabled{opacity:.4;cursor:default;box-shadow:none}
+  .btn.sec{background:rgba(30,46,80,.9);color:#dbe4ff;border:1px solid rgba(120,150,220,.3);box-shadow:none}
+  .muted{color:var(--muted);font-size:12px}
+  .heroCard{display:flex;align-items:center;gap:12px}
+  .heroCard .av{font-size:34px}
+  .heroCard .req b{color:var(--gold)}
+
+  /* 튜토리얼 */
+  #tut{position:fixed;left:50%;bottom:5%;transform:translateX(-50%);z-index:40;width:min(92vw,520px);
+    background:rgba(12,20,40,.96);border:1px solid rgba(255,210,74,.5);border-radius:14px;padding:13px 18px;text-align:center;
+    display:none;box-shadow:0 12px 40px rgba(0,0,0,.6)}
+  #tut .st{font-size:11px;letter-spacing:2px;color:var(--gold);font-weight:800;margin-bottom:4px}
+  #tut .tx{font-size:14px;line-height:1.5} #tut .tx b{color:var(--gold)}
+  #tut .skip{margin-top:8px;cursor:pointer;color:#5a6488;text-decoration:underline;font-size:12px}
+
+  /* 토스트 */
+  #toast{position:fixed;top:14%;left:50%;transform:translateX(-50%);z-index:50;pointer-events:none;
+    background:rgba(12,20,40,.95);border:1px solid rgba(255,210,74,.4);border-radius:10px;padding:8px 16px;font-weight:700;font-size:13px;opacity:0;transition:opacity .2s}
+  #toast.show{opacity:1}
+
+  .screen{position:fixed;inset:0;z-index:30;display:none;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:26px;
+    background:radial-gradient(120% 100% at 50% 30%,rgba(10,24,44,.95),rgba(4,8,16,.98))}
+  .screen.on{display:flex}
+  .screen h1{margin:0 0 6px;font-size:clamp(26px,7vw,44px);font-weight:900;letter-spacing:2px;
+    background:linear-gradient(180deg,#fff,#ffd24a);-webkit-background-clip:text;background-clip:text;color:transparent}
+  .screen p{color:#c2c8ee;font-size:14.5px;line-height:1.8;max-width:460px}
+  .screen .sub{color:#7fa8d8;letter-spacing:5px;font-size:12px;margin-bottom:14px}
+</style>
+</head>
+<body>
+<div id="app">
+  <!-- 타이틀 -->
+  <div class="screen on" id="title">
+    <div class="sub">FORGE OF THE DEEP</div>
+    <h1>심해의 대장간</h1>
+    <p style="color:var(--gold);letter-spacing:2px;margin-top:-4px">타이쿤 RPG</p>
+    <p>심해로 <b style="color:#fff">잠수</b>해 광물을 채굴하고, <b style="color:#fff">제련</b>으로 무기를 만들어<br>
+       찾아온 <b style="color:#fff">용사에게 판매</b>해 골드를 벌어 대장간을 키워라.</p>
+    <div style="display:flex;gap:10px;margin-top:20px">
+      <button class="btn" id="startBtn">모험 시작</button>
+      <button class="btn sec" id="continueBtn" style="display:none">이어하기</button>
+    </div>
+  </div>
+
+  <!-- 허브 -->
+  <div class="view" id="hub">
+    <div class="topbar">
+      <span class="chip">💰 <b id="goldV">0</b></span>
+      <span class="chip">⭐ 평판 <b id="repV">0</b></span>
+      <span class="chip">🔨 대장간 Lv<b id="forgeV">1</b></span>
+      <span class="chip">🚢 탐사선 Lv<b id="shipV">1</b></span>
+    </div>
+    <div class="hubinner">
+      <h1>심해의 대장간</h1>
+      <div class="sub">FORGE OF THE DEEP</div>
+      <div class="depth">현재 진출 해역: <b id="depthName">표층 해역</b></div>
+      <div class="menu">
+        <div class="mbtn" data-go="dive"><div class="ic">🤿</div><div class="t">잠수 · 채굴</div><div class="d">광물/몬스터 낚기</div></div>
+        <div class="mbtn" data-go="forge"><div class="ic">🔨</div><div class="t">제련</div><div class="d">무기 제작</div></div>
+        <div class="mbtn" data-go="shop"><div class="ic">🛡️</div><div class="t">상점</div><div class="d">용사에게 판매</div></div>
+        <div class="mbtn" data-go="upgrade"><div class="ic">⚙️</div><div class="t">업그레이드</div><div class="d">대장간/탐사선</div></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 다이브 -->
+  <div class="view" id="dive">
+    <div class="topbar"><span class="chip" id="diveDepth">표층 해역</span><span class="back" data-go="hub">← 귀환</span></div>
+    <div id="diveWrap">
+      <canvas id="cv"></canvas>
+      <div id="diveHud">
+        <span class="chip">🫧 산소 <span id="airbar"><span id="airfill"></span></span></span>
+        <span class="chip">🎒 획득 <b id="bagV">0</b></span>
+      </div>
+    </div>
+  </div>
+
+  <!-- 제련 -->
+  <div class="view" id="forge">
+    <div class="topbar"><span class="chip">🔨 제련</span><span class="back" data-go="hub">← 허브</span></div>
+    <div class="panel">
+      <h2>재료 선택 (2개)</h2>
+      <div class="card"><div class="grid" id="matGrid"></div></div>
+      <div class="card" id="craftPreview"><span class="muted">재료 2개를 선택하면 제련 결과가 예측됩니다.</span></div>
+      <button class="btn" id="craftBtn" disabled>🔨 제련하기</button>
+      <h2>무기 도감 (<span id="codexN">0</span>종 발견)</h2>
+      <div class="card"><div class="grid" id="codexGrid"></div></div>
+    </div>
+  </div>
+
+  <!-- 상점 -->
+  <div class="view" id="shop">
+    <div class="topbar"><span class="chip">🛡️ 상점</span><span class="back" data-go="hub">← 허브</span></div>
+    <div class="panel">
+      <h2>방문한 용사</h2>
+      <div class="card heroCard" id="heroCard"></div>
+      <h2>내 무기 (클릭해 판매)</h2>
+      <div class="card"><div class="grid" id="wpnGrid"></div></div>
+    </div>
+  </div>
+
+  <!-- 업그레이드 -->
+  <div class="view" id="upgrade">
+    <div class="topbar"><span class="chip">⚙️ 업그레이드</span><span class="back" data-go="hub">← 허브</span></div>
+    <div class="panel" id="upPanel"></div>
+  </div>
+</div>
+
+<div id="tut"><div class="st" id="tutStep">STEP 1 / 3</div><div class="tx" id="tutTx"></div><div class="skip" id="tutSkip">건너뛰기</div></div>
+<div id="toast"></div>
+
+<script>
+"use strict";
+(function(){
+/* =========================================================================
+   심해의 대장간 : 타이쿤 RPG — 채굴/제련/판매/성장 + localStorage
+   버그방지: 오디오 resume / resize+rect / dt기반 / 클램핑+역루프 / 리스너 위임 1회
+   ========================================================================= */
+
+/* ---------- 데이터 ---------- */
+var RARN=['일반','고급','희귀','영웅','전설'];
+var MATS=[
+  {id:'iron', nm:'심해 철광석', rar:0, ic:'⛏️', el:''},
+  {id:'amethyst', nm:'발광 자수정', rar:1, ic:'💎', el:'light'},
+  {id:'coral', nm:'열목 산호', rar:2, ic:'🪸', el:'fire'},
+  {id:'abyss', nm:'심연 광석', rar:3, ic:'🔮', el:'dark'},
+  {id:'legend', nm:'전설의 파편', rar:4, ic:'✨', el:'holy'},
+];
+function mat(id){ for(var i=0;i<MATS.length;i++)if(MATS[i].id===id)return MATS[i]; return null; }
+var WTYPES=[{t:'단검',b:8,ic:'🗡️'},{t:'검',b:12,ic:'⚔️'},{t:'도끼',b:15,ic:'🪓'},{t:'창',b:11,ic:'🔱'},{t:'지팡이',b:9,ic:'🪄'},{t:'대검',b:18,ic:'🗡️'}];
+var DEPTHS=[
+  {nm:'표층 해역', mats:['iron','iron','amethyst'], air:30},
+  {nm:'중층 열목 구역', mats:['iron','amethyst','amethyst','coral'], air:34, monster:true},
+  {nm:'심해 심연 구역', mats:['amethyst','coral','abyss','legend'], air:40, boss:true},
+];
+
+/* ---------- 세이브 ---------- */
+var SAVEKEY='fotd_save_v1';
+var G=null;
+function freshState(){ return { gold:0, rep:0, forgeLv:1, shipLv:1, depth:0, inv:{iron:0}, weapons:[], codex:[], tutDone:false }; }
+function save(){ try{ localStorage.setItem(SAVEKEY, JSON.stringify(G)); }catch(e){} }
+function load(){ try{ var s=localStorage.getItem(SAVEKEY); if(s){ var o=JSON.parse(s); if(o&&typeof o.gold==='number') return o; } }catch(e){} return null; }
+function hasSave(){ return !!load(); }
+
+/* ---------- 오디오 [규칙1] ---------- */
+var AC=null, master=null;
+function ensureAudio(){ if(!AC){ try{ AC=new (window.AudioContext||window.webkitAudioContext)(); master=AC.createGain(); master.gain.value=0.5; master.connect(AC.destination); }catch(e){} }
+  if(AC&&AC.state==='suspended'){ AC.resume(); } }
+function tone(f,dur,type,vol,to){ ensureAudio(); if(!AC)return; var t=AC.currentTime,o=AC.createOscillator(),g=AC.createGain();
+  o.type=type||'sine'; o.frequency.setValueAtTime(f,t); if(to)o.frequency.exponentialRampToValueAtTime(Math.max(30,to),t+dur);
+  g.gain.setValueAtTime(0.0001,t); g.gain.exponentialRampToValueAtTime(vol||0.15,t+0.006); g.gain.exponentialRampToValueAtTime(0.0001,t+dur);
+  o.connect(g); g.connect(master||AC.destination); o.start(t); o.stop(t+dur+0.02); }
+function sndHammer(){ tone(140,0.08,'square',0.2,60); tone(300,0.05,'sawtooth',0.12); }
+function sndCatch(){ tone(660,0.1,'triangle',0.16,990); setTimeout(function(){tone(990,0.12,'triangle',0.14);},80); }
+function sndCoin(){ tone(880,0.08,'square',0.12,1320); setTimeout(function(){tone(1320,0.1,'triangle',0.12);},60); }
+function sndErr(){ tone(200,0.12,'square',0.1,120); }
+function vibrate(ms){ try{if(navigator.vibrate)navigator.vibrate(ms);}catch(e){} }
+
+/* ---------- 화면 전환 ---------- */
+var view='title';
+function go(v){
+  document.querySelectorAll('.view').forEach(function(e){ e.classList.toggle('on', e.id===v); });
+  document.getElementById('title').classList.toggle('on', v==='title');
+  view=v;
+  if(v==='dive'){ startDive(); } else { stopDive(); }
+  if(v==='hub') renderHub();
+  if(v==='forge') renderForge();
+  if(v==='shop') renderShop();
+  if(v==='upgrade') renderUpgrade();
+}
+/* 이벤트 위임 [규칙5]: 정적 리스너 1회 등록, 동적 목록은 data-* 로 위임 */
+document.getElementById('app').addEventListener('click',function(e){
+  var goEl=e.target.closest('[data-go]'); if(goEl){ ensureAudio(); go(goEl.dataset.go); return; }
+});
+
+/* ---------- 토스트 ---------- */
+var toastT=null;
+function toast(msg){ var el=document.getElementById('toast'); el.textContent=msg; el.classList.add('show');
+  if(toastT)clearTimeout(toastT); toastT=setTimeout(function(){el.classList.remove('show');},1400); }
+
+/* ---------- 허브 ---------- */
+function renderHub(){
+  document.getElementById('goldV').textContent=G.gold;
+  document.getElementById('repV').textContent=G.rep;
+  document.getElementById('forgeV').textContent=G.forgeLv;
+  document.getElementById('shipV').textContent=G.shipLv;
+  document.getElementById('depthName').textContent=DEPTHS[G.depth].nm;
+}
+
+/* ===================== 다이브(채굴 미니게임) ===================== */
+var cv=document.getElementById('cv'), ctx=cv.getContext('2d');
+var CW=720, CH=440, DPR=1, SC=1;
+function layoutCv(){                              // [규칙2]
+  DPR=Math.min(2,window.devicePixelRatio||1);
+  var wrap=document.getElementById('diveWrap'); var vw=wrap.clientWidth||CW, vh=wrap.clientHeight||CH;
+  SC=Math.min(vw/CW, vh/CH); var w=Math.round(CW*SC), h=Math.round(CH*SC);
+  cv.style.width=w+'px'; cv.style.height=h+'px'; cv.width=Math.round(w*DPR); cv.height=Math.round(h*DPR);
+  ctx.setTransform(DPR*SC,0,0,DPR*SC,0,0);
+}
+window.addEventListener('resize',function(){ if(view==='dive')layoutCv(); });  // [규칙5] 1회
+
+var dive=null, diveRAF=null, diveLast=0;
+function startDive(){
+  layoutCv();
+  var d=DEPTHS[G.depth];
+  dive={ hook:{x:CW/2,y:80,tx:CW/2,ty:80}, mouse:{x:CW/2,y:120}, nodes:[], spikes:[], monsters:[], particles:[],
+    air:d.air, bag:{}, bagN:0, reel:null, t:0, boss:(d.boss?{x:CW/2,y:CH-70,shootT:1.5}:null), over:false };
+  // 광물 노드 생성
+  for(var i=0;i<7;i++){ var id=d.mats[Math.floor(Math.random()*d.mats.length)];
+    dive.nodes.push({x:60+Math.random()*(CW-120), y:150+Math.random()*(CH-200), id:id, vx:(Math.random()*2-1)*18, r:16}); }
+  // 가시 성게
+  for(var s=0;s<4;s++){ dive.spikes.push({x:80+Math.random()*(CW-160), y:180+Math.random()*(CH-240), r:18, vx:(Math.random()*2-1)*24, vy:(Math.random()*2-1)*20}); }
+  if(d.monster){ for(var m=0;m<2;m++)dive.monsters.push({x:Math.random()*CW,y:200+Math.random()*150,vx:(Math.random()*2-1)*40,vy:0,r:20,id:d.mats[d.mats.length-1]}); }
+  diveLast=0; if(!diveRAF) diveRAF=requestAnimationFrame(diveLoop);
+  document.getElementById('diveDepth').textContent=d.nm;
+}
+function stopDive(){ if(diveRAF){ cancelAnimationFrame(diveRAF); diveRAF=null; } }
+// 입력(캔버스) — 위임 아닌 요소별 1회 등록
+function cvPos(clientX,clientY){ var r=cv.getBoundingClientRect(); return { x:(clientX-r.left)/r.width*CW, y:(clientY-r.top)/r.height*CH }; }
+cv.addEventListener('mousemove',function(e){ if(!dive)return; var p=cvPos(e.clientX,e.clientY); dive.mouse.x=p.x; dive.mouse.y=p.y; });
+cv.addEventListener('touchmove',function(e){ if(!dive)return; var t=e.touches[0]; var p=cvPos(t.clientX,t.clientY); dive.mouse.x=p.x; dive.mouse.y=p.y; e.preventDefault(); },{passive:false});
+cv.addEventListener('mousedown',function(e){ ensureAudio(); diveClick(true); });
+cv.addEventListener('mouseup',function(e){ diveClick(false); });
+cv.addEventListener('touchstart',function(e){ ensureAudio(); var t=e.touches[0]; var p=cvPos(t.clientX,t.clientY); if(dive){dive.mouse.x=p.x;dive.mouse.y=p.y;} diveClick(true); e.preventDefault(); },{passive:false});
+cv.addEventListener('touchend',function(e){ diveClick(false); e.preventDefault(); },{passive:false});
+function diveClick(down){ if(!dive||dive.over)return;
+  if(dive.reel){ dive.reel.pull=down; return; }
+  if(down){ // 노드 찌르기
+    for(var i=0;i<dive.nodes.length;i++){ var n=dive.nodes[i]; if(Math.hypot(dive.hook.x-n.x,dive.hook.y-n.y)<n.r+10){ startReel(n,'node',i); return; } }
+    for(var m=0;m<dive.monsters.length;m++){ var mo=dive.monsters[m]; if(Math.hypot(dive.hook.x-mo.x,dive.hook.y-mo.y)<mo.r+10){ startReel(mo,'monster',m); return; } }
+  }
+}
+function startReel(target,kind,idx){ tone(500,0.08,'triangle',0.1);
+  dive.reel={ target:target, kind:kind, idx:idx, marker:0.3, zone:0.5, zoneV:0.3, catchM:0, snap:0, pull:false, t:0 }; }
+function diveLoop(now){ diveRAF=requestAnimationFrame(diveLoop);
+  if(!dive)return; if(!diveLast)diveLast=now; var dt=Math.min(0.05,(now-diveLast)/1000); diveLast=now;   // [규칙3]
+  if(!dive.over) updateDive(dt);
+  renderDive();
+}
+function updateDive(dt){
+  dive.t+=dt;
+  // 훅 이동(마우스로 이징)
+  var h=dive.hook; h.x+=(dive.mouse.x-h.x)*Math.min(1,dt*10); h.y+=(dive.mouse.y-h.y)*Math.min(1,dt*10);
+  h.x=Math.max(10,Math.min(CW-10,h.x)); h.y=Math.max(10,Math.min(CH-10,h.y)); // [규칙4]
+  // 릴 미니게임
+  if(dive.reel){ var r=dive.reel; r.t+=dt;
+    r.marker += (r.pull? 0.7 : -0.55)*dt; r.marker=Math.max(0,Math.min(1,r.marker));
+    r.zone += r.zoneV*dt; if(r.zone>0.8){r.zone=0.8;r.zoneV*=-1;} if(r.zone<0.2){r.zone=0.2;r.zoneV*=-1;}
+    var half=0.13; var inZone=Math.abs(r.marker-r.zone)<half;
+    if(inZone){ r.catchM+=dt*0.55; r.snap=Math.max(0,r.snap-dt*0.4); } else { r.snap+=dt*0.35; }
+    if(r.marker>0.97){ r.snap+=dt*0.5; }
+    if(r.catchM>=1){ finishReel(true); }
+    else if(r.snap>=1){ finishReel(false); }
+    return; // 릴 중엔 나머지 정지
+  }
+  // 노드/스파이크/몬스터 이동 [규칙4 경계]
+  for(var i=0;i<dive.nodes.length;i++){ var n=dive.nodes[i]; n.x+=n.vx*dt; if(n.x<40||n.x>CW-40)n.vx*=-1; n.x=Math.max(20,Math.min(CW-20,n.x)); }
+  for(var s=0;s<dive.spikes.length;s++){ var sp=dive.spikes[s]; sp.x+=sp.vx*dt; sp.y+=sp.vy*dt;
+    if(sp.x<30||sp.x>CW-30)sp.vx*=-1; if(sp.y<120||sp.y>CH-30)sp.vy*=-1; sp.x=Math.max(20,Math.min(CW-20,sp.x)); sp.y=Math.max(110,Math.min(CH-20,sp.y));
+    if(Math.hypot(h.x-sp.x,h.y-sp.y)<sp.r+8){ dive.air-=8*dt*ainv(); if(!sp._hit){sp._hit=1; tone(180,0.1,'sawtooth',0.1);} } else sp._hit=0; }
+  for(var m=0;m<dive.monsters.length;m++){ var mo=dive.monsters[m]; mo.x+=mo.vx*dt; if(mo.x<40||mo.x>CW-40)mo.vx*=-1; mo.x=Math.max(20,Math.min(CW-20,mo.x)); }
+  // 보스 파동
+  if(dive.boss){ var b=dive.boss; b.x=CW/2+Math.sin(dive.t*0.6)*160; b.shootT-=dt;
+    if(b.shootT<=0){ b.shootT=1.4; for(var k=-1;k<=1;k++)dive.particles.push({x:b.x,y:b.y,vx:k*60,vy:-120,life:3,c:'#ff5a6a',dmg:true,r:9}); } }
+  // 파티클/탄 [규칙4 역루프]
+  for(var p=dive.particles.length-1;p>=0;p--){ var pt=dive.particles[p]; pt.life-=dt; pt.x+=(pt.vx||0)*dt; pt.y+=(pt.vy||0)*dt;
+    if(pt.dmg){ if(Math.hypot(h.x-pt.x,h.y-pt.y)<(pt.r||6)+8){ dive.air-=6*ainv(); dive.particles.splice(p,1); tone(160,0.1,'sawtooth',0.1); continue; } }
+    if(pt.life<=0)dive.particles.splice(p,1); }
+  // 산소
+  dive.air-=dt; document.getElementById('airfill').style.width=Math.max(0,dive.air/DEPTHS[G.depth].air*100)+'%';
+  document.getElementById('bagV').textContent=dive.bagN;
+  if(dive.air<=0){ dive.air=0; endDive(); }
+}
+function ainv(){ return 1/(1+ (G.shipLv-1)*0.2); } // 탐사선 레벨 높으면 산소 소모 감소
+function finishReel(success){ var r=dive.reel;
+  if(success){ var id = r.target.id; dive.bag[id]=(dive.bag[id]||0)+1; dive.bagN++; sndCatch();
+    ripParticles(dive.hook.x,dive.hook.y,'#ffd24a',18); vibrate(20);
+    if(r.kind==='node') dive.nodes.splice(r.idx,1); else dive.monsters.splice(r.idx,1);
+    // 튜토리얼 step1
+    if(tutOn&&tutStep===0){ tutAdvance(); }
+  } else { sndErr(); toast('줄이 끊어졌다!'); }
+  dive.reel=null;
+}
+function ripParticles(x,y,c,n){ for(var i=0;i<n;i++){ var a=Math.random()*6.28,s=40+Math.random()*120;
+  dive.particles.push({x:x,y:y,vx:Math.cos(a)*s,vy:Math.sin(a)*s,life:0.7,c:c}); } }
+function endDive(){ dive.over=true;
+  // 가방 → 인벤토리
+  for(var id in dive.bag){ G.inv[id]=(G.inv[id]||0)+dive.bag[id]; }
+  save();
+  var got=dive.bagN;
+  setTimeout(function(){ go('hub'); toast('귀환! 광물 '+got+'개 획득 🎒'); },400);
+}
+function renderDive(){
+  ctx.clearRect(0,0,CW,CH);
+  var g=ctx.createLinearGradient(0,0,0,CH); g.addColorStop(0,'#0a2038'); g.addColorStop(1,'#020610'); ctx.fillStyle=g; ctx.fillRect(0,0,CW,CH);
+  if(!dive)return;
+  // 물방울
+  ctx.fillStyle='rgba(120,180,255,.06)'; for(var i=0;i<30;i++){ var bx=(i*97+ (dive.t*10))%CW, by=(CH- (dive.t*30+i*57)%CH); ctx.beginPath();ctx.arc(bx,by,2,0,6.28);ctx.fill(); }
+  // 몬스터
+  for(var m=0;m<dive.monsters.length;m++){ var mo=dive.monsters[m]; ctx.fillStyle='#5a8a6a'; ctx.strokeStyle='#8fffcf'; ctx.lineWidth=2;
+    ctx.beginPath();ctx.arc(mo.x,mo.y,mo.r,0,6.28);ctx.fill();ctx.stroke();
+    ctx.fillStyle='#fff';ctx.beginPath();ctx.arc(mo.x-5,mo.y-3,3,0,6.28);ctx.arc(mo.x+5,mo.y-3,3,0,6.28);ctx.fill(); }
+  // 보스
+  if(dive.boss){ var b=dive.boss; ctx.save(); ctx.fillStyle='#4a1030'; ctx.strokeStyle='#ff5a6a'; ctx.lineWidth=3; ctx.shadowColor='#ff5a6a'; ctx.shadowBlur=20;
+    ctx.beginPath();ctx.arc(b.x,b.y,40,0,6.28);ctx.fill();ctx.stroke(); ctx.fillStyle='#ffd24a'; ctx.beginPath();ctx.arc(b.x-12,b.y-8,5,0,6.28);ctx.arc(b.x+12,b.y-8,5,0,6.28);ctx.fill(); ctx.restore(); }
+  // 광물 노드
+  for(var n=0;n<dive.nodes.length;n++){ var nd=dive.nodes[n]; var mt=mat(nd.id);
+    ctx.save(); ctx.shadowColor=rarColor(mt.rar); ctx.shadowBlur=12; ctx.font='22px serif'; ctx.textAlign='center'; ctx.textBaseline='middle';
+    ctx.fillText(mt.ic, nd.x, nd.y); ctx.restore(); }
+  // 스파이크(성게)
+  for(var s=0;s<dive.spikes.length;s++){ var sp=dive.spikes[s]; ctx.save(); ctx.strokeStyle='#c05a7a'; ctx.lineWidth=2;
+    for(var k=0;k<10;k++){ var an=k/10*6.28; ctx.beginPath(); ctx.moveTo(sp.x,sp.y); ctx.lineTo(sp.x+Math.cos(an)*sp.r,sp.y+Math.sin(an)*sp.r); ctx.stroke(); }
+    ctx.fillStyle='#7a2040'; ctx.beginPath();ctx.arc(sp.x,sp.y,sp.r*0.5,0,6.28);ctx.fill(); ctx.restore(); }
+  // 파티클/탄
+  for(var p=0;p<dive.particles.length;p++){ var pt=dive.particles[p]; ctx.globalAlpha=Math.max(0,Math.min(1,pt.life)); ctx.fillStyle=pt.c;
+    ctx.beginPath();ctx.arc(pt.x,pt.y,pt.r||2.4,0,6.28);ctx.fill(); } ctx.globalAlpha=1;
+  // 낚싯줄 + 훅
+  ctx.strokeStyle='rgba(200,220,255,.5)'; ctx.lineWidth=1; ctx.beginPath(); ctx.moveTo(dive.hook.x,0); ctx.lineTo(dive.hook.x,dive.hook.y); ctx.stroke();
+  ctx.save(); ctx.translate(dive.hook.x,dive.hook.y); ctx.strokeStyle='#ffd24a'; ctx.lineWidth=3;
+  ctx.beginPath(); ctx.arc(0,0,7,0.3,6.0); ctx.stroke(); ctx.restore();
+  // 릴 게이지
+  if(dive.reel){ var r=dive.reel; var bx=CW/2-120, by=CH-40, bw=240, bh=16;
+    ctx.fillStyle='rgba(0,0,0,.6)'; ctx.fillRect(bx-4,by-4,bw+8,bh+8);
+    // 세이프존
+    ctx.fillStyle='rgba(108,255,158,.35)'; ctx.fillRect(bx+(r.zone-0.13)*bw, by, 0.26*bw, bh);
+    // 레드존(상단)
+    ctx.fillStyle='rgba(255,80,80,.3)'; ctx.fillRect(bx+0.9*bw,by,0.1*bw,bh);
+    // 마커
+    ctx.fillStyle='#ffd24a'; ctx.fillRect(bx+r.marker*bw-3, by-3, 6, bh+6);
+    // 캐치 진행
+    ctx.fillStyle='#6cff9e'; ctx.fillRect(bx, by+bh+4, bw*r.catchM, 4);
+    ctx.fillStyle='#ff5a6a'; ctx.fillRect(bx, by+bh+10, bw*r.snap, 3);
+    ctx.fillStyle='#fff'; ctx.font='11px monospace'; ctx.textAlign='center'; ctx.fillText('클릭 유지로 마커를 초록 존에!', CW/2, by-12);
+  }
+}
+function rarColor(r){ return ['#9aa0ad','#5fd06a','#4fa8ff','#b47bff','#ffbe3a'][r]; }
+
+/* ===================== 제련 ===================== */
+var selMats=[];
+function renderForge(){
+  var grid=document.getElementById('matGrid'); grid.innerHTML='';
+  var any=false;
+  for(var i=0;i<MATS.length;i++){ var m=MATS[i]; var c=G.inv[m.id]||0; if(c<=0)continue; any=true;
+    var selCount=selMats.filter(function(x){return x===m.id;}).length;
+    var div=document.createElement('div'); div.className='item bd'+m.rar+(selCount>0?' sel':''); div.dataset.mat=m.id;
+    div.innerHTML='<span class="cnt">'+c+'</span><div class="ic">'+m.ic+'</div><div class="nm rar'+m.rar+'">'+m.nm+'</div><div class="st">'+RARN[m.rar]+(selCount>0?' ×'+selCount:'')+'</div>';
+    grid.appendChild(div); }
+  if(!any)grid.innerHTML='<span class="muted">보유 광물이 없습니다. 먼저 잠수해 채굴하세요!</span>';
+  // 미리보기
+  var prev=document.getElementById('craftPreview');
+  if(selMats.length===2){ var p=craftPreview(selMats[0],selMats[1]);
+    prev.innerHTML='<b class="rar'+p.rar+'">'+WTYPES.find(function(w){return w.t===p.type;}).ic+' '+RARN[p.rar]+' '+p.type+'</b> · 공격력 <b style="color:var(--gold)">'+p.atk+'</b> · 가치 '+p.value+'G';
+    document.getElementById('craftBtn').disabled=false;
+  } else { prev.innerHTML='<span class="muted">재료 2개를 선택하면 제련 결과가 예측됩니다. ('+selMats.length+'/2)</span>'; document.getElementById('craftBtn').disabled=true; }
+  // 도감
+  var cg=document.getElementById('codexGrid'); cg.innerHTML=''; document.getElementById('codexN').textContent=G.codex.length;
+  if(G.codex.length===0)cg.innerHTML='<span class="muted">아직 발견한 무기가 없습니다.</span>';
+  for(var c2=0;c2<G.codex.length;c2++){ var w=G.codex[c2]; var wt=WTYPES.find(function(x){return x.t===w.type;})||WTYPES[0];
+    var d=document.createElement('div'); d.className='item bd'+w.rar; d.innerHTML='<div class="ic">'+wt.ic+'</div><div class="nm rar'+w.rar+'">'+RARN[w.rar]+' '+w.type+'</div><div class="st">ATK '+w.atk+'</div>'; cg.appendChild(d); }
+}
+function seededFrom(a,b){ return (a.length*7+b.length*13+(G.inv[a]||0)+(G.inv[b]||0)); }
+function craftPreview(a,b){ var ma=mat(a), mb=mat(b);
+  // 결정적 미리보기: 재료 조합 기반(랜덤은 제련 시 소폭)
+  var rar=Math.max(0,Math.min(4, Math.round((ma.rar+mb.rar)/2 + Math.floor(G.forgeLv/3)) ));
+  var type=WTYPES[(ma.rar+mb.rar+G.forgeLv)%WTYPES.length];
+  var atk=Math.round(type.b*(rar+1)*(1+(G.forgeLv-1)*0.12));
+  var value=Math.round(atk*(rar+1)*4);
+  return {rar:rar, type:type.t, atk:atk, value:value, el:mb.el||ma.el||''};
+}
+function doCraft(){
+  if(selMats.length!==2)return;
+  // 재료 보유 확인/소모
+  var need={}; selMats.forEach(function(id){need[id]=(need[id]||0)+1;});
+  for(var id in need){ if((G.inv[id]||0)<need[id]){ toast('재료가 부족합니다'); return; } }
+  var p=craftPreview(selMats[0],selMats[1]);
+  // 소폭 랜덤 스탯
+  var w={ type:p.type, rar:p.rar, atk:Math.round(p.atk*(0.9+Math.random()*0.2)), value:p.value, el:p.el };
+  w.value=Math.round(w.atk*(w.rar+1)*4);
+  for(var id2 in need){ G.inv[id2]-=need[id2]; if(G.inv[id2]<=0)delete G.inv[id2]; }
+  G.weapons.push(w);
+  // 도감 등록(타입+레어 조합)
+  if(!G.codex.some(function(c){return c.type===w.type&&c.rar===w.rar;})) G.codex.push({type:w.type,rar:w.rar,atk:w.atk});
+  selMats=[]; save();
+  // 망치질 연출 [Hit-stop + shake + 소리]
+  sndHammer(); vibrate([20,30,20]); shakeScreen();
+  toast('🔨 '+RARN[w.rar]+' '+w.type+' 제련 완료! (ATK '+w.atk+')');
+  renderForge();
+  if(tutOn&&tutStep===1){ tutAdvance(); }
+}
+function shakeScreen(){ var a=document.getElementById('app'); a.style.transition='transform .05s'; var n=0;
+  var iv=setInterval(function(){ a.style.transform='translate('+(Math.random()*8-4)+'px,'+(Math.random()*8-4)+'px)'; if(++n>6){clearInterval(iv);a.style.transform='';} },30); }
+// 위임: matGrid 클릭 / craftBtn
+document.getElementById('matGrid').addEventListener('click',function(e){ var el=e.target.closest('[data-mat]'); if(!el)return; ensureAudio();
+  var id=el.dataset.mat; var have=G.inv[id]||0; var already=selMats.filter(function(x){return x===id;}).length;
+  var idx=selMats.indexOf(id);
+  if(selMats.length<2 && already<have){ selMats.push(id); } else { // 클릭 토글 제거
+    var ri=selMats.lastIndexOf(id); if(ri>=0)selMats.splice(ri,1); }
+  tone(400,0.04,'sine',0.06); renderForge();
+});
+document.getElementById('craftBtn').addEventListener('click',function(){ ensureAudio(); doCraft(); });
+
+/* ===================== 상점 ===================== */
+var curHero=null;
+function genHero(){
+  var maxAtk=0; for(var i=0;i<G.weapons.length;i++)maxAtk=Math.max(maxAtk,G.weapons[i].atk);
+  var base=Math.max(8, Math.round((maxAtk||10)*(0.4+Math.random()*0.5)));
+  var names=['방랑 검사','견습 기사','숲의 궁수','불의 마법사','용병 대장','신전 성기사'];
+  var avs=['🧝','🧙','🏹','🗡️','🛡️','⚔️'];
+  var i2=Math.floor(Math.random()*names.length);
+  return { name:names[i2], av:avs[i2], minAtk:base, mult:1+G.rep*0.02+Math.random()*0.3 };
+}
+function renderShop(){
+  if(!curHero)curHero=genHero();
+  var hc=document.getElementById('heroCard');
+  hc.innerHTML='<div class="av">'+curHero.av+'</div><div class="req"><b style="color:#fff">'+curHero.name+'</b><br>요구: 공격력 <b>'+curHero.minAtk+'</b> 이상 무기<br><span class="muted">조건 충족 시 보상 ×'+curHero.mult.toFixed(2)+'</span></div>';
+  var grid=document.getElementById('wpnGrid'); grid.innerHTML='';
+  if(G.weapons.length===0){ grid.innerHTML='<span class="muted">판매할 무기가 없습니다. 제련하세요!</span>'; return; }
+  for(var i=0;i<G.weapons.length;i++){ var w=G.weapons[i]; var wt=WTYPES.find(function(x){return x.t===w.type;})||WTYPES[0];
+    var ok=w.atk>=curHero.minAtk;
+    var d=document.createElement('div'); d.className='item bd'+w.rar; d.dataset.wpn=i;
+    d.innerHTML='<div class="ic">'+wt.ic+'</div><div class="nm rar'+w.rar+'">'+RARN[w.rar]+' '+w.type+'</div><div class="st">ATK '+w.atk+' · '+w.value+'G'+(ok?' ✅':'')+'</div>'; grid.appendChild(d); }
+}
+document.getElementById('wpnGrid').addEventListener('click',function(e){ var el=e.target.closest('[data-wpn]'); if(!el)return; ensureAudio();
+  var i=+el.dataset.wpn; sellWeapon(i);
+});
+function sellWeapon(i){ var w=G.weapons[i]; if(!w||!curHero)return;
+  var ok=w.atk>=curHero.minAtk;
+  var gold=Math.round(w.value*(ok?curHero.mult:0.5));
+  G.gold+=gold; if(ok){ G.rep+=1+w.rar; }
+  G.weapons.splice(i,1); save();
+  sndCoin(); vibrate(15); toast((ok?'✅ 납품 성공! ':'거래 성사 ')+ '+'+gold+'G'+(ok?' · 평판+'+(1+w.rar):''));
+  curHero=genHero(); renderShop(); renderHub();
+  if(tutOn&&tutStep===2){ tutAdvance(); }
+}
+
+/* ===================== 업그레이드 ===================== */
+function forgeUpCost(){ return G.forgeLv*120; }
+function shipUpCost(){ return G.shipLv*180; }
+function renderUpgrade(){
+  var p=document.getElementById('upPanel');
+  var canDepth = G.shipLv>G.depth+ ( - (0)) ; // 탐사선 레벨로 해역 해금
+  p.innerHTML=''+
+    '<h2>🔨 대장간 Lv'+G.forgeLv+'</h2>'+
+    '<div class="card">더 높은 레어도·공격력으로 제련. <br><span class="muted">다음 레벨: 레어도/스탯 상승</span><br><br>'+
+      '<button class="btn '+(G.gold<forgeUpCost()?'':'')+'" id="forgeUpBtn" '+(G.gold<forgeUpCost()?'disabled':'')+'>업그레이드 ('+forgeUpCost()+'G)</button></div>'+
+    '<h2>🚢 탐사선 Lv'+G.shipLv+'</h2>'+
+    '<div class="card">산소 소모 감소 + 더 깊은 해역 해금.<br><span class="muted">현재 진출: '+DEPTHS[G.depth].nm+(G.depth<DEPTHS.length-1?(' → 다음: '+DEPTHS[G.depth+1].nm):' (최대)')+'</span><br><br>'+
+      '<button class="btn" id="shipUpBtn" '+(G.gold<shipUpCost()||G.depth>=DEPTHS.length-1&&G.shipLv>=3?'disabled':'')+'>업그레이드 ('+shipUpCost()+'G)</button></div>';
+}
+document.getElementById('upPanel').addEventListener('click',function(e){ var b=e.target.closest('button'); if(!b)return; ensureAudio();
+  if(b.id==='forgeUpBtn'){ if(G.gold>=forgeUpCost()){ G.gold-=forgeUpCost(); G.forgeLv++; save(); sndHammer(); toast('🔨 대장간 Lv'+G.forgeLv+'!'); renderUpgrade(); renderHub(); } }
+  if(b.id==='shipUpBtn'){ if(G.gold>=shipUpCost()){ G.gold-=shipUpCost(); G.shipLv++; if(G.depth<DEPTHS.length-1 && G.shipLv>G.depth+1)G.depth++; save(); toast('🚢 탐사선 Lv'+G.shipLv+'! 새 해역 개방'); renderUpgrade(); renderHub(); } }
+});
+
+/* ===================== 튜토리얼 ===================== */
+var tutOn=false, tutStep=0;
+var TUT=[
+  {tx:'<b>잠수</b> 화면입니다! 마우스로 갈고리를 광물(💎)에 대고 클릭, <b>초록 존</b>에 마커를 맞춰 끌어올리세요! (1개 채굴)', go:'dive'},
+  {tx:'좋아요! 이제 <b>제련</b>에서 광물 2개를 골라 무기를 만드세요. (하단 제련하기)', go:'forge'},
+  {tx:'마지막! <b>상점</b>에서 용사에게 무기를 판매해 골드를 버세요!', go:'shop'},
+];
+function startTutorial(){ tutOn=true; tutStep=0; document.getElementById('tut').style.display='block'; loadTut(); }
+function loadTut(){ var t=TUT[tutStep]; document.getElementById('tutStep').textContent='STEP '+(tutStep+1)+' / 3';
+  document.getElementById('tutTx').innerHTML=t.tx; go(t.go); }
+function tutAdvance(){ tutStep++;
+  if(tutStep>=TUT.length){ tutOn=false; document.getElementById('tut').style.display='none'; G.tutDone=true; save(); toast('튜토리얼 완료! 자유롭게 성장하세요 🎉'); go('hub'); }
+  else { setTimeout(loadTut, 500); } }
+document.getElementById('tutSkip').addEventListener('click',function(){ tutOn=false; document.getElementById('tut').style.display='none'; G.tutDone=true; save(); go('hub'); });
+
+/* ---------- 시작 ---------- */
+document.getElementById('startBtn').addEventListener('click',function(){ ensureAudio(); G=freshState(); save(); startTutorial(); });
+document.getElementById('continueBtn').addEventListener('click',function(){ ensureAudio(); G=load()||freshState(); go('hub'); });
+(function init(){ if(hasSave()){ document.getElementById('continueBtn').style.display='inline-block'; } G=load()||freshState(); })();
+
+/* ---------- 검증 노출 ---------- */
+window.__forge={ get G(){return G;}, set G(v){G=v;}, freshState:freshState, save:save, load:load, SAVEKEY:SAVEKEY,
+  MATS:MATS, DEPTHS:DEPTHS, craftPreview:craftPreview,
+  addMat:function(id,n){ G.inv[id]=(G.inv[id]||0)+(n||1); },
+  craft:function(a,b){ selMats=[a,b]; doCraft(); return G.weapons[G.weapons.length-1]; },
+  sell:function(i){ if(!curHero)curHero=genHero(); return sellWeapon(i); },
+  setHero:function(minAtk){ curHero={name:'테스트',av:'🧝',minAtk:minAtk,mult:1}; },
+  genHero:function(){ curHero=genHero(); return curHero; },
+  forgeUpCost:forgeUpCost, shipUpCost:shipUpCost, get view(){return view;}, go:go,
+  get tutStep(){return tutStep;}, get tutOn(){return tutOn;} };
+})();
+</script>
+</body>
+</html>
