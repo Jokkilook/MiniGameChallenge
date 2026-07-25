@@ -1,0 +1,416 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+<title>섀도우 일루전 · Shadow Illusion</title>
+<style>
+  :root{ --ink:#e9edff; --muted:#7b83b0; }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  html,body{margin:0;height:100%;overflow:hidden;background:#04050a;color:var(--ink);
+    font-family:"Segoe UI",-apple-system,BlinkMacSystemFont,"Malgun Gothic",sans-serif;
+    -webkit-font-smoothing:antialiased;-webkit-user-select:none;user-select:none;touch-action:none;cursor:none}
+  #wrap{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:#04050a}
+  canvas{display:block;touch-action:none}
+
+  #hud{position:fixed;top:0;left:0;right:0;padding:11px 14px;display:flex;gap:9px;align-items:center;justify-content:center;
+    pointer-events:none;z-index:5;font-size:13px;cursor:auto}
+  #hud .pill{background:rgba(12,16,36,.6);border:1px solid rgba(120,140,220,.25);border-radius:20px;padding:5px 12px;
+    letter-spacing:.5px;backdrop-filter:blur(5px);white-space:nowrap}
+  #hud .pill b{color:#9ff0ff}
+  #expwrap{width:90px;height:8px;background:rgba(255,255,255,.12);border-radius:6px;overflow:hidden}
+  #expbar{height:100%;width:0%;background:linear-gradient(90deg,#ffd27a,#ff5a4a);transition:width .05s}
+  #btnReset{pointer-events:auto;cursor:pointer}
+
+  #toast{position:fixed;top:52%;left:50%;transform:translate(-50%,-50%) scale(.8);z-index:8;pointer-events:none;
+    font-weight:800;font-size:clamp(18px,5vw,26px);opacity:0;text-align:center;text-shadow:0 2px 12px rgba(0,0,0,.7)}
+  #toast.show{animation:toastA 1.15s ease-out}
+  @keyframes toastA{0%{opacity:0;transform:translate(-50%,-50%) scale(.6)}18%{opacity:1;transform:translate(-50%,-50%) scale(1.05)}75%{opacity:1}100%{opacity:0}}
+
+  .screen{position:fixed;inset:0;z-index:20;display:flex;flex-direction:column;align-items:center;justify-content:center;
+    text-align:center;padding:26px;background:radial-gradient(120% 100% at 50% 30%,rgba(10,12,32,.93),rgba(3,4,10,.97));cursor:auto}
+  .screen h1{margin:0 0 4px;font-size:clamp(28px,7.5vw,48px);font-weight:900;letter-spacing:2px;
+    background:linear-gradient(180deg,#fff,#a9b3e6);-webkit-background-clip:text;background-clip:text;color:transparent}
+  .screen .sub{color:#7b83b0;letter-spacing:6px;font-size:12px;margin-bottom:16px}
+  .screen p{color:#aab2dd;font-size:14.5px;line-height:1.85;max-width:460px;margin:5px 0}
+  .screen p b{color:#fff} .screen p .d{color:#9ff0ff}
+  button.go{margin-top:22px;pointer-events:auto;cursor:pointer;font:inherit;font-weight:800;font-size:16px;letter-spacing:1px;
+    color:#0a1020;background:linear-gradient(180deg,#eef2ff,#aeb9ee);border:0;padding:14px 34px;border-radius:30px;box-shadow:0 10px 30px -8px #6673b8}
+  button.go:active{transform:translateY(1px)}
+  .row{display:flex;gap:10px;margin-top:16px;flex-wrap:wrap;justify-content:center}
+  .row button{pointer-events:auto;cursor:pointer;font:inherit;font-weight:700;font-size:14px;color:#dbe4ff;
+    background:rgba(20,24,52,.85);border:1px solid rgba(120,140,220,.3);border-radius:12px;padding:11px 20px}
+  .hint{color:#565d86;font-size:12px;margin-top:16px;line-height:1.7}
+  .stars{font-size:30px;letter-spacing:8px;margin:4px 0 6px}
+  #tut{position:fixed;left:50%;bottom:8%;transform:translateX(-50%);z-index:15;width:min(88vw,430px);
+    background:rgba(12,14,40,.95);border:1px solid rgba(120,140,220,.4);border-radius:16px;padding:14px 18px;text-align:center;
+    display:none;box-shadow:0 16px 46px rgba(0,0,0,.6);cursor:auto}
+  #tut .st{font-size:11px;letter-spacing:2px;color:#9ff0ff;font-weight:800;margin-bottom:5px}
+  #tut .tx{font-size:14.5px;line-height:1.6} #tut .tx b{color:#9ff0ff}
+  #tut button{margin-top:11px;cursor:pointer;font:inherit;font-weight:800;font-size:13px;color:#0a1020;
+    background:linear-gradient(180deg,#eef2ff,#aeb9ee);border:0;padding:8px 20px;border-radius:18px}
+  #tut .skip{background:none;color:#6b7099;text-decoration:underline;box-shadow:none;margin-left:8px}
+</style>
+</head>
+<body>
+<div id="wrap"><canvas id="cv"></canvas></div>
+
+<div id="hud">
+  <span class="pill" id="stagePill">STAGE 1</span>
+  <span class="pill" style="display:flex;align-items:center;gap:7px">노출 <span id="expwrap"><span id="expbar"></span></span></span>
+  <span class="pill" id="btnReset">↺</span>
+</div>
+
+<div id="toast"></div>
+
+<div class="screen" id="title">
+  <div class="sub">SHADOW ILLUSION</div>
+  <h1>섀도우 일루전</h1>
+  <p style="color:#9ff0ff;letter-spacing:2px;margin-top:-2px">빛과 그림자</p>
+  <p>커서가 <b>빛</b>이다. 기둥 뒤로 드리운 <span class="d">그림자</span>만이 안전지대.<br>
+     그림자 정령은 <b>빛에 닿으면 0.5초 만에 소멸</b>한다.<br>커서를 움직여 <b>그림자 다리</b>를 이어 출구로 인도하라.</p>
+  <button class="go" id="startBtn">튜토리얼 시작</button>
+  <div class="hint">PC 마우스 이동 · 모바일 터치 드래그로 광원을 움직이세요</div>
+</div>
+
+<div class="screen" id="result" style="display:none">
+  <div class="sub" id="resSub">CLEAR</div>
+  <div class="stars" id="resStars"></div>
+  <h1 id="resTitle">정화 완료</h1>
+  <p id="resMsg"></p>
+  <div class="row" id="resRow"></div>
+</div>
+
+<div id="tut">
+  <div class="st" id="tutStep">STEP 1 / 3</div>
+  <div class="tx" id="tutTx"></div>
+  <div><button id="tutSkip" class="skip">건너뛰기</button></div>
+</div>
+
+<script>
+"use strict";
+(function(){
+/* =========================================================================
+   섀도우 일루전 : 빛과 그림자 — 실시간 2D 레이캐스팅 그림자 퍼즐 (단일 파일)
+   ========================================================================= */
+var cv=document.getElementById('cv'), ctx=cv.getContext('2d');
+var AW=800, AH=520, DPR=1, SC=1, OX=0, OY=0;
+function layout(){
+  DPR=Math.min(2,window.devicePixelRatio||1);
+  var vw=window.innerWidth, vh=window.innerHeight;
+  SC=Math.min(vw/AW,vh/AH);
+  var w=Math.round(AW*SC), h=Math.round(AH*SC);
+  OX=Math.round((vw-w)/2); OY=Math.round((vh-h)/2);
+  cv.style.width=w+'px'; cv.style.height=h+'px';
+  cv.width=Math.round(w*DPR); cv.height=Math.round(h*DPR);
+  ctx.setTransform(DPR*SC,0,0,DPR*SC,0,0);
+}
+window.addEventListener('resize',layout);
+
+/* ---------- 오디오 ---------- */
+var AC=null;
+function audio(){ if(!AC){try{AC=new (window.AudioContext||window.webkitAudioContext)();}catch(e){}}
+  if(AC&&AC.state==='suspended')AC.resume(); return AC; }
+function tone(freq,dur,type,vol,to){ var ac=audio(); if(!ac)return;
+  var t=ac.currentTime,o=ac.createOscillator(),g=ac.createGain();
+  o.type=type||'sine'; o.frequency.setValueAtTime(freq,t);
+  if(to)o.frequency.exponentialRampToValueAtTime(Math.max(30,to),t+dur);
+  g.gain.setValueAtTime(0.0001,t); g.gain.exponentialRampToValueAtTime(vol||0.15,t+0.008);
+  g.gain.exponentialRampToValueAtTime(0.0001,t+dur);
+  o.connect(g); g.connect(ac.destination); o.start(t); o.stop(t+dur+0.02); }
+function chord(fs,dur,type,vol){ fs.forEach(function(f,i){ setTimeout(function(){tone(f,dur,type,vol);},i*70); }); }
+function vibrate(ms){ try{if(navigator.vibrate)navigator.vibrate(ms);}catch(e){} }
+
+/* ---------- 스테이지 ---------- */
+// occ: {type:'circle',x,y,r[,mv]} | {type:'seg',cx,cy,half,ang[,rot]}
+// mv(circle): {axis:'x'|'y',amp,spd,base}  rot(seg): {spd,base}
+function C(x,y,r,mv){ return {type:'circle',x:x,y:y,r:r,mv:mv||null,bx:x,by:y}; }
+function S(cx,cy,half,ang,rot){ return {type:'seg',cx:cx,cy:cy,half:half,ang:ang,rot:rot||null}; }
+var STAGES=[
+  { name:'STAGE 1', sub:'그림자 다리', occ:[C(250,170,36),C(430,175,36),C(600,170,36)],
+    path:[[80,275],[730,275]], exit:[745,275] },
+  { name:'STAGE 2', sub:'회전 반사판', occ:[C(230,150,34),C(560,360,34),S(410,255,60,0.4,{spd:0.6,base:0.4})],
+    path:[[80,150],[410,150],[410,400],[730,400]], exit:[745,400] },
+  { name:'STAGE 3', sub:'이동 기둥 · 타임어택',
+    occ:[C(280,175,34,{axis:'x',amp:70,spd:1.1}),C(480,360,34,{axis:'x',amp:70,spd:1.2,ph:1.6}),C(650,175,34,{axis:'x',amp:60,spd:0.9,ph:3})],
+    path:[[80,275],[730,275]], exit:[745,275] },
+];
+
+/* ---------- 기하 ---------- */
+function occAt(o,t){
+  if(o.type==='circle'){ var x=o.bx,y=o.by;
+    if(o.mv){ var off=Math.sin(t*o.mv.spd+(o.mv.ph||0))*o.mv.amp; if(o.mv.axis==='x')x=o.bx+off; else y=o.by+off; }
+    return {type:'circle',x:x,y:y,r:o.r};
+  } else {
+    var a=o.ang; if(o.rot)a=o.rot.base+t*o.rot.spd;
+    return {type:'seg',x1:o.cx-Math.cos(a)*o.half,y1:o.cy-Math.sin(a)*o.half,x2:o.cx+Math.cos(a)*o.half,y2:o.cy+Math.sin(a)*o.half,cx:o.cx,cy:o.cy,half:o.half,ang:a};
+  }
+}
+function rayCircleHit(Lx,Ly,Px,Py,C){ // segment L->P intersects circle?
+  var dx=C.x-Lx, dy=C.y-Ly, pd=Math.hypot(Px-Lx,Py-Ly); if(pd<1)return false;
+  var ux=(Px-Lx)/pd, uy=(Py-Ly)/pd;
+  var proj=dx*ux+dy*uy; // distance along ray to closest point
+  var cx=Lx+ux*proj, cy=Ly+uy*proj;
+  var perp=Math.hypot(C.x-cx,C.y-cy);
+  if(perp>=C.r) return false;
+  var back=Math.sqrt(C.r*C.r-perp*perp);
+  var tHit=proj-back; // first intersection distance
+  return tHit>0.5 && tHit<pd-0.5;
+}
+function segSegHit(ax,ay,bx,by,cx,cy,dx,dy){
+  var d=(bx-ax)*(dy-cy)-(by-ay)*(dx-cx); if(Math.abs(d)<1e-6)return false;
+  var t=((cx-ax)*(dy-cy)-(cy-ay)*(dx-cx))/d;
+  var u=((cx-ax)*(by-ay)-(cy-ay)*(bx-ax))/d;
+  return t>0.02 && t<0.98 && u>=0 && u<=1;
+}
+function occluded(sim,Lx,Ly,Px,Py){
+  for(var i=0;i<sim.occ.length;i++){ var o=occAt(sim.occ[i],sim.t);
+    if(o.type==='circle'){ if(rayCircleHit(Lx,Ly,Px,Py,o))return true; }
+    else { if(segSegHit(Lx,Ly,Px,Py,o.x1,o.y1,o.x2,o.y2))return true; } }
+  return false;
+}
+var LR=1500; // 광원 반경(화면 전체 커버 → 그림자는 오직 차폐로만)
+function isLit(sim,p){ var L=sim.light; if(Math.hypot(p[0]-L[0],p[1]-L[1])>LR)return false;
+  return !occluded(sim,L[0],L[1],p[0],p[1]); }
+
+/* ---------- 경로 ---------- */
+function pathLen(path){ var L=0; for(var i=0;i<path.length-1;i++)L+=Math.hypot(path[i+1][0]-path[i][0],path[i+1][1]-path[i][1]); return L; }
+function pointAt(path,s){ if(s<=0)return path[0].slice(); var acc=0;
+  for(var i=0;i<path.length-1;i++){ var seg=Math.hypot(path[i+1][0]-path[i][0],path[i+1][1]-path[i][1]);
+    if(acc+seg>=s){ var t=(s-acc)/seg; return [path[i][0]+(path[i+1][0]-path[i][0])*t, path[i][1]+(path[i+1][1]-path[i][1])*t]; } acc+=seg; }
+  return path[path.length-1].slice(); }
+
+/* ---------- 시뮬 ---------- */
+function makeSim(i){
+  var st=STAGES[i];
+  var sim={ stage:i, occ:st.occ.map(function(o){return Object.assign({},o);}), path:st.path, exit:st.exit,
+    len:pathLen(st.path), s:0, char:pointAt(st.path,0), light:[st.path[0][0]+120,st.path[0][1]-140],
+    exposure:0, t:0, grace:0.8, dead:false, win:false, smoke:[], winFx:0 };
+  return sim;
+}
+var CHSPD=78;
+function stepSim(sim,dt){
+  if(sim.win){ sim.winFx+=dt; return; }
+  if(sim.dead) return;
+  sim.t+=dt; if(sim.grace>0)sim.grace-=dt;
+  // 전진: 다음 지점이 그림자면 이동
+  var step=CHSPD*dt;
+  var nextP=pointAt(sim.path, Math.min(sim.len, sim.s+step+8));
+  if(!isLit(sim,nextP)){ sim.s=Math.min(sim.len,sim.s+step); }
+  sim.char=pointAt(sim.path,sim.s);
+  // 노출 판정
+  var lit=isLit(sim,sim.char);
+  if(lit && sim.grace<=0){ sim.exposure+=dt;
+    if(Math.random()<0.5) sim.smoke.push({x:sim.char[0]+(Math.random()*10-5),y:sim.char[1],vy:-20-Math.random()*30,life:1});
+    if(sim.exposure>=0.5){ sim.dead=true; }
+  } else { sim.exposure=Math.max(0,sim.exposure-dt*1.5); }
+  sim.lit=lit;
+  // 연기
+  for(var i=sim.smoke.length-1;i>=0;i--){ var s=sim.smoke[i]; s.life-=dt*1.3; s.y+=s.vy*dt; s.vy*=0.96; if(s.life<=0)sim.smoke.splice(i,1); }
+  // 도착
+  if(sim.s>=sim.len-2 && !isLit(sim,sim.char)){ sim.win=true; }
+}
+
+/* ---------- 오토파일럿(검증) : 커서를 움직여 정령 앞을 그림자로 ---------- */
+function autoLight(sim){
+  var look=pointAt(sim.path, Math.min(sim.len, sim.s+14));
+  var cur=sim.char;
+  // 각 차폐물에 대해, 그 뒤로 커서를 두면 look/cur 가 그림자가 되는지 검사
+  var best=null;
+  for(var i=0;i<sim.occ.length;i++){ var o=occAt(sim.occ[i],sim.t); if(o.type!=='circle')continue;
+    var dx=o.x-look[0], dy=o.y-look[1], d=Math.hypot(dx,dy)||1;
+    var cand=[o.x+dx/d*180, o.y+dy/d*180];
+    cand[0]=Math.max(4,Math.min(AW-4,cand[0])); cand[1]=Math.max(4,Math.min(AH-4,cand[1]));
+    // 이 커서로 look & cur 둘 다 그림자?
+    var okLook=occluded(sim,cand[0],cand[1],look[0],look[1]);
+    var okCur=occluded(sim,cand[0],cand[1],cur[0],cur[1]);
+    var score=(okLook?2:0)+(okCur?1:0) - Math.hypot(cand[0]-sim.light[0],cand[1]-sim.light[1])*0.001;
+    if(!best||score>best.score) best={score:score,cand:cand,okLook:okLook,okCur:okCur};
+  }
+  // seg 차폐물도 시도
+  for(var j=0;j<sim.occ.length;j++){ var g=occAt(sim.occ[j],sim.t); if(g.type!=='seg')continue;
+    var dx2=g.cx-look[0], dy2=g.cy-look[1], d2=Math.hypot(dx2,dy2)||1;
+    var cand2=[g.cx+dx2/d2*170, g.cy+dy2/d2*170];
+    cand2[0]=Math.max(4,Math.min(AW-4,cand2[0])); cand2[1]=Math.max(4,Math.min(AH-4,cand2[1]));
+    var okL=occluded(sim,cand2[0],cand2[1],look[0],look[1]);
+    var okC=occluded(sim,cand2[0],cand2[1],cur[0],cur[1]);
+    var sc=(okL?2:0)+(okC?1:0);
+    if(!best||sc>best.score) best={score:sc,cand:cand2,okLook:okL,okCur:okC};
+  }
+  return best?best.cand:sim.light;
+}
+
+/* ---------- 라이브 ---------- */
+var sim=null, mode='title', tutStep=0;
+function startStage(i){ sim=makeSim(i); mode='play';
+  document.getElementById('stagePill').textContent=STAGES[i].name;
+  toast(STAGES[i].name+' — '+STAGES[i].sub,'#9ff0ff'); }
+function startTut(){ sim=makeSim(0); mode='tut'; tutStep=0;
+  document.getElementById('stagePill').textContent='TUTORIAL';
+  document.getElementById('tut').style.display='block'; loadTut(); }
+
+/* 입력: 커서 = 광원 */
+function setLight(cx,cy){ if(!sim)return; sim.light=[Math.max(0,Math.min(AW,(cx-OX)/SC)), Math.max(0,Math.min(AH,(cy-OY)/SC))]; }
+window.addEventListener('mousemove',function(e){ if(mode==='play'||mode==='tut'||mode==='tutwait') setLight(e.clientX,e.clientY); });
+cv.addEventListener('touchstart',function(e){ var t=e.touches[0]; setLight(t.clientX,t.clientY); e.preventDefault(); },{passive:false});
+cv.addEventListener('touchmove',function(e){ var t=e.touches[0]; setLight(t.clientX,t.clientY); e.preventDefault(); },{passive:false});
+document.getElementById('btnReset').addEventListener('click',function(){ if(mode==='tut'||mode==='tutwait')loadTut(); else if(sim)startStage(sim.stage); });
+
+/* 튜토리얼 */
+var TUT=[
+  {tx:'마우스/손가락을 움직여 기둥 뒤로 <b>그림자를 길게</b> 만들어보세요!', check:function(s){return s.moved>180;}},
+  {tx:'정령이 <b>빛에 닿지 않게</b> 그림자 길을 이어주세요! (정령이 절반 이동)', check:function(s){return s.s>s.len*0.5;}},
+  {tx:'좋아요! 이제 <b>출구까지</b> 안전하게 인도하세요!', check:function(s){return s.win;}},
+];
+function loadTut(){ sim=makeSim(0); sim.moved=0; sim._lastL=sim.light.slice(); mode='tut';
+  document.getElementById('tutStep').textContent='STEP '+(tutStep+1)+' / 3';
+  document.getElementById('tutTx').innerHTML=TUT[tutStep].tx; }
+function tutTick(dt){ if((mode!=='tut'&&mode!=='tutwait')||!sim)return;
+  if(sim._lastL){ sim.moved=(sim.moved||0)+Math.hypot(sim.light[0]-sim._lastL[0],sim.light[1]-sim._lastL[1]); }
+  sim._lastL=sim.light.slice();
+  if(TUT[tutStep].check(sim)){ tone(880,0.1,'triangle',0.14,1320); tutStep++;
+    if(tutStep>=TUT.length){ mode='play'; document.getElementById('tut').style.display='none'; toast('튜토리얼 완료! 🎉','#6cff9e'); setTimeout(function(){startStage(0);},700); }
+    else { mode='tutwait'; setTimeout(function(){ var keepS=sim.s; loadTut(); if(tutStep===2)sim.s=keepS; },300); }
+  }
+}
+document.getElementById('tutSkip').addEventListener('click',function(){ mode='play'; document.getElementById('tut').style.display='none'; startStage(0); });
+
+/* HUD/결과 */
+function updHud(){ if(!sim)return; document.getElementById('expbar').style.width=Math.min(100,sim.exposure/0.5*100)+'%'; }
+function endStage(){ mode='result'; var i=sim.stage;
+  document.getElementById('resSub').textContent=STAGES[i].name+' CLEAR';
+  document.getElementById('resStars').textContent='★★★';
+  document.getElementById('resTitle').textContent='정화 완료 ✧';
+  document.getElementById('resMsg').textContent='그림자 정령을 무사히 출구로 인도했다.';
+  chord([523,659,784,1046,1318],0.4,'sine',0.12);
+  var row=document.getElementById('resRow'); row.innerHTML='';
+  var last=i>=STAGES.length-1;
+  if(!last) row.appendChild(mkbtn('다음 스테이지 →',function(){hide('result');startStage(i+1);}));
+  else row.appendChild(mkbtn('처음부터',function(){hide('result');startStage(0);}));
+  row.appendChild(mkbtn('이 판 다시',function(){hide('result');startStage(i);}));
+  show('result');
+}
+function mkbtn(t,fn){ var b=document.createElement('button'); b.textContent=t; b.onclick=fn; return b; }
+function show(id){document.getElementById(id).style.display='flex';}
+function hide(id){document.getElementById(id).style.display='none';}
+function toast(msg,c){ var el=document.getElementById('toast'); el.textContent=msg; el.style.color=c||'#fff';
+  el.classList.remove('show'); void el.offsetWidth; el.classList.add('show'); }
+
+/* 루프 */
+var last=0;
+function loop(ts){ if(!last)last=ts; var dt=Math.min(0.04,(ts-last)/1000); last=ts;
+  if((mode==='play'||mode==='tut'||mode==='tutwait') && sim){
+    stepSim(sim,dt); updHud();
+    if(mode==='tut'||mode==='tutwait') tutTick(dt);
+    if(sim.dead){ toast('빛에 소멸… 다시!','#ff8a8a'); vibrate([40,30,60]); tone(220,0.4,'sawtooth',0.16,60);
+      if(mode==='play') setTimeout(function(){startStage(sim.stage);},700); else setTimeout(loadTut,700); sim.dead=false; sim._reset=true; }
+    if(sim.win && !sim._done && mode==='play'){ sim._done=true; setTimeout(endStage,900); }
+  }
+  render();
+  requestAnimationFrame(loop);
+}
+
+/* ---------- 렌더 ---------- */
+function render(){
+  ctx.clearRect(0,0,AW,AH);
+  if(!sim){ ctx.fillStyle='#04050a'; ctx.fillRect(0,0,AW,AH); return; }
+  var L=sim.light;
+  // 빛(밝은 그라디언트로 화면 채움)
+  var lg=ctx.createRadialGradient(L[0],L[1],20,L[0],L[1],700);
+  lg.addColorStop(0,'#dfe7ff'); lg.addColorStop(0.35,'#8f9bd0'); lg.addColorStop(1,'#3a4166');
+  ctx.fillStyle=lg; ctx.fillRect(0,0,AW,AH);
+  // 그림자 콘(어둡게 카빙)
+  for(var i=0;i<sim.occ.length;i++){ var o=occAt(sim.occ[i],sim.t);
+    if(o.type==='circle') drawCircleShadow(L,o); else drawSegShadow(L,o); }
+  // 경로(은은히)
+  ctx.strokeStyle='rgba(150,170,255,.12)'; ctx.lineWidth=2; ctx.setLineDash([4,8]);
+  ctx.beginPath(); ctx.moveTo(sim.path[0][0],sim.path[0][1]); for(var q=1;q<sim.path.length;q++)ctx.lineTo(sim.path[q][0],sim.path[q][1]); ctx.stroke(); ctx.setLineDash([]);
+  // 출구
+  var ex=sim.exit, ep=0.6+0.4*Math.sin(sim.t*3);
+  ctx.save(); ctx.shadowColor='#9ff0ff'; ctx.shadowBlur=20; ctx.strokeStyle='#9ff0ff'; ctx.lineWidth=2.5;
+  ctx.beginPath(); ctx.arc(ex[0],ex[1],18+ep*4,0,6.28); ctx.stroke();
+  ctx.fillStyle='rgba(159,240,255,.15)'; ctx.beginPath(); ctx.arc(ex[0],ex[1],14,0,6.28); ctx.fill(); ctx.restore();
+  ctx.fillStyle='#9ff0ff'; ctx.font='bold 10px Segoe UI'; ctx.textAlign='center'; ctx.fillText('EXIT',ex[0],ex[1]-26);
+  // 차폐물(기둥/반사판)
+  for(var j=0;j<sim.occ.length;j++){ var g=occAt(sim.occ[j],sim.t);
+    if(g.type==='circle'){ ctx.save(); ctx.shadowColor='#aab6ff'; ctx.shadowBlur=8;
+      var pg=ctx.createRadialGradient(g.x-g.r*0.3,g.y-g.r*0.3,2,g.x,g.y,g.r);
+      pg.addColorStop(0,'#f0f3ff'); pg.addColorStop(1,'#5a6699'); ctx.fillStyle=pg;
+      ctx.beginPath(); ctx.arc(g.x,g.y,g.r,0,6.28); ctx.fill();
+      ctx.strokeStyle='rgba(180,200,255,.8)'; ctx.lineWidth=2; ctx.stroke(); ctx.restore();
+    } else { ctx.save(); ctx.strokeStyle='#cfe0ff'; ctx.lineWidth=7; ctx.lineCap='round'; ctx.shadowColor='#9ff0ff'; ctx.shadowBlur=12;
+      ctx.beginPath(); ctx.moveTo(g.x1,g.y1); ctx.lineTo(g.x2,g.y2); ctx.stroke();
+      ctx.strokeStyle='rgba(120,140,200,.6)'; ctx.lineWidth=2; ctx.stroke(); ctx.restore(); }
+  }
+  // 연기
+  for(var s=0;s<sim.smoke.length;s++){ var sm=sim.smoke[s]; ctx.globalAlpha=Math.max(0,sm.life)*0.6; ctx.fillStyle='#cdd6ee';
+    ctx.beginPath(); ctx.arc(sm.x,sm.y,3+(1-sm.life)*4,0,6.28); ctx.fill(); } ctx.globalAlpha=1;
+  // 정령
+  if(!sim._reset){ var c=sim.char, lit=sim.lit;
+    ctx.save(); ctx.translate(c[0],c[1]);
+    var glow=lit?'#ff7a4a':'#9ff0ff';
+    ctx.shadowColor=glow; ctx.shadowBlur=lit?18:14;
+    ctx.fillStyle= lit?'rgba(60,20,10,.9)':'rgba(10,12,26,.92)';
+    ctx.beginPath(); // 물방울형 정령
+    ctx.arc(0,2,9,0,6.28); ctx.fill();
+    ctx.beginPath(); ctx.moveTo(0,-14); ctx.quadraticCurveTo(7,-4,6,2); ctx.quadraticCurveTo(0,10,-6,2); ctx.quadraticCurveTo(-7,-4,0,-14); ctx.fill();
+    ctx.strokeStyle=glow; ctx.lineWidth=1.6; ctx.stroke();
+    ctx.fillStyle=glow; ctx.beginPath(); ctx.arc(-2.5,0,1.4,0,6.28); ctx.arc(2.5,0,1.4,0,6.28); ctx.fill();
+    ctx.restore();
+  }
+  sim._reset=false;
+  // 승리 정화 파동
+  if(sim.win){ var r=sim.winFx*420; ctx.save(); ctx.globalAlpha=Math.max(0,1-sim.winFx*0.7);
+    ctx.strokeStyle='#9ff0ff'; ctx.lineWidth=4; ctx.beginPath(); ctx.arc(sim.exit[0],sim.exit[1],r,0,6.28); ctx.stroke(); ctx.restore(); }
+  // 광원 표시
+  ctx.save(); ctx.shadowColor='#fff'; ctx.shadowBlur=24; ctx.fillStyle='#fff';
+  ctx.beginPath(); ctx.arc(L[0],L[1],7,0,6.28); ctx.fill();
+  ctx.strokeStyle='rgba(255,255,255,.5)'; ctx.lineWidth=1; ctx.beginPath(); ctx.arc(L[0],L[1],13,0,6.28); ctx.stroke(); ctx.restore();
+  // 비네트
+  var vg=ctx.createRadialGradient(AW/2,AH/2,AH*0.35,AW/2,AH/2,AH*0.85);
+  vg.addColorStop(0,'rgba(0,0,0,0)'); vg.addColorStop(1,'rgba(0,0,0,.5)'); ctx.fillStyle=vg; ctx.fillRect(0,0,AW,AH);
+}
+function drawCircleShadow(L,C){
+  var d=Math.hypot(C.x-L[0],C.y-L[1]); if(d<=C.r)return;
+  var theta=Math.atan2(C.y-L[1],C.x-L[0]); var alpha=Math.asin(C.r/d);
+  var tl=Math.sqrt(d*d-C.r*C.r), FAR=2200;
+  var a1=theta+alpha, a2=theta-alpha;
+  var t1=[L[0]+Math.cos(a1)*tl, L[1]+Math.sin(a1)*tl], t2=[L[0]+Math.cos(a2)*tl, L[1]+Math.sin(a2)*tl];
+  var f1=[L[0]+Math.cos(a1)*FAR, L[1]+Math.sin(a1)*FAR], f2=[L[0]+Math.cos(a2)*FAR, L[1]+Math.sin(a2)*FAR];
+  ctx.fillStyle='#05060c';
+  ctx.beginPath(); ctx.moveTo(t1[0],t1[1]); ctx.lineTo(f1[0],f1[1]); ctx.lineTo(f2[0],f2[1]); ctx.lineTo(t2[0],t2[1]); ctx.closePath(); ctx.fill();
+}
+function drawSegShadow(L,g){
+  var FAR=2200; var e1=[g.x1,g.y1], e2=[g.x2,g.y2];
+  var d1=[e1[0]-L[0],e1[1]-L[1]], n1=Math.hypot(d1[0],d1[1]); var f1=[e1[0]+d1[0]/n1*FAR,e1[1]+d1[1]/n1*FAR];
+  var d2=[e2[0]-L[0],e2[1]-L[1]], n2=Math.hypot(d2[0],d2[1]); var f2=[e2[0]+d2[0]/n2*FAR,e2[1]+d2[1]/n2*FAR];
+  ctx.fillStyle='#05060c';
+  ctx.beginPath(); ctx.moveTo(e1[0],e1[1]); ctx.lineTo(f1[0],f1[1]); ctx.lineTo(f2[0],f2[1]); ctx.lineTo(e2[0],e2[1]); ctx.closePath(); ctx.fill();
+}
+
+document.getElementById('startBtn').addEventListener('click',function(){ audio(); hide('title'); startTut(); });
+layout(); requestAnimationFrame(loop);
+
+/* ---------- 검증 노출 ---------- */
+window.__shadow={ makeSim:makeSim, stepSim:stepSim, isLit:isLit, occluded:occluded, autoLight:autoLight,
+  STAGES:STAGES, pointAt:pointAt,
+  // 오토파일럿으로 스테이지 클리어 시도
+  runBot:function(si){ var s=makeSim(si); var dt=1/120;
+    for(var f=0;f<120*40;f++){ s.light=autoLight(s); stepSim(s,dt);
+      if(s.win) return {win:true, t:Math.round(s.t*10)/10}; if(s.dead) return {win:false, dead:true, s:Math.round(s.s), len:Math.round(s.len)}; }
+    return {win:false, timeout:true, s:Math.round(s.s), len:Math.round(s.len)}; },
+  // 경로상의 모든 점이 어떤 커서 위치로든 그림자가 될 수 있는가(도달성)
+  shadowability:function(si){ var s=makeSim(si); var bad=0, total=0;
+    for(var u=0;u<=s.len;u+=12){ total++; var p=pointAt(s.path,u); var ok=false;
+      // 여러 커서 후보 시도
+      for(var i=0;i<s.occ.length;i++){ var o=occAt(s.occ[i],0); if(o.type!=='circle')continue;
+        var dx=o.x-p[0],dy=o.y-p[1],d=Math.hypot(dx,dy)||1; var c=[o.x+dx/d*180,o.y+dy/d*180];
+        c[0]=Math.max(0,Math.min(AW,c[0])); c[1]=Math.max(0,Math.min(AH,c[1]));
+        if(occluded(s,c[0],c[1],p[0],p[1])){ok=true;break;} }
+      if(!ok)bad++; }
+    return {total:total, unshadowable:bad, ok:bad===0}; }
+};
+})();
+</script>
+</body>
+</html>
