@@ -1,0 +1,376 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>중력의 궤도 · Orbit Slinger</title>
+<style>
+  :root{ --ink:#dfe6ff; --muted:#7a83b0; --pull:#4f9dff; --push:#ff5a6a; }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  html,body{margin:0;height:100%;overflow:hidden;background:#03040a;color:var(--ink);
+    font-family:"Segoe UI",-apple-system,BlinkMacSystemFont,"Malgun Gothic",sans-serif;
+    -webkit-font-smoothing:antialiased;-webkit-user-select:none;user-select:none}
+  #wrap{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:#03040a}
+  canvas{display:block;cursor:crosshair}
+
+  #hud{position:fixed;top:0;left:0;right:0;padding:10px 14px;display:flex;gap:8px;align-items:center;justify-content:center;
+    pointer-events:none;z-index:5;font-size:12.5px}
+  #hud .pill{background:rgba(12,16,36,.6);border:1px solid rgba(90,130,230,.28);border-radius:16px;padding:5px 12px;
+    letter-spacing:.5px;white-space:nowrap;font-weight:700}
+  #hud .pill b{color:#9ff0ff}
+  #btnReset{pointer-events:auto;cursor:pointer}
+
+  .screen{position:fixed;inset:0;z-index:20;display:flex;flex-direction:column;align-items:center;justify-content:center;
+    text-align:center;padding:24px;background:radial-gradient(120% 100% at 50% 30%,rgba(10,14,38,.94),rgba(3,4,10,.98))}
+  .screen h1{margin:0 0 4px;font-size:clamp(26px,7vw,46px);font-weight:900;letter-spacing:2px;
+    background:linear-gradient(180deg,#fff,#8fb0ff);-webkit-background-clip:text;background-clip:text;color:transparent}
+  .screen .sub{color:#7a83b0;letter-spacing:5px;font-size:12px;margin-bottom:14px}
+  .screen p{color:#aeb6e0;font-size:14px;line-height:1.85;max-width:500px;margin:5px 0}
+  .screen p .b{color:var(--pull);font-weight:700} .screen p .r{color:var(--push);font-weight:700}
+  .screen kbd{background:rgba(255,255,255,.1);border:1px solid rgba(255,255,255,.2);border-radius:4px;padding:1px 6px;font-size:12px}
+  button.go{margin-top:20px;pointer-events:auto;cursor:pointer;font:inherit;font-weight:800;font-size:16px;letter-spacing:1px;
+    color:#06121e;background:linear-gradient(180deg,#a8ccff,#4f9dff);border:0;padding:13px 34px;border-radius:28px;box-shadow:0 10px 30px -8px #3a7aff}
+  button.go:active{transform:translateY(1px)}
+  .row{display:flex;gap:10px;margin-top:14px;flex-wrap:wrap;justify-content:center}
+  .row button{pointer-events:auto;cursor:pointer;font:inherit;font-weight:700;font-size:14px;color:#dbe4ff;
+    background:rgba(18,24,52,.85);border:1px solid rgba(90,130,230,.3);border-radius:12px;padding:10px 18px}
+  .hint{color:#4a5378;font-size:12px;margin-top:14px;line-height:1.7}
+  .stars{font-size:30px;letter-spacing:8px;margin:4px 0}
+  #tut{position:fixed;left:50%;bottom:6%;transform:translateX(-50%);z-index:15;width:min(92vw,520px);
+    background:rgba(10,14,38,.95);border:1px solid rgba(90,130,230,.4);border-radius:14px;padding:13px 18px;text-align:center;
+    display:none;box-shadow:0 12px 40px rgba(0,0,0,.6)}
+  #tut .st{font-size:11px;letter-spacing:2px;color:#4f9dff;font-weight:800;margin-bottom:4px}
+  #tut .tx{font-size:14px;line-height:1.5} #tut .tx .b{color:var(--pull)} #tut .tx .r{color:var(--push)}
+  #tut button{margin-top:9px;cursor:pointer;font:inherit;font-weight:800;font-size:12.5px;color:#06121e;
+    background:linear-gradient(180deg,#a8ccff,#4f9dff);border:0;padding:7px 18px;border-radius:16px}
+  #tut .skip{background:none;color:#5a6488;text-decoration:underline;box-shadow:none;margin-left:8px}
+</style>
+</head>
+<body>
+<div id="wrap"><canvas id="cv"></canvas></div>
+
+<div id="hud">
+  <span class="pill" id="stagePill">STAGE 1</span>
+  <span class="pill" id="modePill">관성</span>
+  <span class="pill" id="spdPill">속도 0</span>
+  <span class="pill" id="btnReset">↺ RESET</span>
+</div>
+
+<div class="screen" id="title">
+  <div class="sub">ORBIT SLINGER</div>
+  <h1>중력의 궤도</h1>
+  <p style="color:#8fb0ff;letter-spacing:2px;margin-top:-2px">슬링샷</p>
+  <p>탐사선엔 엔진이 없다. <span class="b">좌클릭=인력(끌기)</span> · <span class="r">우클릭=척력(밀기)</span>으로<br>
+     중력장을 조율해 행성·블랙홀을 피해 목표에 정밀 안착하라. <b style="color:#fff">예상 궤적(점선)</b>을 보며 미세 조향!</p>
+  <p style="font-size:12.5px;color:#7a83b0"><kbd>좌클릭</kbd> 당기기 · <kbd>우클릭</kbd> 밀기 · <kbd>Space</kbd> 당기기</p>
+  <button class="go" id="startBtn">발진</button>
+</div>
+
+<div class="screen" id="result" style="display:none">
+  <div class="sub" id="resSub">DOCKED</div>
+  <div class="stars" id="resStars"></div>
+  <h1 id="resTitle" style="font-size:clamp(24px,5vw,36px)">정밀 안착</h1>
+  <p id="resMsg"></p>
+  <div class="row" id="resRow"></div>
+</div>
+
+<div id="tut">
+  <div class="st" id="tutStep">STEP 1 / 3</div>
+  <div class="tx" id="tutTx"></div>
+  <div><button id="tutSkip" class="skip">건너뛰기</button></div>
+</div>
+
+<script>
+"use strict";
+(function(){
+/* =========================================================================
+   중력의 궤도 : 슬링샷 — Custom 2D Gravity & 궤적 예측 엔진
+   버그방지: 오디오 resume / resize+rect / dt기반+서브스텝 / 클램핑+역루프 / 리스너 1회
+   ========================================================================= */
+var cv=document.getElementById('cv'), ctx=cv.getContext('2d');
+var AW=960, AH=540, DPR=1, SC=1;
+function layout(){                              // [규칙2]
+  DPR=Math.min(2,window.devicePixelRatio||1);
+  var vw=window.innerWidth, vh=window.innerHeight;
+  SC=Math.min(vw/AW,vh/AH);
+  var w=Math.round(AW*SC), h=Math.round(AH*SC);
+  cv.style.width=w+'px'; cv.style.height=h+'px';
+  cv.width=Math.round(w*DPR); cv.height=Math.round(h*DPR);
+  ctx.setTransform(DPR*SC,0,0,DPR*SC,0,0);
+}
+window.addEventListener('resize',layout);        // [규칙5] 1회 등록
+
+/* ---------- 오디오 ---------- */
+var AC=null, master=null, hum=null, humGain=null;
+function ensureAudio(){                           // [규칙1]
+  if(!AC){ try{ AC=new (window.AudioContext||window.webkitAudioContext)(); }catch(e){ return; }
+    master=AC.createGain(); master.gain.value=0.5; master.connect(AC.destination);
+    hum=AC.createOscillator(); hum.type='sine'; hum.frequency.value=70;
+    humGain=AC.createGain(); humGain.gain.value=0; hum.connect(humGain); humGain.connect(master);
+    try{ hum.start(); }catch(e){}
+  }
+  if(AC && AC.state==='suspended'){ AC.resume(); }
+}
+function setHum(on,push){ if(!AC)return; humGain.gain.setTargetAtTime(on?0.06:0, AC.currentTime,0.04);
+  hum.frequency.setTargetAtTime(push?150:60, AC.currentTime,0.05); }
+function blip(freq,dur,type,vol,to){ ensureAudio(); if(!AC)return;
+  var t=AC.currentTime,o=AC.createOscillator(),g=AC.createGain();
+  o.type=type||'sine'; o.frequency.setValueAtTime(freq,t); if(to)o.frequency.exponentialRampToValueAtTime(Math.max(30,to),t+dur);
+  g.gain.setValueAtTime(0.0001,t); g.gain.exponentialRampToValueAtTime(vol||0.15,t+0.008); g.gain.exponentialRampToValueAtTime(0.0001,t+dur);
+  o.connect(g); g.connect(master||AC.destination); o.start(t); o.stop(t+dur+0.02); }
+function sndWin(){ [523,659,784,1046].forEach(function(f,i){setTimeout(function(){blip(f,0.15,'triangle',0.14);},i*90);}); }
+function sndBoom(){ blip(120,0.4,'sawtooth',0.2,40); }
+
+/* ---------- 물리 ---------- */
+var G=1, MG=1.05e7, PROBE_R=7, VMAX=780;
+function bodyPos(b,t){ if(!b.mv)return [b.x,b.y];
+  return [b.mv.cx+Math.cos(t*b.mv.spd+b.mv.ph)*b.mv.rad, b.mv.cy+Math.sin(t*b.mv.spd+b.mv.ph)*b.mv.rad]; }
+function bodyPosX(b,t){ if(b.osc)return b.bx+Math.sin(t*b.osc.spd+b.osc.ph)*b.osc.amp; return b.x; }
+// 가속도(중력 + 마우스 인력/척력)
+function accel(px,py,bodies,t,mouse,inp){
+  var ax=0, ay=0;
+  for(var i=0;i<bodies.length;i++){ var b=bodies[i]; var bp=bodyPos(b,t); var bx=b.osc?bodyPosX(b,t):bp[0], by=bp[1];
+    var dx=bx-px, dy=by-py, d=Math.hypot(dx,dy)||0.001, dd=Math.max(d,b.r+14);
+    var f=G*b.mass/(dd*dd); ax+=f*dx/d; ay+=f*dy/d; }
+  if(inp.pull||inp.push){ var mdx=mouse.x-px, mdy=mouse.y-py, md=Math.hypot(mdx,mdy)||0.001, mdd=Math.max(md,42);
+    var mf=MG/(mdd*mdd)*(inp.pull?1:-1); ax+=mf*mdx/md; ay+=mf*mdy/md; }
+  return [ax,ay];
+}
+function integrate(pr,bodies,t,mouse,inp,dt,sub){ // 서브스텝 [규칙3]
+  var sdt=dt/sub;
+  for(var s=0;s<sub;s++){ var a=accel(pr.x,pr.y,bodies,t,mouse,inp);
+    pr.vx+=a[0]*sdt; pr.vy+=a[1]*sdt;
+    var sp=Math.hypot(pr.vx,pr.vy); if(sp>VMAX){ pr.vx=pr.vx/sp*VMAX; pr.vy=pr.vy/sp*VMAX; } // [규칙4]
+    pr.x+=pr.vx*sdt; pr.y+=pr.vy*sdt; t+=sdt;
+  }
+  return t;
+}
+
+/* ---------- 스테이지 ---------- */
+function B(x,y,mass,r,type,mv,osc){ return {x:x,y:y,bx:x,mass:mass,r:r,type:type||'planet',mv:mv||null,osc:osc||null}; }
+var STAGES=[
+  {name:'STAGE 1', sub:'행성 슬링샷',
+    probe:{x:110,y:150,vx:70,vy:20}, bodies:[B(480,300,6.0e6,58,'planet')],
+    goal:{x:850,y:430,r:34}, needSlow:false },
+  {name:'STAGE 2', sub:'이중 블랙홀',
+    probe:{x:110,y:270,vx:95,vy:0},
+    bodies:[ B(0,0,4.4e6,30,'blackhole',{cx:480,cy:270,rad:95,spd:0.8,ph:0}),
+             B(0,0,4.4e6,30,'blackhole',{cx:480,cy:270,rad:95,spd:0.8,ph:Math.PI}) ],
+    goal:{x:850,y:270,r:34}, needSlow:false },
+  {name:'STAGE 3', sub:'이동 소행성 · 정밀 안착',
+    probe:{x:110,y:270,vx:60,vy:0},
+    bodies:[ B(380,180,0,26,'asteroid',null,{spd:1.1,ph:0,amp:90}), B(560,360,0,26,'asteroid',null,{spd:1.3,ph:1.5,amp:90}),
+             B(720,200,0,26,'asteroid',null,{spd:0.9,ph:3,amp:70}) ],
+    goal:{x:860,y:300,r:32}, needSlow:true },
+];
+
+/* ---------- 시뮬 ---------- */
+function makeSim(i){
+  var st=STAGES[i];
+  return { stage:i, probe:{x:st.probe.x,y:st.probe.y,vx:st.probe.vx,vy:st.probe.vy},
+    bodies:st.bodies.map(function(b){return Object.assign({},b);}), goal:st.goal, needSlow:st.needSlow,
+    t:0, trail:[], particles:[], win:false, dead:false, deadReason:'', mouse:{x:st.goal.x,y:st.goal.y}, inp:{pull:false,push:false} };
+}
+function stepSim(s,dt){
+  if(s.win||s.dead)return;
+  s.t=integrate(s.probe,s.bodies,s.t,s.mouse,s.inp,dt,4);
+  // 트레일
+  s.trail.push({x:s.probe.x,y:s.probe.y,life:1}); if(s.trail.length>60)s.trail.shift();
+  for(var tr=s.trail.length-1;tr>=0;tr--){ s.trail[tr].life-=dt*0.9; if(s.trail[tr].life<=0)s.trail.splice(tr,1); } // [규칙4]
+  for(var i=s.particles.length-1;i>=0;i--){ var p=s.particles[i]; p.life-=dt*1.6; p.x+=p.vx*dt; p.y+=p.vy*dt; p.vx*=0.95;p.vy*=0.95; if(p.life<=0)s.particles.splice(i,1); }
+  // 충돌
+  for(var b=0;b<s.bodies.length;b++){ var bd=s.bodies[b]; var bp=bodyPos(bd,s.t); var bx=bd.osc?bodyPosX(bd,s.t):bp[0], by=bp[1];
+    if(Math.hypot(s.probe.x-bx,s.probe.y-by) < bd.r+PROBE_R){ s.dead=true; s.deadReason=(bd.type==='blackhole'?'블랙홀에 삼켜짐':(bd.type==='asteroid'?'소행성 충돌':'행성 추락')); sndBoom(); burst(s,s.probe.x,s.probe.y,'#ff5a6a',24); } }
+  // 목표
+  var sp=Math.hypot(s.probe.vx,s.probe.vy);
+  if(Math.hypot(s.probe.x-s.goal.x,s.probe.y-s.goal.y) < s.goal.r){
+    if(!s.needSlow || sp<70){ s.win=true; sndWin(); burst(s,s.goal.x,s.goal.y,'#6cff9e',40); }
+  }
+  // 경계 이탈 [규칙4]
+  if(s.probe.x<-60||s.probe.x>AW+60||s.probe.y<-60||s.probe.y>AH+60){ s.dead=true; s.deadReason='궤도 이탈'; }
+}
+function burst(s,x,y,c,n){ for(var i=0;i<n;i++){ var a=Math.random()*6.28,sp=60+Math.random()*200;
+  s.particles.push({x:x,y:y,vx:Math.cos(a)*sp,vy:Math.sin(a)*sp,life:1,c:(i%3===0?'#fff':c)}); } }
+
+/* 궤적 예측(1.5초) */
+function predict(s){
+  var pr={x:s.probe.x,y:s.probe.y,vx:s.probe.vx,vy:s.probe.vy}, t=s.t, pts=[];
+  var steps=45, dt=1.5/steps;
+  for(var i=0;i<steps;i++){ t=integrate(pr,s.bodies,t,s.mouse,s.inp,dt,2); pts.push([pr.x,pr.y]);
+    if(pr.x<-60||pr.x>AW+60||pr.y<-60||pr.y>AH+60)break; }
+  return pts;
+}
+
+/* ---------- 라이브 ---------- */
+var mode='title', sim=null, tutStep=0;
+function startStage(i){ sim=makeSim(i); mode='play'; sim._done=false; document.getElementById('stagePill').textContent=STAGES[i].name; updHud(); }
+function startTut(){ tutStep=0; mode='tut'; document.getElementById('tut').style.display='block'; loadTut(); }
+
+/* 입력 [규칙5] 1회 등록 */
+function toLogic(clientX,clientY){ var r=cv.getBoundingClientRect();   // [규칙2] rect
+  return { x:(clientX-r.left)/r.width*AW, y:(clientY-r.top)/r.height*AH }; }
+cv.addEventListener('mousemove',function(e){ if(!sim)return; var p=toLogic(e.clientX,e.clientY); sim.mouse.x=p.x; sim.mouse.y=p.y; });
+cv.addEventListener('mousedown',function(e){ ensureAudio(); if(!sim)return; var p=toLogic(e.clientX,e.clientY); sim.mouse.x=p.x; sim.mouse.y=p.y;
+  if(e.button===0)sim.inp.pull=true; if(e.button===2)sim.inp.push=true; });
+cv.addEventListener('mouseup',function(e){ if(!sim)return; if(e.button===0)sim.inp.pull=false; if(e.button===2)sim.inp.push=false; });
+cv.addEventListener('contextmenu',function(e){ e.preventDefault(); });   // 우클릭 메뉴 방지
+window.addEventListener('keydown',function(e){ ensureAudio(); if(e.key===' '){ if(sim)sim.inp.pull=true; e.preventDefault(); } });
+window.addEventListener('keyup',function(e){ if(e.key===' '){ if(sim)sim.inp.pull=false; } });
+window.addEventListener('blur',function(){ if(sim){ sim.inp.pull=false; sim.inp.push=false; } }); // 포커스 잃으면 해제
+document.getElementById('btnReset').addEventListener('click',function(){ if(mode==='tut'||mode==='tutwait')loadTut(); else if(sim)startStage(sim.stage); });
+
+/* 튜토리얼 */
+var TUT=[
+  {tx:'<span class="b">좌클릭(인력)</span>으로 탐사선을 커서 쪽으로 당겨 <b>고리(목표)</b>를 통과하세요!',
+   setup:function(){ sim=makeSim(0); sim.bodies=[]; sim.probe={x:110,y:180,vx:80,vy:0}; sim.goal={x:820,y:380,r:36}; sim.needSlow=false; },
+   check:function(s){ return s.win; }},
+  {tx:'충돌 직전 <span class="r">우클릭(척력)</span>으로 커서 반대로 밀어내 속도를 줄이세요! (목표에 <b>천천히</b> 안착)',
+   setup:function(){ sim=makeSim(0); sim.bodies=[]; sim.probe={x:110,y:270,vx:150,vy:0}; sim.goal={x:760,y:270,r:40}; sim.needSlow=true; },
+   check:function(s){ return s.win; }},
+  {tx:'행성 중력에 휩쓸리지 않게 <span class="b">인력</span>·<span class="r">척력</span>을 조율하며 <b>도킹</b>하세요!',
+   setup:function(){ sim=makeSim(0); },
+   check:function(s){ return s.win; }},
+];
+function loadTut(){ var st=TUT[tutStep]; st.setup(); mode='tut'; sim._done=false;
+  document.getElementById('tutStep').textContent='STEP '+(tutStep+1)+' / 3'; document.getElementById('tutTx').innerHTML=st.tx; updHud(); }
+function tutTick(){ if((mode!=='tut'&&mode!=='tutwait')||!sim)return;
+  if(sim.dead){ if(!sim._done){sim._done=true; setTimeout(loadTut,700);} return; }
+  if(TUT[tutStep].check(sim)){ tutStep++;
+    if(tutStep>=TUT.length){ mode='play'; document.getElementById('tut').style.display='none'; setTimeout(function(){startStage(0);},700); }
+    else { mode='tutwait'; setTimeout(function(){ loadTut(); },600); } }
+}
+document.getElementById('tutSkip').addEventListener('click',function(){ document.getElementById('tut').style.display='none'; startStage(0); });
+
+/* HUD/결과 */
+function updHud(){ if(!sim)return;
+  document.getElementById('modePill').textContent= sim.inp.pull?'🔵 인력':(sim.inp.push?'🔴 척력':'관성');
+  document.getElementById('modePill').style.color= sim.inp.pull?'#4f9dff':(sim.inp.push?'#ff5a6a':'#dfe6ff');
+  var sp=Math.round(Math.hypot(sim.probe.vx,sim.probe.vy));
+  var spEl=document.getElementById('spdPill'); spEl.textContent='속도 '+sp;
+  spEl.style.color= (sim.needSlow&&sp<70)?'#6cff9e':'#dfe6ff'; }
+function endStage(win){ mode='result'; var i=sim.stage;
+  if(win){ document.getElementById('resSub').textContent=STAGES[i].name+' CLEAR';
+    var sp=Math.round(Math.hypot(sim.probe.vx,sim.probe.vy));
+    document.getElementById('resStars').textContent= (sim.needSlow? (sp<30?'★★★':sp<55?'★★☆':'★☆☆') : '★★★');
+    document.getElementById('resTitle').textContent= i>=2?'정밀 안착! 🎉':'도킹 성공';
+    document.getElementById('resMsg').textContent='안착 속도 '+sp;
+  } else { document.getElementById('resSub').textContent=STAGES[i].name+' 실패';
+    document.getElementById('resStars').textContent='☆☆☆'; document.getElementById('resTitle').textContent='탐사선 소실';
+    document.getElementById('resMsg').textContent=(sim.deadReason||'')+' — 재발진!'; }
+  var row=document.getElementById('resRow'); row.innerHTML=''; var last=i>=STAGES.length-1;
+  if(win&&!last) row.appendChild(mkbtn('다음 스테이지 →',function(){hide('result');startStage(i+1);}));
+  if(win&&last) row.appendChild(mkbtn('처음부터',function(){hide('result');startStage(0);}));
+  row.appendChild(mkbtn(win?'이 판 다시':'재시도',function(){hide('result');startStage(i);}));
+  show('result');
+}
+function mkbtn(t,fn){ var b=document.createElement('button'); b.textContent=t; b.onclick=fn; return b; }
+function show(id){document.getElementById(id).style.display='flex';}
+function hide(id){document.getElementById(id).style.display='none';}
+
+/* ---------- 루프 (단일 rAF, dt 기반 [규칙3/5]) ---------- */
+var last=0;
+function loop(now){ if(!last)last=now; var dt=Math.min(0.033,(now-last)/1000); last=now;   // [규칙3]
+  if((mode==='play'||mode==='tut'||mode==='tutwait') && sim){
+    stepSim(sim,dt); setHum(sim.inp.pull||sim.inp.push, sim.inp.push); updHud();
+    if(mode==='tut'||mode==='tutwait') tutTick();
+    if(sim.dead&&!sim._done && (mode==='play')){ sim._done=true; setTimeout(function(){endStage(false);},650); }
+    if(sim.win&&!sim._done&&mode==='play'){ sim._done=true; setTimeout(function(){endStage(true);},700); }
+  } else setHum(false,false);
+  render();
+  requestAnimationFrame(loop);
+}
+
+/* ---------- 렌더 ---------- */
+function render(){
+  ctx.clearRect(0,0,AW,AH); ctx.fillStyle='#04060e'; ctx.fillRect(0,0,AW,AH);
+  // 별
+  ctx.fillStyle='rgba(180,200,255,.25)'; for(var i=0;i<60;i++){ var sx=(i*137.5)%AW, sy=(i*89.3)%AH; ctx.fillRect(sx,sy,1,1); }
+  if(!sim){ return; }
+  var t=sim.t;
+  // 목표
+  var g=sim.goal, gp=0.6+0.4*Math.sin(t*3);
+  ctx.save(); ctx.shadowColor='#6cff9e'; ctx.shadowBlur=16; ctx.strokeStyle='#6cff9e'; ctx.lineWidth=2.5;
+  ctx.setLineDash([5,5]); ctx.lineDashOffset=-t*12; ctx.beginPath(); ctx.arc(g.x,g.y,g.r+gp*3,0,6.28); ctx.stroke(); ctx.setLineDash([]);
+  ctx.fillStyle='rgba(108,255,158,.12)'; ctx.beginPath(); ctx.arc(g.x,g.y,g.r,0,6.28); ctx.fill(); ctx.restore();
+  ctx.fillStyle='#6cff9e'; ctx.font='bold 11px Segoe UI'; ctx.textAlign='center'; ctx.fillText(sim.needSlow?'DOCK(속도<70)':'GOAL',g.x,g.y-g.r-8);
+
+  // 천체
+  for(var b=0;b<sim.bodies.length;b++){ var bd=sim.bodies[b]; var bp=bodyPos(bd,t); var bx=bd.osc?bodyPosX(bd,t):bp[0], by=bp[1];
+    ctx.save();
+    if(bd.type==='blackhole'){ var rg=ctx.createRadialGradient(bx,by,2,bx,by,bd.r*2.2); rg.addColorStop(0,'#000'); rg.addColorStop(0.5,'#3a1a5a'); rg.addColorStop(1,'rgba(90,40,140,0)');
+      ctx.fillStyle=rg; ctx.beginPath(); ctx.arc(bx,by,bd.r*2.2,0,6.28); ctx.fill();
+      ctx.strokeStyle='#c07bff'; ctx.lineWidth=2; ctx.beginPath(); ctx.arc(bx,by,bd.r,0,6.28); ctx.stroke(); }
+    else if(bd.type==='asteroid'){ ctx.fillStyle='#6a6250'; ctx.strokeStyle='#a89870'; ctx.lineWidth=2;
+      ctx.beginPath(); for(var k=0;k<8;k++){ var an=k/8*6.28; var rr=bd.r*(k%2?0.82:1); var px=bx+Math.cos(an)*rr, py=by+Math.sin(an)*rr; if(k===0)ctx.moveTo(px,py);else ctx.lineTo(px,py);} ctx.closePath(); ctx.fill(); ctx.stroke(); }
+    else { var pg=ctx.createRadialGradient(bx-bd.r*0.3,by-bd.r*0.3,4,bx,by,bd.r); pg.addColorStop(0,'#8ab6ff'); pg.addColorStop(1,'#2a4a8a');
+      ctx.shadowColor='#4f9dff'; ctx.shadowBlur=24; ctx.fillStyle=pg; ctx.beginPath(); ctx.arc(bx,by,bd.r,0,6.28); ctx.fill();
+      ctx.strokeStyle='rgba(150,190,255,.6)'; ctx.lineWidth=2; ctx.stroke(); }
+    ctx.restore();
+    // 중력 영향권
+    ctx.strokeStyle='rgba(120,150,255,.06)'; ctx.lineWidth=1; ctx.beginPath(); ctx.arc(bx,by,bd.r*3,0,6.28); ctx.stroke();
+  }
+
+  // 예상 궤적(점선)
+  var pts=predict(sim);
+  ctx.save(); ctx.fillStyle='rgba(180,210,255,.7)';
+  for(var p=0;p<pts.length;p+=2){ ctx.globalAlpha=(1-p/pts.length)*0.8; ctx.beginPath(); ctx.arc(pts[p][0],pts[p][1],2,0,6.28); ctx.fill(); }
+  ctx.restore(); ctx.globalAlpha=1;
+
+  // 트레일(네온)
+  for(var tr=1;tr<sim.trail.length;tr++){ var a=sim.trail[tr].life;
+    ctx.strokeStyle='rgba(120,200,255,'+(a*0.6)+')'; ctx.lineWidth=3*a; ctx.beginPath();
+    ctx.moveTo(sim.trail[tr-1].x,sim.trail[tr-1].y); ctx.lineTo(sim.trail[tr].x,sim.trail[tr].y); ctx.stroke(); }
+
+  // 마우스 중력장 파동
+  if(sim.inp.pull||sim.inp.push){ var col=sim.inp.pull?'#4f9dff':'#ff5a6a';
+    ctx.save(); ctx.strokeStyle=col; ctx.globalAlpha=0.5;
+    for(var w=0;w<3;w++){ var rad=(t*120+w*30)%90; ctx.globalAlpha=0.5*(1-rad/90); ctx.lineWidth=2;
+      ctx.beginPath(); ctx.arc(sim.mouse.x,sim.mouse.y,rad,0,6.28); ctx.stroke(); }
+    ctx.restore(); ctx.globalAlpha=1;
+    ctx.fillStyle=col; ctx.beginPath(); ctx.arc(sim.mouse.x,sim.mouse.y,5,0,6.28); ctx.fill(); }
+
+  // 파티클
+  for(var pa=0;pa<sim.particles.length;pa++){ var pt=sim.particles[pa]; ctx.globalAlpha=Math.max(0,pt.life); ctx.fillStyle=pt.c;
+    ctx.beginPath(); ctx.arc(pt.x,pt.y,2.4,0,6.28); ctx.fill(); } ctx.globalAlpha=1;
+
+  // 탐사선
+  var pr=sim.probe; var ang=Math.atan2(pr.vy,pr.vx);
+  ctx.save(); ctx.translate(pr.x,pr.y); ctx.rotate(ang); ctx.shadowColor='#9ff0ff'; ctx.shadowBlur=12;
+  ctx.fillStyle='#eaf6ff'; ctx.beginPath(); ctx.moveTo(10,0); ctx.lineTo(-7,-6); ctx.lineTo(-4,0); ctx.lineTo(-7,6); ctx.closePath(); ctx.fill();
+  ctx.restore();
+  ctx.textAlign='left';
+}
+
+document.getElementById('startBtn').addEventListener('click',function(){ ensureAudio(); hide('title'); startTut(); });
+layout(); requestAnimationFrame(loop);
+
+/* ---------- 검증 노출 ---------- */
+window.__orbit={ makeSim:makeSim, stepSim:stepSim, predict:predict, accel:accel, STAGES:STAGES,
+  hasNaN:function(s){ return !isFinite(s.probe.x)||!isFinite(s.probe.y)||!isFinite(s.probe.vx); },
+  setInput:function(s,pull,push,mx,my){ s.inp.pull=pull; s.inp.push=push; if(mx!=null){s.mouse.x=mx;s.mouse.y=my;} },
+  // 오토파일럿: 속도 PD 제어 + 중력 상쇄 + 천체 회피, 커서를 명령가속 방향에 두고 당김
+  runBot:function(si){ var s=makeSim(si); var dt=1/60;
+    for(var f=0;f<60*40;f++){
+      var p=s.probe, g=s.goal;
+      var gravA=accel(p.x,p.y,s.bodies,s.t,s.mouse,{pull:false,push:false});
+      var dgx=g.x-p.x, dgy=g.y-p.y, dg=Math.hypot(dgx,dgy)||1;
+      var cruise = s.needSlow? Math.min(120,dg*0.9) : 140;
+      var dvx=dgx/dg*cruise, dvy=dgy/dg*cruise;
+      var ax=(dvx-p.vx)*2.2 - gravA[0], ay=(dvy-p.vy)*2.2 - gravA[1];
+      for(var i=0;i<s.bodies.length;i++){ var b=s.bodies[i];
+        var bp=(b.mv?[b.mv.cx+Math.cos(s.t*b.mv.spd+b.mv.ph)*b.mv.rad,b.mv.cy+Math.sin(s.t*b.mv.spd+b.mv.ph)*b.mv.rad]:[b.osc?b.bx+Math.sin(s.t*b.osc.spd+b.osc.ph)*b.osc.amp:b.x,b.y]);
+        var ox=p.x-bp[0], oy=p.y-bp[1], od=Math.hypot(ox,oy)||1, safe=b.r+90;
+        if(od<safe){ var pf=(safe-od)/safe*900; ax+=ox/od*pf; ay+=oy/od*pf; } }
+      var am=Math.hypot(ax,ay)||1, D=Math.max(45,Math.min(400,Math.sqrt(MG/Math.max(am,50))));
+      s.mouse.x=p.x+ax/am*D; s.mouse.y=p.y+ay/am*D; s.inp.pull=true; s.inp.push=false;
+      stepSim(s,dt);
+      if(s.win) return {win:true, spd:Math.round(Math.hypot(s.probe.vx,s.probe.vy)), t:Math.round(f/60), nan:this.hasNaN(s)};
+      if(s.dead) return {win:false, dead:s.deadReason, t:Math.round(f/60)};
+      if(this.hasNaN(s)) return {win:false, nan:true};
+    }
+    return {win:false, timeout:true, dist:Math.round(Math.hypot(s.probe.x-s.goal.x,s.probe.y-s.goal.y)), nan:this.hasNaN(s)}; }
+};
+})();
+</script>
+</body>
+</html>
