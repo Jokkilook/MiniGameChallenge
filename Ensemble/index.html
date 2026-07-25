@@ -1,0 +1,274 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+<title>합주 · Ensemble</title>
+<style>
+  :root{ --ink:#eaf0ff; --muted:#8a93c8; --gold:#ffd23f; --panel:rgba(14,16,34,.92); }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%;background:radial-gradient(130% 120% at 50% -10%,#1a1140 0%,#0a0820 55%,#050410 100%);
+    color:var(--ink);font-family:"Segoe UI",-apple-system,BlinkMacSystemFont,"Malgun Gothic",sans-serif;overflow:hidden;-webkit-user-select:none;user-select:none;touch-action:none}
+  #wrap{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;padding:8px}
+  #stage{position:relative;border-radius:16px;overflow:hidden;box-shadow:0 30px 90px rgba(0,0,0,.7),0 0 0 1px rgba(120,140,255,.12)}
+  canvas{display:block;background:#080714;border-radius:16px;cursor:pointer}
+  #hud{position:absolute;left:0;right:0;top:0;display:flex;align-items:center;gap:16px;padding:12px 16px;z-index:5;pointer-events:none}
+  .stat .k{font-size:11px;letter-spacing:1.5px;color:var(--muted);text-transform:uppercase}
+  .stat .v{font-size:22px;font-weight:800;font-variant-numeric:tabular-nums}
+  #round .v{color:#4da6ff} #time .v{color:var(--gold)}
+  #hud .spacer{flex:1} #lvl{font-size:13px;color:var(--muted)}
+  .btn{pointer-events:auto;cursor:pointer;border:1px solid rgba(255,255,255,.14);background:rgba(255,255,255,.05);color:var(--ink);border-radius:10px;padding:7px 11px;font-size:12.5px;font-weight:700}
+  #hint{position:absolute;left:0;right:0;bottom:14px;text-align:center;color:var(--muted);font-size:13px;z-index:5;pointer-events:none;text-shadow:0 2px 10px #000} #hint b{color:#4da6ff}
+  .overlay{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;z-index:10;background:radial-gradient(60% 60% at 50% 42%,rgba(10,8,30,.6),rgba(4,3,12,.96));opacity:0;visibility:hidden;transition:opacity .35s}
+  .overlay.show{opacity:1;visibility:visible}
+  .card{width:min(580px,90%);background:var(--panel);border:1px solid rgba(120,140,255,.14);border-radius:20px;padding:30px 30px 26px;text-align:center;box-shadow:0 26px 70px rgba(0,0,0,.6)}
+  .card h1{margin:0;font-size:38px;letter-spacing:3px} .card h1 small{display:block;font-size:12px;letter-spacing:6px;color:#7aa8ff;margin-top:10px;font-weight:600}
+  .card p{color:var(--muted);line-height:1.8;font-size:14.5px;margin:16px 0 18px}
+  .keys{display:flex;gap:10px;justify-content:center;flex-wrap:wrap;margin:14px 0 22px}
+  .key{border:1px solid rgba(255,255,255,.14);border-radius:8px;padding:6px 11px;font-size:12.5px;background:rgba(255,255,255,.04)} .key b{color:#4da6ff}
+  .cta{cursor:pointer;border:none;border-radius:12px;padding:13px 32px;font-size:15px;font-weight:800;letter-spacing:.5px;color:#0a0820;background:linear-gradient(180deg,#7aa8ff,#4d7fff);box-shadow:0 10px 30px rgba(80,120,255,.4)}
+  .cta:hover{transform:translateY(-2px)}
+  .tag{display:inline-block;color:#7aa8ff;font-size:12px;letter-spacing:3px;margin-bottom:6px}
+</style>
+</head>
+<body>
+<div id="wrap">
+  <div id="stage">
+    <canvas id="cv"></canvas>
+    <div id="hud">
+      <div class="stat" id="round"><div class="k">나</div><div class="v" id="roundV">1</div></div>
+      <div class="stat" id="time"><div class="k">시간</div><div class="v" id="timeV">10.0</div></div>
+      <div class="spacer"></div><div id="lvl">1</div><div class="spacer"></div>
+      <button class="btn" id="redoBtn" title="이 라운드 다시">↺ 라운드</button>
+      <button class="btn" id="resetBtn" title="전체 다시 (R)">전체</button>
+    </div>
+    <div id="hint"></div>
+
+    <div class="overlay show" id="startOv">
+      <div class="card">
+        <span class="tag">CO-OP WITH YOUR PAST SELVES</span>
+        <h1>합주<small>E N S E M B L E</small></h1>
+        <p>혼자 하지만, 사실은 <b>과거의 나들</b>과 함께한다.<br>
+           10초 동안 달리다 <b>클릭</b>으로 멈춰 스위치를 밟아둬라.<br>
+           다음 라운드엔 과거의 내가 그걸 그대로 재현 —<br>
+           열린 문으로 <b>지금의 내가</b> 더 멀리. 함께라야 보물에 닿는다.</p>
+        <div class="keys"><span class="key"><b>클릭/Space</b> 멈춤·재개</span><span class="key"><b>Enter</b> 라운드 넘기기</span><span class="key"><b>R</b> 다시</span></div>
+        <button class="cta" id="startBtn">시작</button>
+      </div>
+    </div>
+    <div class="overlay" id="endOv">
+      <div class="card">
+        <span class="tag" id="endTag">·</span>
+        <h1 id="endTitle" style="font-size:26px;letter-spacing:1px">·</h1>
+        <p id="endMsg">·</p>
+        <button class="cta" id="endBtn">다음 →</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+"use strict";
+/* ============================================================
+   합주 · Ensemble — real-time co-op with recordings of your past selves.
+   Each 10s round you drive a new runner (one button = stop/go). Past
+   selves replay their run in sync; a self stopped on a switch holds its
+   door open, so the current self can pass. Reach the treasure — solo is
+   impossible. Deterministic, coordinate-based (fixed 60Hz), no physics.
+   BGM layers grow as more selves join.
+   ============================================================ */
+const AW=860, AH=440, FPS=60, ROUND_F=600;   // 10s rounds
+const TRACK_Y=300, VX=2.6, START_X=48;
+const cv=document.getElementById('cv'), ctx=cv.getContext('2d');
+let DPR=Math.max(1,Math.min(2,devicePixelRatio||1)), scale=1;
+const COLORS=['#4da6ff','#ff5a6e','#ffd23f','#7ee081','#c07bff','#ff9e5e'];
+
+/* ---- levels ---- (x-coordinates on the track)
+   switches: {x, door} (zone ±26). doors: {x, id}. goalX. rounds=max selves. */
+const LEVELS=[
+  { name:"둘의 손", rounds:2, goalX:788,
+    switches:[{x:250,door:'a'}], doors:[{x:470,id:'a'}] },
+  { name:"이어달리기", rounds:3, goalX:800,
+    switches:[{x:210,door:'a'},{x:500,door:'b'}], doors:[{x:360,id:'a'},{x:640,id:'b'}] },
+  { name:"셋의 합주", rounds:4, goalX:806,
+    switches:[{x:180,door:'a'},{x:400,door:'b'},{x:600,door:'c'}], doors:[{x:300,id:'a'},{x:520,id:'b'},{x:720,id:'c'}] },
+];
+
+/* ---- state ---- */
+let phase='intro', li=0, L=null;
+let ghosts=[], curRec=[], cur=null, frame=0, roundIdx=0, won=false;
+let acc=0, lastT=perf(), best=[], particles=[], flash=0, beat=0, camShake=0;
+try{ best=JSON.parse(localStorage.getItem('ensemble_best')||'[]'); }catch(e){ best=[]; }
+function perf(){ return performance?performance.now():0; }
+
+/* ---- audio (layered) ---- */
+let AC=null,muted=false;
+function ac(){ if(!AC){try{AC=new (AudioContext||webkitAudioContext)();}catch(e){}} return AC; }
+function blip(f,d=0.08,t='sine',v=0.05,to){ if(muted)return; const a=ac();if(!a)return; const o=a.createOscillator(),g=a.createGain();
+  o.type=t;o.frequency.value=f;if(to)o.frequency.exponentialRampToValueAtTime(to,a.currentTime+d);
+  g.gain.value=0;o.connect(g);g.connect(a.destination);const n=a.currentTime;g.gain.linearRampToValueAtTime(v,n+0.006);g.gain.exponentialRampToValueAtTime(0.0001,n+d);o.start(n);o.stop(n+d+0.02); }
+const BASS=[110,110,146.8,130.8], MEL=[440,523,659,587];
+function onBeat(b){ // layered: drums always, bass with 1+ ghost, melody with 2+
+  blip(60,0.12,'sine',0.06,40);                       // kick
+  if(b%2===1) blip(1200,0.03,'square',0.015);         // hat
+  if(ghosts.length>=1) blip(BASS[b%4],0.16,'triangle',0.035);
+  if(ghosts.length>=2 && b%2===0) blip(MEL[(b/2)%4|0],0.14,'sine',0.03);
+  if(ghosts.length>=3) blip(MEL[b%4]*2,0.1,'sine',0.02);
+}
+const SFX={ stop(){blip(300,0.06,'square',0.03,180);}, go(){blip(400,0.06,'square',0.03,600);}, door(){blip(520,0.12,'triangle',0.04,760);}, win(){[523,659,784,1047,1319].forEach((f,i)=>setTimeout(()=>blip(f,0.24,'sine',0.06),i*100));}, fail(){blip(200,0.4,'sawtooth',0.05,70);} };
+
+/* ---- layout ---- */
+function layout(){ scale=Math.min((Math.max(320,innerWidth)-16)/AW,(Math.max(240,innerHeight)-16)/AH,1.3);
+  cv.style.width=(AW*scale)+'px'; cv.style.height=(AH*scale)+'px'; cv.width=Math.round(AW*scale*DPR); cv.height=Math.round(AH*scale*DPR); ctx.setTransform(scale*DPR,0,0,scale*DPR,0,0); }
+addEventListener('resize',layout);
+
+/* ---- sim helpers ---- */
+function ghostX(g,f){ return g[Math.min(f,g.length-1)]; }
+function doorOpen(id){ // any self within a linked switch zone
+  for(const s of L.switches){ if(s.door!==id) continue;
+    if(cur && Math.abs(cur.x-s.x)<=26) return true;
+    for(const g of ghosts){ if(Math.abs(ghostX(g,frame)-s.x)<=26) return true; }
+  }
+  return false;
+}
+function nearestClosedDoor(x0,x1){ let best=Infinity;
+  for(const d of L.doors){ if(d.x>x0-0.001 && d.x<=x1+0.001 && !doorOpen(d.id)) best=Math.min(best,d.x); }
+  return best;
+}
+function simFrame(){
+  // move current
+  if(!cur.stopped){ const nx=cur.x+VX; const wall=nearestClosedDoor(cur.x,nx); cur.x = (wall<Infinity)? wall : nx; }
+  curRec.push(cur.x);
+  frame++;
+  if(cur.x>=L.goalX-2){ won=true; }
+}
+
+/* ---- flow ---- */
+function loadLevel(i){ li=i; L=LEVELS[i]; ghosts=[]; roundIdx=0; won=false; layout();
+  startRound();
+  document.getElementById('lvl').textContent=(i+1)+' · '+L.name;
+  document.getElementById('hint').innerHTML='달리다 스위치 위에서 <b>클릭</b>해 멈춰라. 못 닿으면 다음 나에게 맡겨라.';
+}
+function startRound(){ cur={x:START_X,stopped:false}; curRec=[]; frame=0; won=false; acc=0; beat=0;
+  document.getElementById('roundV').textContent=(ghosts.length+1); updateTime();
+}
+function redoRound(){ if(phase!=='play')return; startRound(); }
+function nextRound(){ // current becomes a ghost; spawn next self or fail
+  ghosts.push(curRec.slice());
+  if(ghosts.length>=L.rounds){ endLevel(false); return; }
+  startRound(); flash=0.3;
+}
+function endLevel(win){ phase='end';
+  if(win){ SFX.win(); flash=0.6; camShake=8;
+    const used=ghosts.length+1; const isBest=(best[li]==null||used<best[li]); if(isBest){ best[li]=used; localStorage.setItem('ensemble_best',JSON.stringify(best)); }
+    const last=li===LEVELS.length-1;
+    document.getElementById('endTag').textContent=last?'ALL CLEAR':'CLEAR'; document.getElementById('endTag').style.color='var(--gold)';
+    document.getElementById('endTitle').textContent=last?'모두가 함께 닿았다':'보물에 닿았다!';
+    document.getElementById('endMsg').innerHTML=`<b style="color:var(--gold)">${used}명의 나</b>가 손발을 맞췄다.`+(isBest?' · 최소 인원!':'');
+    document.getElementById('endBtn').textContent=last?'처음부터':'다음 →';
+  } else { SFX.fail();
+    document.getElementById('endTag').textContent='실패'; document.getElementById('endTag').style.color='#ff5a6e';
+    document.getElementById('endTitle').textContent='아직 닿지 못했다';
+    document.getElementById('endMsg').innerHTML=`${L.rounds}명으로는 부족했다. 동선을 다시 짜보자.`;
+    document.getElementById('endBtn').textContent='다시';
+  }
+  setTimeout(()=>document.getElementById('endOv').classList.add('show'),600);
+}
+
+/* ---- input ---- */
+function toggle(){ if(phase!=='play'||!cur)return; cur.stopped=!cur.stopped; cur.stopped?SFX.stop():SFX.go(); }
+cv.addEventListener('click',toggle);
+addEventListener('keydown',e=>{ if(phase!=='play')return;
+  if(e.key===' '){ toggle(); e.preventDefault(); }
+  else if(e.key==='Enter'){ nextRound(); e.preventDefault(); }
+  else if(e.key==='r'||e.key==='R'){ loadLevel(li); }
+  else if(e.key==='Backspace'){ redoRound(); e.preventDefault(); } });
+
+/* ---- loop (fixed 60Hz sim) ---- */
+function loop(t){ const dt=Math.min(0.1,(t-lastT)/1000); lastT=t;
+  if(phase==='play'){ acc+=dt;
+    while(acc>=1/FPS){ acc-=1/FPS;
+      if(frame<ROUND_F && !won){ const preBeat=Math.floor(frame/ (FPS*0.5)); simFrame(); const nb=Math.floor(frame/(FPS*0.5)); if(nb>preBeat){ beat=nb; onBeat(nb%8); } }
+      if(won){ endLevel(true); break; }
+      if(frame>=ROUND_F){ nextRound(); break; }
+    }
+    updateTime();
+  }
+  if(flash>0)flash-=dt; if(camShake>0)camShake=Math.max(0,camShake-dt*30);
+  for(let i=particles.length-1;i>=0;i--){const p=particles[i];p.life-=dt;if(p.life<=0){particles.splice(i,1);continue;}p.x+=p.vx*dt;p.y+=p.vy*dt;}
+  render(t); requestAnimationFrame(loop);
+}
+function updateTime(){ document.getElementById('timeV').textContent=Math.max(0,(ROUND_F-frame)/FPS).toFixed(1); }
+
+/* ---- render ---- */
+function tx(x){ return x; }
+function render(t){ const tt=t/1000; let ox=camShake?(Math.random()-.5)*camShake:0;
+  ctx.setTransform(scale*DPR,0,0,scale*DPR,ox*DPR,0);
+  ctx.clearRect(-10,0,AW+20,AH);
+  ctx.fillStyle='#080714'; ctx.fillRect(0,0,AW,AH);
+  if(!L) return;   // no level loaded yet (intro)
+  // subtle grid
+  ctx.strokeStyle='rgba(120,140,255,.04)'; for(let x=40;x<AW;x+=40){ctx.beginPath();ctx.moveTo(x,0);ctx.lineTo(x,AH);ctx.stroke();}
+  // track
+  ctx.fillStyle='rgba(120,140,255,.06)'; ctx.fillRect(0,TRACK_Y+18,AW,6);
+  ctx.strokeStyle='rgba(120,140,255,.25)'; ctx.lineWidth=2; ctx.beginPath();ctx.moveTo(0,TRACK_Y+18);ctx.lineTo(AW,TRACK_Y+18);ctx.stroke();
+  // start marker
+  ctx.fillStyle='rgba(120,140,255,.25)'; ctx.fillRect(START_X-2,TRACK_Y-30,3,48);
+  // doors
+  for(const d of L.doors){ const open=phase==='play'?doorOpen(d.id):false; const col=colFor(d.id);
+    if(!open){ ctx.fillStyle=col.replace(')',',.85)').replace('rgb','rgba'); roundRect(d.x-7,TRACK_Y-58,14,76,4); ctx.fill();
+      ctx.fillStyle='rgba(0,0,0,.3)'; for(let i=0;i<4;i++)ctx.fillRect(d.x-6,TRACK_Y-52+i*18,12,3); }
+    else { ctx.strokeStyle=col.replace(')',',.4)').replace('rgb','rgba'); ctx.lineWidth=2; ctx.setLineDash([3,6]); ctx.strokeRect(d.x-7,TRACK_Y-58,14,76); ctx.setLineDash([]); }
+  }
+  // switches (plates)
+  for(const s of L.switches){ const held=phase==='play'?doorOpen(s.door):false; const col=colFor(s.door);
+    ctx.fillStyle=held?col.replace(')',',.5)').replace('rgb','rgba'):'rgba(120,140,255,.12)'; roundRect(s.x-26,TRACK_Y+8,52,12,4); ctx.fill();
+    ctx.strokeStyle=col.replace(')',',.8)').replace('rgb','rgba'); ctx.lineWidth=2; ctx.stroke();
+    ctx.save();ctx.globalCompositeOperation='lighter'; ctx.fillStyle=col.replace(')',','+(held?0.5:0.2)+')').replace('rgb','rgba');
+    ctx.beginPath();ctx.arc(s.x,TRACK_Y+14,held?14:7,0,6.283);ctx.fill();ctx.restore();
+  }
+  // goal (treasure)
+  drawGoal(L.goalX,tt);
+  // ghosts (holographic)
+  for(let i=0;i<ghosts.length;i++){ const gx=phase==='play'?ghostX(ghosts[i],Math.min(frame,ghosts[i].length-1)):ghosts[i][ghosts[i].length-1];
+    drawRunner(gx, COLORS[i%COLORS.length], true, i, tt); }
+  // current
+  if(cur && phase==='play') drawRunner(cur.x, COLORS[ghosts.length%COLORS.length], false, ghosts.length, tt);
+  // particles
+  ctx.save();ctx.globalCompositeOperation='lighter'; for(const p of particles){ctx.globalAlpha=Math.max(0,Math.min(1,p.life));ctx.fillStyle='rgb('+p.c+')';ctx.beginPath();ctx.arc(p.x,p.y,p.r,0,6.283);ctx.fill();}ctx.globalAlpha=1;ctx.restore();
+  if(flash>0){ ctx.fillStyle='rgba(122,168,255,'+(flash*0.3)+')'; ctx.fillRect(0,0,AW,AH); }
+  // vignette
+  const vg=ctx.createRadialGradient(AW/2,AH/2,AH*0.4,AW/2,AH/2,AH*0.95); vg.addColorStop(0,'rgba(0,0,0,0)');vg.addColorStop(1,'rgba(0,0,0,0.5)'); ctx.fillStyle=vg; ctx.fillRect(0,0,AW,AH);
+}
+function drawRunner(x,col,ghost,idx,tt){ const y=TRACK_Y+6 - idx*3; const r=11;
+  ctx.save();ctx.globalCompositeOperation='lighter';
+  const g=ctx.createRadialGradient(x,y,1,x,y,r*2.4); g.addColorStop(0,col.replace('rgb','rgba').replace(')',ghost?',.35)':',.6)')); g.addColorStop(1,col.replace('rgb','rgba').replace(')',',0)'));
+  ctx.fillStyle=g; ctx.beginPath();ctx.arc(x,y,r*2.4,0,6.283);ctx.fill(); ctx.restore();
+  ctx.globalAlpha=ghost?0.5:1; ctx.fillStyle=ghost?'rgba(20,22,50,.5)':'#0a0820'; ctx.beginPath();ctx.arc(x,y,r,0,6.283);ctx.fill();
+  ctx.strokeStyle=col; ctx.lineWidth=ghost?1.5:2.5; ctx.stroke();
+  ctx.fillStyle=col; const eo=r*0.4; ctx.beginPath();ctx.arc(x-eo,y-2,2,0,6.283);ctx.arc(x+eo,y-2,2,0,6.283);ctx.fill();
+  ctx.globalAlpha=1;
+  if(ghost){ ctx.strokeStyle=col.replace('rgb','rgba').replace(')',',.15)'); ctx.lineWidth=1; for(let s=-r;s<r;s+=4){ ctx.beginPath();ctx.moveTo(x-r,y+s);ctx.lineTo(x+r,y+s);ctx.stroke(); } }
+}
+function drawGoal(x,tt){ const y=TRACK_Y+6; const p=0.5+0.5*Math.sin(tt*2.5);
+  ctx.save();ctx.globalCompositeOperation='lighter'; const g=ctx.createRadialGradient(x,y,2,x,y,40+p*6); g.addColorStop(0,'rgba(255,210,63,.7)');g.addColorStop(1,'rgba(255,210,63,0)');
+  ctx.fillStyle=g;ctx.beginPath();ctx.arc(x,y,40+p*6,0,6.283);ctx.fill();ctx.restore();
+  ctx.fillStyle='#ffcf3f'; roundRect(x-16,y-12,32,24,4); ctx.fill(); ctx.fillStyle='#c9971a'; ctx.fillRect(x-16,y-2,32,4);
+  ctx.fillStyle='#fff6cf'; ctx.beginPath();ctx.arc(x,y,3,0,6.283);ctx.fill();
+}
+function colFor(id){ const idx='abcdef'.indexOf(id); return 'rgb('+hexToRgb(COLORS[idx%COLORS.length])+')'; }
+function hexToRgb(h){ const n=parseInt(h.slice(1),16); return ((n>>16)&255)+','+((n>>8)&255)+','+(n&255); }
+function roundRect(x,y,w,h,r){ ctx.beginPath();ctx.moveTo(x+r,y);ctx.arcTo(x+w,y,x+w,y+h,r);ctx.arcTo(x+w,y+h,x,y+h,r);ctx.arcTo(x,y+h,x,y,r);ctx.arcTo(x,y,x+w,y,r);ctx.closePath(); }
+
+/* ---- buttons ---- */
+document.getElementById('startBtn').onclick=()=>{ ac(); document.getElementById('startOv').classList.remove('show'); phase='play'; loadLevel(0); };
+document.getElementById('redoBtn').onclick=redoRound;
+document.getElementById('resetBtn').onclick=()=>{ if(phase==='play')loadLevel(li); };
+document.getElementById('endBtn').onclick=()=>{ document.getElementById('endOv').classList.remove('show');
+  if(won){ const last=li===LEVELS.length-1; phase='play'; loadLevel(last?0:li+1); } else { phase='play'; loadLevel(li); } };
+
+/* ---- boot ---- */
+layout(); requestAnimationFrame(loop);
+</script>
+</body>
+</html>

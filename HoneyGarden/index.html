@@ -1,0 +1,298 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+<title>꿀벌 정원 · Honey Garden</title>
+<style>
+  :root{ --ink:#2a1f0e; --paper:#fff7e6; --honey:#ffb300; --honey2:#ff8f00; --amber:#ffd27a; --leaf:#8bc34a; --panel:#fffdf5; --muted:#9c8a63; }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%;background:radial-gradient(130% 120% at 50% -10%,#fff3cf 0%,#ffe7a8 45%,#f6d488 100%);
+    color:var(--ink);font-family:"Segoe UI",-apple-system,BlinkMacSystemFont,"Malgun Gothic",sans-serif;overflow:hidden;-webkit-user-select:none;user-select:none;touch-action:none}
+  #wrap{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;padding:8px}
+  #stage{position:relative;border-radius:20px;overflow:hidden;background:var(--panel);
+    box-shadow:0 26px 70px rgba(120,80,10,.28),0 0 0 1px rgba(255,255,255,.6) inset}
+  /* top HUD */
+  #hud{display:flex;align-items:center;gap:14px;padding:12px 16px;background:linear-gradient(180deg,#fff9ea,#fff3d6);border-bottom:1px solid #f0e0b0}
+  .res{display:flex;align-items:center;gap:8px}
+  .res .em{font-size:24px} .res .col{display:flex;flex-direction:column;line-height:1.1}
+  .res .big{font-size:20px;font-weight:900;font-variant-numeric:tabular-nums} .res .k{font-size:10px;letter-spacing:1px;color:var(--muted);text-transform:uppercase}
+  #honeyPerSec{color:var(--honey2);font-size:12px;font-weight:800}
+  #hud .spacer{flex:1}
+  #prestigeBtn{cursor:pointer;border:none;border-radius:12px;padding:9px 14px;font-size:13px;font-weight:800;color:#2a1f0e;
+    background:linear-gradient(180deg,#c8f08a,#9bd85a);box-shadow:0 6px 16px rgba(120,180,60,.35)} #prestigeBtn[disabled]{opacity:.45;cursor:default;box-shadow:none}
+  canvas{display:block;background:linear-gradient(180deg,#eaf7d8,#dff0c4);cursor:pointer}
+  /* selected panel (floats) */
+  #sel{position:absolute;z-index:6;width:170px;background:var(--panel);border:1px solid #ecdcae;border-radius:14px;padding:10px;display:none;box-shadow:0 12px 30px rgba(120,80,10,.25)}
+  #sel h4{margin:0 0 4px;font-size:14px} #sel .row{font-size:11.5px;color:var(--muted);margin:2px 0}
+  #sel .bs{display:flex;gap:6px;margin-top:8px}
+  .mini{flex:1;cursor:pointer;border:none;border-radius:9px;padding:7px;font-size:12px;font-weight:800}
+  .mini.up{background:linear-gradient(180deg,#ffd98a,#ffbf4d);color:#3a2a08} .mini.up[disabled]{opacity:.5;cursor:default}
+  .mini.sell{background:#f3e6c8;color:#7a5f22}
+  /* shop */
+  #shop{display:flex;gap:8px;padding:10px 12px;background:linear-gradient(180deg,#fff3d6,#ffe9ba);border-top:1px solid #f0e0b0;overflow-x:auto}
+  .item{flex:0 0 auto;min-width:92px;cursor:pointer;border:2px solid transparent;border-radius:14px;padding:8px 8px 7px;background:#fffdf5;text-align:center;transition:.12s;box-shadow:0 3px 8px rgba(120,80,10,.08)}
+  .item:hover{transform:translateY(-2px)} .item.sel{border-color:var(--honey)}
+  .item.locked{opacity:.5;filter:grayscale(.6);pointer-events:none}
+  .item .em{font-size:26px} .item .nm{font-size:12px;font-weight:800;margin-top:1px} .item .ds{font-size:9.5px;color:var(--muted);line-height:1.25;margin:2px 0 4px;height:24px}
+  .item .cost{font-size:12px;font-weight:900;color:var(--honey2)} .item.poor .cost{color:#d05a3a}
+  #hint{text-align:center;font-size:11.5px;color:var(--muted);padding:4px 0 0}
+
+  .overlay{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;z-index:20;background:rgba(80,55,10,.35);opacity:0;visibility:hidden;transition:opacity .3s}
+  .overlay.show{opacity:1;visibility:visible}
+  .card{width:min(440px,88%);background:var(--panel);border-radius:22px;padding:28px 26px 24px;text-align:center;box-shadow:0 26px 60px rgba(120,80,10,.4)}
+  .card h1{margin:0;font-size:32px;color:#5a3d0c} .card h1 small{display:block;font-size:12px;letter-spacing:5px;color:var(--honey2);margin-top:8px;font-weight:700}
+  .card p{color:#7a5f22;line-height:1.7;font-size:14px;margin:14px 0 18px}
+  .cta{cursor:pointer;border:none;border-radius:14px;padding:13px 30px;font-size:15px;font-weight:800;color:#3a2a08;background:linear-gradient(180deg,var(--honey),var(--honey2));box-shadow:0 10px 24px rgba(255,150,0,.35)}
+  .tag{display:inline-block;color:var(--honey2);font-size:12px;letter-spacing:3px;margin-bottom:6px;font-weight:700}
+</style>
+</head>
+<body>
+<div id="wrap">
+  <div id="stage">
+    <div id="hud">
+      <div class="res"><span class="em">🍯</span><div class="col"><span class="big" id="honeyV">0</span><span id="honeyPerSec">+0/초</span></div></div>
+      <div class="res"><span class="em">🌱</span><div class="col"><span class="big" id="seedV">0</span><span class="k" id="seedMul">×1.0 배</span></div></div>
+      <div class="spacer"></div>
+      <button id="prestigeBtn" disabled>계절 넘기기</button>
+    </div>
+    <canvas id="cv"></canvas>
+    <div id="hint">빈 칸에 <b>꽃</b>을 심고, <b>벌집</b>을 옆에 둬 꿀을 늘려라</div>
+    <div id="shop"></div>
+    <div id="sel">
+      <h4 id="selName">·</h4>
+      <div class="row" id="selStat">·</div>
+      <div class="bs"><button class="mini up" id="selUp">강화</button><button class="mini sell" id="selSell">치우기</button></div>
+    </div>
+
+    <div class="overlay show" id="startOv">
+      <div class="card">
+        <span class="tag">IDLE · PLACEMENT · TYCOON</span>
+        <h1>꿀벌 정원<small>H O N E Y &nbsp; G A R D E N</small></h1>
+        <p>격자 정원에 <b>꽃</b>을 심으면 꿀이 저절로 쌓인다.<br>
+           <b>벌집</b>을 꽃 옆에 두면 그 꽃들이 더 많이 만든다.<br>
+           <b>어디에 놓느냐</b>가 곧 실력. 계절을 넘겨 더 크게.</p>
+        <button class="cta" id="startBtn">정원 가꾸기</button>
+      </div>
+    </div>
+    <div class="overlay" id="prestOv">
+      <div class="card">
+        <span class="tag">새 계절</span>
+        <h1 style="font-size:24px">계절이 바뀐다</h1>
+        <p id="prestMsg">·</p>
+        <button class="cta" id="prestGo">씨앗 받고 새로 시작</button>
+      </div>
+    </div>
+    <div class="overlay" id="welcomeOv">
+      <div class="card">
+        <span class="tag">다녀왔어요?</span>
+        <h1 style="font-size:24px">🐝 그동안 모은 꿀</h1>
+        <p id="welcomeMsg">·</p>
+        <button class="cta" id="welcomeGo">받기</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+"use strict";
+/* ============================================================
+   꿀벌 정원 · Honey Garden — a placement idle/tycoon. Plant flowers on a
+   grid (passive honey/sec); beehives boost ADJACENT flowers; optimize the
+   layout. Prestige (new season) trades progress for seeds = permanent
+   multiplier. Offline earnings while away. Deterministic, no RNG.
+   ============================================================ */
+const COLS=6, ROWS=5;
+const cv=document.getElementById('cv'), ctx=cv.getContext('2d');
+let DPR=Math.max(1,Math.min(2,devicePixelRatio||1)), CELL=76, scale=1;
+
+/* ---- building catalog ---- */
+const DEF={
+  flower:  { em:'🌸', name:'꽃',    ds:'꿀 생산',            base:12,  mult:1.14, kind:'prod', inc:1,    unlock:0 },
+  hive:    { em:'🐝', name:'벌집',  ds:'옆 꽃 +40%/레벨',    base:70,  mult:1.20, kind:'amp',  boost:0.40, unlock:120 },
+  sunflower:{em:'🌻', name:'해바라기', ds:'꿀 대량 생산',      base:900, mult:1.17, kind:'prod', inc:16,   unlock:1400 },
+  tree:    { em:'🌳', name:'나무',  ds:'옆 생산 +90%/레벨',  base:6000,mult:1.22, kind:'amp',  boost:0.90, unlock:12000 },
+};
+const ORDER=['flower','hive','sunflower','tree'];
+
+/* ---- state ---- */
+let honey=0, seeds=0, totalEarned=0, grid=[], counts={}, selType=null, selCell=null;
+let particles=[], floaters=[], lastTick=perf(), lastSave=0;
+let phase='intro';
+
+function perf(){ return performance?performance.now():0; }
+function seedMul(){ return 1 + seeds*0.15; }
+function key(c,r){ return c+','+r; }
+function at(c,r){ return (c<0||r<0||c>=COLS||r>=ROWS)?null:grid[r][c]; }
+
+/* ---- income ---- */
+function cellIncome(c,r){ const g=grid[r][c]; if(!g)return 0; const d=DEF[g.id]; if(d.kind!=='prod')return 0;
+  let boost=0; for(const [dc,dr] of [[1,0],[-1,0],[0,1],[0,-1]]){ const n=at(c+dc,r+dr); if(n){ const nd=DEF[n.id]; if(nd.kind==='amp') boost+=nd.boost*n.lvl; } }
+  return d.inc*g.lvl*(1+boost); }
+function totalIncome(){ let s=0; for(let r=0;r<ROWS;r++)for(let c=0;c<COLS;c++)s+=cellIncome(c,r); return s*seedMul(); }
+function costOf(id){ const d=DEF[id]; const n=counts[id]||0; return Math.floor(d.base*Math.pow(d.mult,n)); }
+function upCost(g){ const d=DEF[g.id]; return Math.floor(d.base*1.6*g.lvl*Math.pow(1.5,g.lvl-1)); }
+
+/* ---- format ---- */
+function fmt(n){ if(n<1000)return Math.floor(n).toString(); const u=['','K','M','B','T','aa','ab','ac']; let i=0; while(n>=1000&&i<u.length-1){n/=1000;i++;} return (n<10?n.toFixed(2):n<100?n.toFixed(1):Math.floor(n))+u[i]; }
+
+/* ---- layout ---- */
+function layout(){ const W=Math.min(Math.max(320,innerWidth)-20,560); CELL=Math.floor(Math.min((W)/COLS,86));
+  const cw=COLS*CELL, ch=ROWS*CELL; scale=1;
+  document.getElementById('stage').style.width=Math.max(cw, 360)+'px';
+  cv.style.width=cw+'px'; cv.style.height=ch+'px'; cv.width=Math.round(cw*DPR); cv.height=Math.round(ch*DPR); ctx.setTransform(DPR,0,0,DPR,0,0);
+  const sc=Math.min(1,(innerHeight-40)/ (ch+220), (innerWidth-16)/(cw+2));
+  document.getElementById('stage').style.transform='scale('+sc+')'; document.getElementById('stage').style.transformOrigin='center';
+}
+addEventListener('resize',layout);
+
+/* ---- audio ---- */
+let AC=null,muted=false;
+function ac(){ if(!AC){try{AC=new (AudioContext||webkitAudioContext)();}catch(e){}} return AC; }
+function tone(f,d=0.06,t='sine',v=0.03,to){ if(muted)return; const a=ac();if(!a)return; const o=a.createOscillator(),g=a.createGain();
+  o.type=t;o.frequency.value=f;if(to)o.frequency.exponentialRampToValueAtTime(to,a.currentTime+d);
+  g.gain.value=0;o.connect(g);g.connect(a.destination);const n=a.currentTime;g.gain.linearRampToValueAtTime(v,n+0.006);g.gain.exponentialRampToValueAtTime(0.0001,n+d);o.start(n);o.stop(n+d+0.02); }
+const SFX={ place(){tone(520,0.08,'sine',0.04,760);}, up(){tone(660,0.09,'triangle',0.04,980);}, poor(){tone(150,0.08,'sawtooth',0.03);}, prestige(){[523,659,784,1047].forEach((f,i)=>setTimeout(()=>tone(f,0.24,'sine',0.05),i*100));} };
+
+/* ---- persistence ---- */
+function save(){ try{ localStorage.setItem('honeygarden', JSON.stringify({honey,seeds,totalEarned,grid,counts,t:Date.now()})); }catch(e){} }
+function load(){ try{ const s=JSON.parse(localStorage.getItem('honeygarden')||'null'); if(!s)return null; return s; }catch(e){ return null; } }
+
+/* ---- init ---- */
+function newGarden(){ grid=[]; for(let r=0;r<ROWS;r++){ grid[r]=[]; for(let c=0;c<COLS;c++)grid[r][c]=null; } counts={}; honey=50; totalEarned=0; }
+function boot(){
+  const s=load();
+  if(s){ grid=s.grid; counts=s.counts||{}; honey=s.honey||0; seeds=s.seeds||0; totalEarned=s.totalEarned||0;
+    // offline earnings
+    const el=Math.min((Date.now()-(s.t||Date.now()))/1000, 60*60*4); // cap 4h
+    const gain=totalIncome()*el;
+    if(gain>1 && el>5){ pendingOffline={gain, mins:Math.floor(el/60)}; }
+  } else { newGarden(); }
+  // never let the player get stuck with no honey and nothing to earn from
+  let hasProd=false; for(let r=0;r<ROWS;r++)for(let c=0;c<COLS;c++){ const g=grid[r][c]; if(g&&DEF[g.id]&&DEF[g.id].kind==='prod')hasProd=true; }
+  if(!hasProd && honey<costOf('flower')) honey=Math.max(honey,50);
+  layout(); buildShop(); updateHUD();
+}
+let pendingOffline=null;
+
+/* ---- shop ---- */
+const shopEl=document.getElementById('shop');
+function buildShop(){ shopEl.innerHTML='';
+  for(const id of ORDER){ const d=DEF[id]; const el=document.createElement('div'); el.className='item'; el.dataset.id=id;
+    el.innerHTML=`<div class="em">${d.em}</div><div class="nm">${d.name}</div><div class="ds">${d.ds}</div><div class="cost">🍯 <span class="c">${fmt(costOf(id))}</span></div>`;
+    el.onclick=()=>{ if(el.classList.contains('locked'))return; selType=(selType===id)?null:id; selCell=null; hideSel(); refreshShop(); };
+    shopEl.appendChild(el);
+  }
+  refreshShop();
+}
+function refreshShop(){ for(const el of shopEl.children){ const id=el.dataset.id; const d=DEF[id];
+  const locked=totalEarned<d.unlock; el.classList.toggle('locked',locked);
+  el.classList.toggle('sel',selType===id);
+  el.querySelector('.c').textContent=fmt(costOf(id));
+  el.classList.toggle('poor',honey<costOf(id));
+  if(locked) el.querySelector('.ds').textContent='🔒 꿀 '+fmt(d.unlock)+' 모으면';
+  else el.querySelector('.ds').textContent=d.ds;
+} }
+
+/* ---- interaction ---- */
+cv.addEventListener('click',e=>{ if(phase!=='play')return; const rect=cv.getBoundingClientRect();
+  const x=(e.clientX-rect.left)/(rect.width/(COLS*CELL)); const y=(e.clientY-rect.top)/(rect.height/(ROWS*CELL));
+  const c=Math.floor(x/CELL), r=Math.floor(y/CELL); if(c<0||r<0||c>=COLS||r>=ROWS)return;
+  const g=grid[r][c];
+  if(g){ selCell={c,r}; selType=null; refreshShop(); showSel(); return; }
+  hideSel();
+  if(selType){ const cost=costOf(selType); if(totalEarned<DEF[selType].unlock){ return; }
+    if(honey>=cost){ honey-=cost; grid[r][c]={id:selType,lvl:1}; counts[selType]=(counts[selType]||0)+1; SFX.place();
+      for(let k=0;k<8;k++)particles.push({x:c*CELL+CELL/2,y:r*CELL+CELL/2,vx:rand(-1,1)*70,vy:rand(-1,1)*70,life:rand(0.3,0.6),r:rand(1.5,3),c:'255,179,0'});
+      refreshShop(); updateHUD(); save();
+    } else { SFX.poor(); }
+  }
+});
+function rand(a,b){return a+Math.random()*(b-a);}
+
+/* ---- selected panel ---- */
+const selEl=document.getElementById('sel');
+function showSel(){ const {c,r}=selCell; const g=grid[r][c]; const d=DEF[g.id];
+  document.getElementById('selName').textContent=`${d.em} ${d.name} Lv.${g.lvl}`;
+  const info = d.kind==='prod' ? `생산 ${fmt(cellIncome(c,r))}/초` : `옆 생산 +${Math.round(d.boost*g.lvl*100)}%`;
+  document.getElementById('selStat').innerHTML=info;
+  const up=document.getElementById('selUp'); up.textContent='강화 🍯'+fmt(upCost(g)); up.disabled=honey<upCost(g);
+  const rect=cv.getBoundingClientRect(); const cx=c*CELL+CELL/2, cy=r*CELL;
+  selEl.style.left=Math.max(6,Math.min(cx-85, COLS*CELL-176))+'px'; selEl.style.top=(cy-96)+'px'; selEl.style.display='block';
+}
+function hideSel(){ selEl.style.display='none'; selCell=null; }
+document.getElementById('selUp').onclick=()=>{ if(!selCell)return; const {c,r}=selCell; const g=grid[r][c]; const cost=upCost(g); if(honey>=cost){ honey-=cost; g.lvl++; SFX.up(); showSel(); updateHUD(); save(); } };
+document.getElementById('selSell').onclick=()=>{ if(!selCell)return; const {c,r}=selCell; const g=grid[r][c]; honey+=Math.floor(costOf(g.id)*0.5*0.9); counts[g.id]=Math.max(0,(counts[g.id]||1)-1); grid[r][c]=null; hideSel(); refreshShop(); updateHUD(); save(); };
+
+/* ---- HUD ---- */
+function updateHUD(){ document.getElementById('honeyV').textContent=fmt(honey);
+  document.getElementById('honeyPerSec').textContent='+'+fmt(totalIncome())+'/초';
+  document.getElementById('seedV').textContent=fmt(seeds);
+  document.getElementById('seedMul').textContent='×'+seedMul().toFixed(2)+' 배';
+  const pb=document.getElementById('prestigeBtn'); const gain=seedGain();
+  pb.disabled=gain<1; pb.textContent=gain>=1?`계절 넘기기 (+🌱${gain})`:'계절 넘기기';
+}
+function seedGain(){ return Math.floor(Math.sqrt(totalEarned/2000)); }
+
+/* ---- prestige ---- */
+document.getElementById('prestigeBtn').onclick=()=>{ const g=seedGain(); if(g<1)return;
+  document.getElementById('prestMsg').innerHTML=`이번 계절의 씨앗 <b style="color:#7ab63a">🌱 ${g}</b>을 받고<br>정원을 새로 시작합니다.<br><span style="font-size:12px;color:#a08a5c">씨앗은 영구 꿀 배수(현재 ×${(1+(seeds+g)*0.15).toFixed(2)})</span>`;
+  document.getElementById('prestOv').classList.add('show'); };
+document.getElementById('prestGo').onclick=()=>{ const g=seedGain(); seeds+=g; newGarden(); SFX.prestige();
+  document.getElementById('prestOv').classList.remove('show'); buildShop(); updateHUD(); hideSel(); save(); };
+
+/* ---- loop ---- */
+function frame(t){ const dt=Math.min(0.25,(t-lastTick)/1000); lastTick=t;
+  if(phase==='play'){ const inc=totalIncome()*dt; honey+=inc; totalEarned+=inc;
+    // periodic honey drip floaters from producers
+    if(Math.random()<dt*3){ for(let r=0;r<ROWS;r++)for(let c=0;c<COLS;c++){ const g=grid[r][c]; if(g&&DEF[g.id].kind==='prod'&&Math.random()<0.15){ floaters.push({x:c*CELL+CELL/2,y:r*CELL+CELL*0.3,life:0.9,t:'+'}); } } }
+    if((t-lastSave)>3000){ lastSave=t; save(); }
+    updateHUD(); refreshShopCheap();
+  }
+  for(let i=particles.length-1;i>=0;i--){const p=particles[i];p.life-=dt;if(p.life<=0){particles.splice(i,1);continue;}p.x+=p.vx*dt;p.y+=p.vy*dt;}
+  for(let i=floaters.length-1;i>=0;i--){const f=floaters[i];f.life-=dt;f.y-=dt*26;if(f.life<=0)floaters.splice(i,1);}
+  render(t); requestAnimationFrame(frame);
+}
+let _shopT=0; function refreshShopCheap(){ if((lastTick-_shopT)>400){ _shopT=lastTick; refreshShop(); } }
+
+/* ---- render ---- */
+function render(t){ const tt=t/1000; const AW=COLS*CELL, AH=ROWS*CELL; ctx.clearRect(0,0,AW,AH);
+  for(let r=0;r<ROWS;r++)for(let c=0;c<COLS;c++){ const X=c*CELL,Y=r*CELL;
+    ctx.fillStyle=((c+r)&1)?'#e7f4d2':'#dff0c4'; ctx.fillRect(X,Y,CELL,CELL);
+    ctx.strokeStyle='rgba(120,150,60,.12)'; ctx.strokeRect(X+.5,Y+.5,CELL-1,CELL-1);
+    const g=grid[r][c];
+    if(g){ const d=DEF[g.id];
+      // amp glow highlight on adjacent prod
+      if(d.kind==='amp'){ ctx.save();ctx.globalAlpha=0.10+0.05*Math.sin(tt*3); ctx.fillStyle='#ffcf4d';
+        for(const [dc,dr] of [[1,0],[-1,0],[0,1],[0,-1]]){ const n=at(c+dc,r+dr); if(n&&DEF[n.id].kind==='prod'){ ctx.fillRect((c+dc)*CELL,(r+dr)*CELL,CELL,CELL);} } ctx.restore(); }
+      const bob=Math.sin(tt*2+c+r)*2;
+      ctx.font=Math.floor(CELL*0.5)+'px serif'; ctx.textAlign='center'; ctx.textBaseline='middle';
+      ctx.fillText(d.em, X+CELL/2, Y+CELL/2+bob);
+      if(g.lvl>1){ ctx.fillStyle='#fff';ctx.strokeStyle='#c98a10';ctx.lineWidth=2; roundRect(X+CELL-24,Y+4,20,15,5); ctx.fill();ctx.stroke();
+        ctx.fillStyle='#7a5410';ctx.font='bold 10px sans-serif';ctx.fillText(g.lvl,X+CELL-14,Y+12); }
+    } else {
+      ctx.fillStyle='rgba(120,150,60,.18)'; ctx.font=Math.floor(CELL*0.22)+'px sans-serif'; ctx.textAlign='center';ctx.textBaseline='middle'; ctx.fillText('+',X+CELL/2,Y+CELL/2);
+    }
+  }
+  // selected highlight
+  if(selCell){ ctx.strokeStyle='#ff9800';ctx.lineWidth=3;ctx.strokeRect(selCell.c*CELL+2,selCell.r*CELL+2,CELL-4,CELL-4); }
+  // floaters
+  ctx.fillStyle='rgba(255,150,0,.8)'; ctx.font='bold 12px sans-serif'; ctx.textAlign='center';
+  for(const f of floaters){ ctx.globalAlpha=Math.max(0,f.life); ctx.fillText('🍯',f.x,f.y); } ctx.globalAlpha=1;
+  // particles
+  for(const p of particles){ ctx.globalAlpha=Math.max(0,Math.min(1,p.life));ctx.fillStyle='rgb('+p.c+')';ctx.beginPath();ctx.arc(p.x,p.y,p.r,0,6.283);ctx.fill();} ctx.globalAlpha=1;
+}
+function roundRect(x,y,w,h,r){ ctx.beginPath();ctx.moveTo(x+r,y);ctx.arcTo(x+w,y,x+w,y+h,r);ctx.arcTo(x+w,y+h,x,y+h,r);ctx.arcTo(x,y+h,x,y,r);ctx.arcTo(x,y,x+w,y,r);ctx.closePath(); }
+
+/* ---- buttons ---- */
+document.getElementById('startBtn').onclick=()=>{ ac(); document.getElementById('startOv').classList.remove('show');
+  if(pendingOffline){ document.getElementById('welcomeMsg').innerHTML=`약 <b>${pendingOffline.mins}분</b> 동안<br>벌들이 <b style="color:#ff9800">🍯 ${fmt(pendingOffline.gain)}</b> 을 모았어요!`; document.getElementById('welcomeOv').classList.add('show'); }
+  phase='play'; lastTick=perf(); };
+document.getElementById('welcomeGo').onclick=()=>{ if(pendingOffline){ honey+=pendingOffline.gain; totalEarned+=pendingOffline.gain; pendingOffline=null; updateHUD(); save(); } document.getElementById('welcomeOv').classList.remove('show'); };
+
+/* ---- boot ---- */
+boot(); requestAnimationFrame(frame);
+addEventListener('beforeunload',save);
+</script>
+</body>
+</html>

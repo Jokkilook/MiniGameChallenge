@@ -1,0 +1,560 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+<title>슬라임 슬링샷 · Slime Slingshot</title>
+<style>
+  :root{ --ink:#eaf0ff; --muted:#8790bd; }
+  *{box-sizing:border-box; -webkit-tap-highlight-color:transparent}
+  html,body{margin:0;height:100%;overflow:hidden;
+    background:radial-gradient(120% 100% at 50% 0%,#1a2140 0%,#0b0f22 60%,#070a16 100%);
+    color:var(--ink);font-family:"Segoe UI",-apple-system,BlinkMacSystemFont,"Malgun Gothic",sans-serif;
+    -webkit-font-smoothing:antialiased;-webkit-user-select:none;user-select:none;touch-action:none}
+  #wrap{position:fixed;inset:0;display:flex;align-items:center;justify-content:center}
+  canvas{display:block;touch-action:none;border-radius:10px}
+
+  /* top HUD */
+  #hud{position:fixed;top:0;left:0;right:0;padding:12px 14px;display:flex;gap:10px;align-items:center;
+    justify-content:center;pointer-events:none;font-size:13px;z-index:5}
+  #hud .pill{background:rgba(12,16,36,.6);border:1px solid rgba(120,140,220,.25);border-radius:20px;
+    padding:5px 12px;letter-spacing:.5px;backdrop-filter:blur(4px)}
+  #hud .pill b{color:#9ff0ff}
+  #resetBtn{pointer-events:auto;cursor:pointer}
+
+  /* bottom state buttons */
+  #states{position:fixed;left:0;right:0;bottom:0;display:flex;gap:8px;justify-content:center;
+    padding:10px 10px calc(12px + env(safe-area-inset-bottom));z-index:6;flex-wrap:wrap}
+  .sbtn{min-width:78px;padding:9px 6px 8px;border-radius:14px;border:1.5px solid var(--c);
+    background:rgba(12,16,34,.72);color:#dfe6ff;font-size:12px;font-weight:800;letter-spacing:.3px;
+    display:flex;flex-direction:column;align-items:center;gap:3px;cursor:pointer;backdrop-filter:blur(5px);
+    transition:transform .08s,background .12s,box-shadow .12s;opacity:.55}
+  .sbtn .dot{width:16px;height:16px;border-radius:50%;background:var(--c);box-shadow:0 0 10px var(--c)}
+  .sbtn .num{position:absolute;top:4px;left:8px;font-size:10px;color:var(--muted)}
+  .sbtn{position:relative}
+  .sbtn.active{opacity:1;background:rgba(30,40,80,.95);box-shadow:0 0 0 1px var(--c),0 6px 18px -4px var(--c);transform:translateY(-2px)}
+  .sbtn.canuse{opacity:.9}
+  .sbtn:active{transform:scale(.94)}
+
+  /* overlays */
+  .screen{position:fixed;inset:0;z-index:10;display:flex;flex-direction:column;align-items:center;
+    justify-content:center;text-align:center;padding:26px;
+    background:radial-gradient(120% 100% at 50% 30%,rgba(14,20,44,.92),rgba(6,9,20,.96))}
+  .screen h1{margin:0 0 4px;font-size:clamp(28px,7vw,48px);font-weight:900;letter-spacing:1px;
+    background:linear-gradient(180deg,#fff,#9be7a0);-webkit-background-clip:text;background-clip:text;color:transparent}
+  .screen .sub{color:#8b93c9;letter-spacing:5px;font-size:12px;margin-bottom:18px}
+  .screen p{color:#b3bbe4;font-size:14.5px;line-height:1.85;max-width:460px;margin:5px 0}
+  .screen p .g{color:#8ed94f;font-weight:700}.screen p .p{color:#ff7ab0;font-weight:700}
+  .screen p .m{color:#c3c9d8;font-weight:700}.screen p .a{color:#7fd4ff;font-weight:700}
+  .acc{font-size:clamp(40px,12vw,74px);font-weight:900;margin:6px 0 2px;
+    background:linear-gradient(180deg,#fff,#ffe08a);-webkit-background-clip:text;background-clip:text;color:transparent}
+  .stars{font-size:30px;letter-spacing:6px;margin:2px 0 8px}
+  button.go{margin-top:22px;pointer-events:auto;cursor:pointer;font:inherit;font-weight:800;font-size:16px;
+    letter-spacing:1px;color:#08210a;background:linear-gradient(180deg,#c7f7a0,#7ada4e);border:0;
+    padding:14px 34px;border-radius:30px;box-shadow:0 10px 30px -8px #5fbf3a}
+  button.go:active{transform:translateY(1px)}
+  .lvlrow{display:flex;gap:10px;margin-top:16px;flex-wrap:wrap;justify-content:center}
+  .lvlrow button{pointer-events:auto;cursor:pointer;font:inherit;font-weight:700;font-size:14px;color:#cdd6ff;
+    background:rgba(20,26,54,.85);border:1px solid rgba(120,140,220,.3);border-radius:12px;padding:10px 18px}
+  .lvlrow button:active{transform:scale(.95)}
+  .hint{color:#5a6294;font-size:12px;margin-top:16px;line-height:1.7}
+</style>
+</head>
+<body>
+<div id="wrap"><canvas id="cv"></canvas></div>
+
+<div id="hud">
+  <span class="pill" id="lvlp">STAGE 1</span>
+  <span class="pill" id="statep">기본 슬라임</span>
+  <span class="pill" id="resetBtn">↺ 다시</span>
+</div>
+
+<div id="states"></div>
+
+<div class="screen" id="title">
+  <div class="sub">SLIME SLINGSHOT</div>
+  <h1>슬라임 슬링샷</h1>
+  <p style="color:#7fd4ff;letter-spacing:2px;margin-top:-2px">— 1%의 미학 —</p>
+  <p>슬라임을 <b style="color:#fff">당겨 발사</b>하고, 날아가는 <b style="color:#fff">공중에서 성질을 바꿔</b> 장애물을 통과해 골인 지점에 정밀하게 도달하라.</p>
+  <p><span class="g">①기본</span> · <span class="p">②고무</span> 통통 튐 · <span class="m">③쇠</span> 급강하·블록 파괴 · <span class="a">④기체</span> 둥실 떠오름</p>
+  <button class="go" id="startBtn">시작하기</button>
+  <div class="hint">PC: 마우스로 당겨 발사 · 숫자키 1~4로 변신<br>모바일: 드래그로 발사 · 하단 버튼으로 변신</div>
+</div>
+
+<div class="screen" id="clearS" style="display:none">
+  <div class="sub" id="clearSub">TARGET REACHED</div>
+  <div class="stars" id="stars"></div>
+  <div class="acc" id="accNum">98.2%</div>
+  <h1 id="clearTitle" style="font-size:clamp(22px,5vw,32px)">명중!</h1>
+  <div class="lvlrow" id="clearRow"></div>
+</div>
+<script>
+"use strict";
+(function(){
+/* =========================================================================
+   슬라임 슬링샷 : 1%의 미학  —  자체 2D 물리 엔진(단일 파일, 외부 라이브러리 없음)
+   ========================================================================= */
+var cv=document.getElementById('cv'), ctx=cv.getContext('2d');
+var AW=820, AH=560, DPR=1, SC=1, OX=0, OY=0;
+function layout(){
+  DPR=Math.min(2,window.devicePixelRatio||1);
+  var vw=window.innerWidth, vh=window.innerHeight;
+  SC=Math.min(vw/AW,vh/AH);
+  var w=Math.round(AW*SC), h=Math.round(AH*SC);
+  OX=Math.round((vw-w)/2); OY=Math.round((vh-h)/2);
+  cv.style.width=w+'px'; cv.style.height=h+'px';
+  cv.width=Math.round(w*DPR); cv.height=Math.round(h*DPR);
+  ctx.setTransform(DPR*SC,0,0,DPR*SC,0,0);
+}
+window.addEventListener('resize',layout);
+
+/* ---------- 오디오 ---------- */
+var AC=null;
+function audio(){ if(!AC){try{AC=new (window.AudioContext||window.webkitAudioContext)();}catch(e){}}
+  if(AC&&AC.state==='suspended')AC.resume(); return AC; }
+function tone(freq,dur,type,vol,to){ var ac=audio(); if(!ac)return;
+  var t=ac.currentTime, o=ac.createOscillator(), g=ac.createGain();
+  o.type=type||'sine'; o.frequency.setValueAtTime(freq,t);
+  if(to)o.frequency.exponentialRampToValueAtTime(Math.max(30,to),t+dur);
+  g.gain.setValueAtTime(0.0001,t); g.gain.exponentialRampToValueAtTime(vol||0.15,t+0.01);
+  g.gain.exponentialRampToValueAtTime(0.0001,t+dur);
+  o.connect(g); g.connect(ac.destination); o.start(t); o.stop(t+dur+0.02); }
+function vibrate(ms){ try{if(navigator.vibrate)navigator.vibrate(ms);}catch(e){} }
+
+/* ---------- 상태(State) 정의 ---------- */
+// g: 중력 배수, rest: 반발계수, drag: 공기저항(초당 감쇠), breaks: 블록 파괴
+var STATES=[
+  {name:'기본 슬라임', short:'기본', c:'#8ed94f', g:1.0,  rest:0.44, drag:0.15, breaks:false},
+  {name:'고무 슬라임', short:'고무', c:'#ff7ab0', g:1.0,  rest:0.95, drag:0.06, breaks:false},
+  {name:'쇠 슬라임',   short:'쇠',   c:'#9aa0b2', g:3.0,  rest:0.14, drag:0.10, breaks:true},
+  {name:'기체 슬라임', short:'기체', c:'#7fd4ff', g:-0.42, rest:0.55, drag:1.9,  breaks:false},
+];
+var G0=1550;   // 기본 중력 (px/s^2)
+
+/* ---------- 레벨 ---------- */
+// walls: {x,y,w,h,type:'wall'|'spike'|'breakable', mv?:{ax:'x'|'y',range,speed,phase}}
+function L(o){ return o; }
+var LEVELS=[
+  // STAGE 1 — 기본 궤적 + 반사벽
+  L({ anchor:{x:110,y:430}, goal:{x:720,y:150,r:40},
+      walls:[
+        {x:0,y:AH-24,w:AW,h:24,type:'wall'},            // 바닥
+        {x:360,y:AH-24-120,w:24,h:120,type:'wall'},     // 중앙 벽(넘어가기)
+        {x:300,y:AH-24-30,w:120,h:30,type:'spike'},     // 벽 앞 가시
+        {x:AW-24,y:0,w:24,h:AH,type:'wall'},            // 우측벽(반사)
+      ],
+      tip:'당겨서 포물선으로 골인 지점에 넣어보자.' }),
+
+  // STAGE 2 — 기체로 높은 벽을 넘기
+  L({ anchor:{x:110,y:440}, goal:{x:720,y:430,r:38},
+      walls:[
+        {x:0,y:AH-24,w:AW,h:24,type:'wall'},
+        {x:430,y:120,w:26,h:AH-120-24,type:'wall'},     // 아래가 막힌 높은 벽 → 위로 넘겨야
+        {x:200,y:AH-24-26,w:230,h:26,type:'spike'},     // 앞바닥 가시
+        {x:AW-24,y:0,w:24,h:AH,type:'wall'},
+        {x:456,y:AH-24-70,w:220,h:20,type:'spike'},     // 착지 앞 가시
+      ],
+      tip:'④기체로 바꿔 벽 위로 둥실 넘어가라.' }),
+
+  // STAGE 3 — 쇠로 파괴블록 뚫기 + 고무 반사
+  L({ anchor:{x:110,y:160}, goal:{x:700,y:450,r:38},
+      walls:[
+        {x:0,y:AH-24,w:AW,h:24,type:'wall'},
+        {x:300,y:-280,w:26,h:530,type:'wall'},           // 위쪽 벽(천장 위까지 — 넘어갈 수 없음)
+        {x:300,y:250,w:26,h:120,type:'breakable'},      // 파괴 블록(쇠로 뚫기)
+        {x:300,y:370,w:26,h:AH-370-24,type:'wall'},
+        {x:520,y:AH-24-150,w:150,h:24,type:'wall'},     // 반사 발판
+        {x:620,y:AH-24-320,w:22,h:150,type:'spike'},    // 천장 가시
+        {x:AW-24,y:0,w:24,h:AH,type:'wall'},
+      ],
+      tip:'②고무로 튕겨 오른 뒤 ③쇠로 블록을 부수고 내려꽂아라.' }),
+];
+
+/* ---------- 시뮬레이션(렌더와 분리, 헤드리스 재사용) ---------- */
+function makeSim(li){
+  var lv=LEVELS[li];
+  var walls=lv.walls.map(function(w){ return {x:w.x,y:w.y,w:w.w,h:w.h,type:w.type,
+      mv:w.mv?{ax:w.mv.ax,range:w.mv.range,speed:w.mv.speed,phase:w.mv.phase||0,bx:w.x,by:w.y}:null,
+      dead:false, hit:0}; });
+  return {
+    lv:lv, walls:walls, t:0,
+    ball:{x:lv.anchor.x,y:lv.anchor.y,vx:0,vy:0,r:14,state:0,launched:false,alive:true,spin:0},
+    result:null, // null | {win:true,acc} | {fail:'spike'|'oob'|'timeout'}
+  };
+}
+var R=14; // 반지름
+
+function wallRect(w,t){
+  if(!w.mv) return w;
+  var off=Math.sin(t*w.mv.speed+w.mv.phase)*w.mv.range;
+  return {x:w.mv.ax==='x'?w.mv.bx+off:w.mv.bx, y:w.mv.ax==='y'?w.mv.by+off:w.mv.by, w:w.w, h:w.h, type:w.type};
+}
+
+// 원-사각형 충돌 해결. 반환: 'spike'|'break'|'wall'|null
+function resolve(b,st,rect,wref){
+  var nx=Math.max(rect.x,Math.min(b.x,rect.x+rect.w));
+  var ny=Math.max(rect.y,Math.min(b.y,rect.y+rect.h));
+  var dx=b.x-nx, dy=b.y-ny, d2=dx*dx+dy*dy;
+  if(d2>=b.r*b.r) return null;
+  if(rect.type==='spike') return 'spike';
+  if(rect.type==='breakable'){ if(st.breaks) return 'break'; }
+  var nrmx,nrmy,pen,d;
+  if(d2>1e-6){ d=Math.sqrt(d2); nrmx=dx/d; nrmy=dy/d; pen=b.r-d; }
+  else{
+    // 중심이 사각형 내부 → 최소 관통축으로 밀어냄
+    var lo=b.x-rect.x, ro=rect.x+rect.w-b.x, to=b.y-rect.y, bo=rect.y+rect.h-b.y;
+    var m=Math.min(lo,ro,to,bo);
+    if(m===lo){nrmx=-1;nrmy=0;} else if(m===ro){nrmx=1;nrmy=0;}
+    else if(m===to){nrmx=0;nrmy=-1;} else {nrmx=0;nrmy=1;}
+    pen=b.r+m;
+  }
+  b.x+=nrmx*pen; b.y+=nrmy*pen;
+  var vn=b.vx*nrmx+b.vy*nrmy;
+  if(vn<0){
+    var rest=st.rest;
+    b.vx-=(1+rest)*vn*nrmx; b.vy-=(1+rest)*vn*nrmy;
+    // 접선 마찰
+    var tvx=b.vx-(b.vx*nrmx+b.vy*nrmy)*nrmx, tvy=b.vy-(b.vx*nrmx+b.vy*nrmy)*nrmy;
+    var f=0.02; b.vx-=tvx*f; b.vy-=tvy*f;
+    b._bounced=Math.hypot(vn);
+  }
+  return 'wall';
+}
+
+// 물리 1스텝 (dt 고정 서브스텝에서 호출). 이벤트 콜백으로 사운드/파티클 연결.
+function physStep(sim,dt,ev){
+  var b=sim.ball; if(!b.launched||!b.alive||sim.result) return;
+  sim.t+=dt;
+  var st=STATES[b.state];
+  // 중력
+  b.vy+=G0*st.g*dt;
+  // 공기저항
+  var damp=Math.exp(-st.drag*dt);
+  b.vx*=damp; b.vy*=damp;
+  // 이동
+  b.x+=b.vx*dt; b.y+=b.vy*dt;
+  b.spin+=(b.vx)*dt*0.02;
+  // 충돌
+  for(var i=0;i<sim.walls.length;i++){ var w=sim.walls[i]; if(w.dead) continue;
+    var rect=wallRect(w,sim.t);
+    var res=resolve(b,st,rect,w);
+    if(res==='spike'){ sim.result={fail:'spike'}; if(ev)ev('spike'); return; }
+    if(res==='break'){ w.dead=true; w.hit=1; b.vx*=0.72; b.vy*=0.72; if(ev)ev('break',rect); }
+    else if(res==='wall'){ w.hit=1; if(ev&&b._bounced>60){ev('bounce',{x:b.x,y:b.y,v:b._bounced}); b._bounced=0;} }
+  }
+  // 골인
+  var g=sim.lv.goal, gdx=b.x-g.x, gdy=b.y-g.y, gd=Math.hypot(gdx,gdy);
+  if(gd<g.r){
+    var acc=Math.max(0,Math.min(100, (1-gd/g.r)*100 ));
+    sim.result={win:true, acc:acc}; if(ev)ev('win',acc); return;
+  }
+  // 화면 이탈
+  if(b.x<-60||b.x>AW+60||b.y>AH+80||b.y<-260){ sim.result={fail:'oob'}; if(ev)ev('oob'); return; }
+  // 타임아웃
+  if(sim.t>12){ sim.result={fail:'timeout'}; if(ev)ev('timeout'); return; }
+}
+
+/* ---------- 라이브 게임 상태 ---------- */
+var sim=null, lvIndex=0, aiming=false, aimX=0, aimY=0, launched=false;
+var particles=[];
+var MAXPULL=155, LAUNCHK=8.6, MAXSPEED=1340;
+
+function loadLevel(i){
+  lvIndex=i; sim=makeSim(i); launched=false; aiming=false; particles=[];
+  document.getElementById('lvlp').textContent='STAGE '+(i+1);
+  setStateUI(0);
+  document.getElementById('statep').textContent='발사 대기';
+}
+
+/* changeSlimeState(newState) — 요구 스펙: 런타임 물리 속성 변경 함수 */
+function changeSlimeState(newState){
+  if(!sim||!sim.ball.launched||sim.result) return;
+  if(newState<0||newState>3) return;
+  sim.ball.state=newState;
+  var st=STATES[newState];
+  // 상태 전환 FX + 사운드
+  tone([440,620,180,720][newState],0.12,['sine','triangle','sawtooth','sine'][newState],0.14,
+       [520,880,90,900][newState]);
+  vibrate(newState===2?[15,20,25]:15);
+  var b=sim.ball;
+  for(var k=0;k<12;k++){ var a=Math.random()*6.28,s=40+Math.random()*80;
+    particles.push({x:b.x,y:b.y,vx:Math.cos(a)*s,vy:Math.sin(a)*s,life:1,c:st.c}); }
+  setStateUI(newState);
+  document.getElementById('statep').textContent=st.name;
+}
+window.changeSlimeState=changeSlimeState;
+
+/* ---------- 하단 상태 버튼 UI ---------- */
+var statesEl=document.getElementById('states'), sbtns=[];
+STATES.forEach(function(st,i){
+  var b=document.createElement('div'); b.className='sbtn'; b.style.setProperty('--c',st.c);
+  b.innerHTML='<span class="num">'+(i+1)+'</span><span class="dot"></span>'+st.short;
+  b.addEventListener('click',function(){ changeSlimeState(i); });
+  statesEl.appendChild(b); sbtns.push(b);
+});
+function setStateUI(active){
+  var canUse=launched && sim && !sim.result;
+  sbtns.forEach(function(b,i){
+    b.classList.toggle('active',i===active);
+    b.classList.toggle('canuse',canUse);
+  });
+}
+
+/* ---------- 입력 ---------- */
+function toLogic(cx,cy){ return {x:(cx-OX)/SC, y:(cy-OY)/SC}; }
+function pDown(cx,cy){
+  audio();
+  if(sim.result) return;
+  if(launched) return;               // 발사 후엔 조준 불가
+  var p=toLogic(cx,cy);
+  aiming=true; aimX=p.x; aimY=p.y;
+}
+function pMove(cx,cy){
+  if(!aiming) return;
+  var p=toLogic(cx,cy); aimX=p.x; aimY=p.y;
+}
+function pUp(){
+  if(!aiming) return; aiming=false;
+  var a=sim.lv.anchor;
+  var dx=a.x-aimX, dy=a.y-aimY, mag=Math.hypot(dx,dy);
+  if(mag<14) return;                  // 너무 짧으면 무시
+  var pull=Math.min(mag,MAXPULL);
+  var ux=dx/mag, uy=dy/mag;
+  var speed=Math.min(MAXSPEED, pull*LAUNCHK);
+  var b=sim.ball;
+  b.vx=ux*speed; b.vy=uy*speed; b.launched=true; b.state=0;
+  launched=true;
+  tone(300,0.14,'square',0.16,140); vibrate(20);
+  setStateUI(0); document.getElementById('statep').textContent='기본 슬라임';
+}
+cv.addEventListener('mousedown',function(e){pDown(e.clientX,e.clientY);});
+window.addEventListener('mousemove',function(e){pMove(e.clientX,e.clientY);});
+window.addEventListener('mouseup',pUp);
+cv.addEventListener('touchstart',function(e){var t=e.changedTouches[0];pDown(t.clientX,t.clientY);e.preventDefault();},{passive:false});
+cv.addEventListener('touchmove',function(e){var t=e.changedTouches[0];pMove(t.clientX,t.clientY);e.preventDefault();},{passive:false});
+cv.addEventListener('touchend',function(e){pUp();e.preventDefault();},{passive:false});
+window.addEventListener('keydown',function(e){
+  var k=e.key;
+  if(k>='1'&&k<='4'){ changeSlimeState(parseInt(k,10)-1); }
+  if(k===' '){ e.preventDefault(); if(sim.result) nextOrRetry(); }
+  if(k.toLowerCase()==='r'){ loadLevel(lvIndex); }
+});
+document.getElementById('resetBtn').addEventListener('click',function(){ loadLevel(lvIndex); });
+
+/* ---------- 게임 루프 (고정 스텝 물리) ---------- */
+var acc=0, last=0, SUB=1/120;
+function ev(type,data){
+  if(type==='spike'){ tone(160,0.3,'sawtooth',0.2,60); vibrate([40,30,60]); burst(sim.ball.x,sim.ball.y,'#ff5a6a',22); setTimeout(function(){ if(sim.result&&sim.result.fail==='spike') loadLevel(lvIndex); },700); }
+  else if(type==='oob'||type==='timeout'){ setTimeout(function(){ if(sim.result&&sim.result.fail) loadLevel(lvIndex); },500); }
+  else if(type==='bounce'){ tone(300+Math.min(400,data.v*0.3),0.06,'triangle',0.08); if(STATES[sim.ball.state].rest>0.9)vibrate(10); }
+  else if(type==='break'){ tone(90,0.24,'square',0.2,50); vibrate([20,20,40]); burst(data.x+data.w/2,data.y+data.h/2,'#c3c9d8',26); }
+  else if(type==='win'){ onWin(data); }
+}
+function loop(ts){
+  if(!last)last=ts; var dt=Math.min(0.05,(ts-last)/1000); last=ts;
+  acc+=dt;
+  while(acc>=SUB){ if(sim&&launched&&!sim.result) physStep(sim,SUB,ev); acc-=SUB; }
+  // 파티클
+  for(var i=particles.length-1;i>=0;i--){ var p=particles[i];
+    p.life-=dt*1.7; p.x+=p.vx*dt; p.y+=p.vy*dt; p.vy+=400*dt; p.vx*=0.96;
+    if(p.life<=0)particles.splice(i,1); }
+  render();
+  requestAnimationFrame(loop);
+}
+function burst(x,y,c,n){ for(var i=0;i<n;i++){var a=Math.random()*6.28,s=60+Math.random()*160;
+  particles.push({x:x,y:y,vx:Math.cos(a)*s,vy:Math.sin(a)*s,life:1,c:c});} }
+
+/* ---------- 렌더 ---------- */
+function render(){
+  ctx.clearRect(0,0,AW,AH);
+  // 배경 그리드
+  ctx.save(); ctx.strokeStyle='rgba(90,110,180,.07)'; ctx.lineWidth=1;
+  for(var gx=0;gx<AW;gx+=40){ctx.beginPath();ctx.moveTo(gx,0);ctx.lineTo(gx,AH);ctx.stroke();}
+  for(var gy=0;gy<AH;gy+=40){ctx.beginPath();ctx.moveTo(0,gy);ctx.lineTo(AW,gy);ctx.stroke();}
+  ctx.restore();
+  if(!sim){ return; }
+
+  // 골인 지점
+  var g=sim.lv.goal, tw=(last/500);
+  ctx.save();
+  var pr=g.r+Math.sin(tw)*4;
+  var grd=ctx.createRadialGradient(g.x,g.y,4,g.x,g.y,pr);
+  grd.addColorStop(0,'rgba(255,224,120,.5)'); grd.addColorStop(1,'rgba(255,200,60,0)');
+  ctx.fillStyle=grd; ctx.beginPath(); ctx.arc(g.x,g.y,pr,0,6.28); ctx.fill();
+  ctx.strokeStyle='#ffd867'; ctx.lineWidth=2.5; ctx.setLineDash([6,6]); ctx.lineDashOffset=-tw*10;
+  ctx.beginPath(); ctx.arc(g.x,g.y,g.r,0,6.28); ctx.stroke(); ctx.setLineDash([]);
+  ctx.fillStyle='#ffd867'; ctx.beginPath(); ctx.arc(g.x,g.y,5,0,6.28); ctx.fill();
+  ctx.font='11px "Segoe UI"'; ctx.textAlign='center'; ctx.fillStyle='rgba(255,224,120,.8)';
+  ctx.fillText('GOAL',g.x,g.y-g.r-8);
+  ctx.restore();
+
+  // 벽/가시/블록
+  for(var i=0;i<sim.walls.length;i++){ var w=sim.walls[i]; if(w.dead) continue;
+    var r=wallRect(w,sim.t);
+    if(w.type==='spike'){ drawSpikes(r); }
+    else if(w.type==='breakable'){
+      ctx.fillStyle='rgba(150,110,70,.9)'; ctx.strokeStyle='#d8a468'; ctx.lineWidth=2;
+      ctx.fillRect(r.x,r.y,r.w,r.h); ctx.strokeRect(r.x+1,r.y+1,r.w-2,r.h-2);
+      ctx.strokeStyle='rgba(80,50,20,.6)';
+      for(var c=r.y+10;c<r.y+r.h;c+=14){ctx.beginPath();ctx.moveTo(r.x,c);ctx.lineTo(r.x+r.w,c);ctx.stroke();}
+    } else {
+      ctx.fillStyle='rgba(70,86,140,.55)'; ctx.strokeStyle='rgba(150,175,255,.55)'; ctx.lineWidth=2;
+      ctx.fillRect(r.x,r.y,r.w,r.h); ctx.strokeRect(r.x+.5,r.y+.5,r.w-1,r.h-1);
+    }
+  }
+
+  // 파티클
+  for(var p=0;p<particles.length;p++){ var P=particles[p];
+    ctx.globalAlpha=Math.max(0,P.life); ctx.fillStyle=P.c;
+    ctx.beginPath(); ctx.arc(P.x,P.y,2.4,0,6.28); ctx.fill(); }
+  ctx.globalAlpha=1;
+
+  // 조준 궤적 예측
+  if(aiming && !launched){ drawAim(); }
+
+  // 슬라임
+  drawSlime();
+
+  // 발사 전 안내
+  if(!launched && !aiming && !sim.result){
+    ctx.save(); ctx.globalAlpha=0.5+0.3*Math.sin(last/400);
+    ctx.fillStyle='#cdd6ff'; ctx.font='13px "Segoe UI"'; ctx.textAlign='center';
+    ctx.fillText(sim.lv.tip, AW/2, AH-60);
+    ctx.restore();
+  }
+}
+function drawSpikes(r){
+  ctx.save(); ctx.fillStyle='#ff5a6a'; ctx.strokeStyle='#ff8a96'; ctx.lineWidth=1;
+  var horiz = r.w>=r.h;
+  if(horiz){ var n=Math.max(1,Math.floor(r.w/16)), sw=r.w/n;
+    for(var i=0;i<n;i++){ ctx.beginPath(); ctx.moveTo(r.x+i*sw,r.y+r.h);
+      ctx.lineTo(r.x+i*sw+sw/2,r.y); ctx.lineTo(r.x+(i+1)*sw,r.y+r.h); ctx.closePath(); ctx.fill(); } }
+  else { var m=Math.max(1,Math.floor(r.h/16)), sh=r.h/m;
+    for(var j=0;j<m;j++){ ctx.beginPath(); ctx.moveTo(r.x,r.y+j*sh);
+      ctx.lineTo(r.x+r.w,r.y+j*sh+sh/2); ctx.lineTo(r.x,r.y+(j+1)*sh); ctx.closePath(); ctx.fill(); } }
+  ctx.restore();
+}
+function drawAim(){
+  var a=sim.lv.anchor;
+  var dx=a.x-aimX, dy=a.y-aimY, mag=Math.hypot(dx,dy);
+  if(mag<14) return;
+  var pull=Math.min(mag,MAXPULL), ux=dx/mag, uy=dy/mag;
+  var speed=Math.min(MAXSPEED,pull*LAUNCHK);
+  // 당긴 슬라임 위치 표시(고무줄)
+  var drawX=a.x-ux*pull, drawY=a.y-uy*pull;
+  ctx.save();
+  ctx.strokeStyle='rgba(180,200,255,.5)'; ctx.lineWidth=3;
+  ctx.beginPath(); ctx.moveTo(drawX,drawY); ctx.lineTo(a.x,a.y); ctx.stroke();
+  // 예측 궤적(기본 상태 물리로 forward 시뮬레이션)
+  var sx=a.x, sy=a.y, svx=ux*speed, svy=uy*speed;
+  ctx.fillStyle='rgba(142,217,79,.9)';
+  for(var s=0;s<48;s++){
+    for(var k=0;k<3;k++){ svy+=G0*SUB; svx*=Math.exp(-STATES[0].drag*SUB); svy*=Math.exp(-STATES[0].drag*SUB);
+      sx+=svx*SUB; sy+=svy*SUB; }
+    if(sy>AH||sx>AW||sx<0) break;
+    var al=1-s/48; ctx.globalAlpha=al*0.9;
+    ctx.beginPath(); ctx.arc(sx,sy,Math.max(1.5,4*al),0,6.28); ctx.fill();
+  }
+  ctx.globalAlpha=1;
+  // 파워 게이지
+  var pw=pull/MAXPULL;
+  ctx.fillStyle='rgba(255,255,255,.15)'; ctx.fillRect(a.x-30,a.y+26,60,7);
+  ctx.fillStyle= pw>0.85?'#ff7ab0':'#8ed94f'; ctx.fillRect(a.x-30,a.y+26,60*pw,7);
+  ctx.restore();
+}
+function drawSlime(){
+  if(!sim) return;
+  var b=sim.ball, st=STATES[b.state];
+  var x=b.launched?b.x:sim.lv.anchor.x, y=b.launched?b.y:sim.lv.anchor.y;
+  if(aiming && !launched){ // 당기는 중엔 anchor 뒤로
+    var a=sim.lv.anchor, dx=a.x-aimX, dy=a.y-aimY, mag=Math.hypot(dx,dy);
+    if(mag>14){ var pull=Math.min(mag,MAXPULL); x=a.x-(dx/mag)*pull; y=a.y-(dy/mag)*pull; }
+  }
+  ctx.save();
+  // 글로우
+  ctx.shadowColor=st.c; ctx.shadowBlur=18;
+  // 젤리 몸체(살짝 눌린 원)
+  var speed=Math.hypot(b.vx,b.vy);
+  var squash=b.launched?Math.min(0.3,speed/4000):0;
+  var ang=Math.atan2(b.vy,b.vx);
+  ctx.translate(x,y); ctx.rotate(ang);
+  ctx.scale(1+squash,1-squash);
+  var grd=ctx.createRadialGradient(-4,-4,2,0,0,b.r);
+  grd.addColorStop(0,'#ffffff'); grd.addColorStop(0.25,st.c); grd.addColorStop(1,shade(st.c,-0.35));
+  ctx.globalAlpha= b.state===3?0.72:1;
+  ctx.fillStyle=grd; ctx.beginPath(); ctx.arc(0,0,b.r,0,6.28); ctx.fill();
+  // 쇠: 금속 하이라이트 회전선
+  if(b.state===2){ ctx.rotate(b.spin); ctx.strokeStyle='rgba(255,255,255,.5)'; ctx.lineWidth=2;
+    ctx.beginPath(); ctx.arc(0,0,b.r-4,-0.6,0.6); ctx.stroke(); }
+  ctx.restore();
+  // 눈
+  ctx.save(); ctx.translate(x,y);
+  ctx.fillStyle='#22303a'; ctx.beginPath();
+  ctx.arc(-4,-2,2,0,6.28); ctx.arc(4,-2,2,0,6.28); ctx.fill();
+  ctx.restore();
+  // 기체: 구름 입자
+  if(b.state===3 && b.launched && Math.random()<0.4){
+    particles.push({x:x+(Math.random()*16-8),y:y+8,vx:0,vy:20+Math.random()*20,life:0.7,c:'rgba(180,230,255,.7)'});
+  }
+}
+function shade(hex,amt){
+  var c=hex.replace('#',''); var r=parseInt(c.substr(0,2),16),g=parseInt(c.substr(2,2),16),bl=parseInt(c.substr(4,2),16);
+  r=Math.max(0,Math.min(255,Math.round(r*(1+amt)))); g=Math.max(0,Math.min(255,Math.round(g*(1+amt)))); bl=Math.max(0,Math.min(255,Math.round(bl*(1+amt))));
+  return 'rgb('+r+','+g+','+bl+')';
+}
+
+/* ---------- 승리/진행 ---------- */
+function onWin(acc){
+  launched=false;
+  tone(660,0.12,'triangle',0.18,990); setTimeout(function(){tone(990,0.16,'triangle',0.16);},110);
+  setTimeout(function(){tone(1320,0.3,'triangle',0.14);},230);
+  vibrate([30,40,30,40,60]); burst(sim.lv.goal.x,sim.lv.goal.y,'#ffe08a',30);
+  var accR=Math.round(acc*10)/10;
+  document.getElementById('accNum').textContent=accR.toFixed(1)+'%';
+  var stars = acc>=90?'★★★' : acc>=65?'★★☆' : '★☆☆';
+  document.getElementById('stars').textContent=stars;
+  document.getElementById('clearTitle').textContent = acc>=95?'PERFECT! 1%의 미학':acc>=75?'명중!':'클리어!';
+  document.getElementById('clearSub').textContent = 'STAGE '+(lvIndex+1)+' CLEAR';
+  var row=document.getElementById('clearRow'); row.innerHTML='';
+  var last=lvIndex>=LEVELS.length-1;
+  if(!last){ var nb=document.createElement('button'); nb.textContent='다음 스테이지 →';
+    nb.onclick=function(){ show('clearS',false); loadLevel(lvIndex+1); }; row.appendChild(nb); }
+  var rb=document.createElement('button'); rb.textContent= last?'처음부터':'다시';
+  rb.onclick=function(){ show('clearS',false); loadLevel(last?0:lvIndex); }; row.appendChild(rb);
+  if(last){ var t=document.createElement('button'); t.textContent='엔딩';
+    t.onclick=function(){ show('clearS',false); loadLevel(0); }; }
+  setTimeout(function(){ show('clearS',true); },500);
+}
+function nextOrRetry(){
+  if(!sim||!sim.result||!sim.result.win) return;
+  show('clearS',false);
+  loadLevel(lvIndex>=LEVELS.length-1?0:lvIndex+1);
+}
+function show(id,on){ document.getElementById(id).style.display=on?'flex':'none'; }
+
+document.getElementById('startBtn').addEventListener('click',function(){
+  audio(); show('title',false); loadLevel(0);
+});
+
+/* ---------- 헤드리스 솔버빌리티 검증용 ---------- */
+function simulate(li, vx, vy, schedule){
+  // schedule: [{t, s}] 시간 기준 상태 전환
+  var s=makeSim(li); s.ball.vx=vx; s.ball.vy=vy; s.ball.launched=true; s.ball.state=0;
+  var si=0, dt=1/120;
+  for(var step=0; step<12*120; step++){
+    while(si<schedule.length && s.t>=schedule[si].t){ s.ball.state=schedule[si].s; si++; }
+    physStep(s,dt,null);
+    if(s.result) return {res:s.result, t:s.t};
+  }
+  return {res:{fail:'timeout'}, t:s.t};
+}
+
+layout(); loadLevel(0); requestAnimationFrame(loop);
+
+window.__slime={ STATES:STATES, LEVELS:LEVELS, makeSim:makeSim, simulate:simulate,
+  changeSlimeState:changeSlimeState, get sim(){return sim;}, loadLevel:loadLevel,
+  MAXSPEED:MAXSPEED, get lvIndex(){return lvIndex;} };
+})();
+</script>
+</body>
+</html>

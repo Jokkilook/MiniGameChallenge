@@ -1,0 +1,643 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+<title>소리로 그리는 던전 · Echo Dungeon</title>
+<style>
+  :root{ --ink:#dfe6ff; --muted:#6b7299; }
+  *{box-sizing:border-box; -webkit-tap-highlight-color:transparent}
+  html,body{margin:0;height:100%;overflow:hidden;background:#000;color:var(--ink);
+    font-family:"Segoe UI",-apple-system,BlinkMacSystemFont,"Malgun Gothic",sans-serif;
+    -webkit-font-smoothing:antialiased;-webkit-user-select:none;user-select:none;touch-action:none}
+  #wrap{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:#000}
+  canvas{display:block;background:#000;touch-action:none}
+
+  /* HUD */
+  #hud{position:fixed;top:0;left:0;right:0;padding:12px 14px;display:flex;gap:10px;align-items:center;
+    pointer-events:none;font-size:13px;z-index:5}
+  #hud .pill{background:rgba(10,14,30,.6);border:1px solid rgba(120,140,220,.25);border-radius:20px;
+    padding:5px 12px;letter-spacing:.5px;backdrop-filter:blur(4px)}
+  #keyp{color:#ffd27a} #keyp.got{color:#6cff9e;border-color:rgba(108,255,158,.5)}
+  #timep b{color:#9ff0ff}
+
+  /* on-screen buttons (mobile) */
+  #btns{position:fixed;right:16px;bottom:22px;display:flex;flex-direction:column;gap:12px;z-index:6}
+  .abtn{width:74px;height:74px;border-radius:50%;border:1px solid rgba(140,160,240,.35);
+    background:rgba(14,18,40,.66);color:#cdd6ff;font-size:12px;font-weight:800;letter-spacing:.5px;
+    display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;
+    backdrop-filter:blur(4px);cursor:pointer;transition:transform .08s,background .15s}
+  .abtn .ic{font-size:22px;line-height:1}
+  .abtn:active{transform:scale(.9);background:rgba(40,50,100,.85)}
+  #bClap{border-color:rgba(255,150,90,.5)} #bClap .ic{color:#ff9e5e}
+  #bStone{border-color:rgba(150,220,255,.5)} #bStone .ic{color:#9ff0ff}
+  #bStone.armed{background:rgba(30,90,120,.9);border-color:#9ff0ff}
+
+  /* joystick */
+  #stick{position:fixed;left:18px;bottom:20px;width:130px;height:130px;border-radius:50%;
+    border:1px solid rgba(120,140,220,.22);background:rgba(10,14,30,.35);z-index:6;touch-action:none}
+  #knob{position:absolute;left:50%;top:50%;width:56px;height:56px;margin:-28px 0 0 -28px;border-radius:50%;
+    background:rgba(120,150,255,.35);border:1px solid rgba(160,180,255,.55)}
+
+  /* overlays */
+  .screen{position:fixed;inset:0;z-index:10;display:flex;flex-direction:column;align-items:center;
+    justify-content:center;text-align:center;padding:26px;background:radial-gradient(120% 100% at 50% 40%,#0a0e22 0%,#04060e 70%,#000 100%)}
+  .screen h1{margin:0 0 6px;font-size:clamp(28px,7vw,46px);font-weight:900;letter-spacing:1px;
+    background:linear-gradient(180deg,#fff,#9ba7e6);-webkit-background-clip:text;background-clip:text;color:transparent}
+  .screen .sub{color:#8b93c9;letter-spacing:4px;font-size:12px;margin-bottom:20px}
+  .screen p{color:#aeb6e0;font-size:14.5px;line-height:1.85;max-width:440px;margin:6px 0}
+  .screen p .k{color:#9ff0ff;font-weight:700}
+  .screen p .r{color:#ff8b7a;font-weight:700}
+  .screen p .y{color:#ffd27a;font-weight:700}
+  .big{font-size:clamp(30px,8vw,52px)!important}
+  .win h1{background:linear-gradient(180deg,#eaffe9,#6cff9e);-webkit-background-clip:text;background-clip:text}
+  .lose h1{background:linear-gradient(180deg,#ffecec,#ff6b6b);-webkit-background-clip:text;background-clip:text}
+  button.go{margin-top:22px;pointer-events:auto;cursor:pointer;font:inherit;font-weight:800;font-size:16px;
+    letter-spacing:1px;color:#06121a;background:linear-gradient(180deg,#bff3ff,#63d6ff);border:0;
+    padding:14px 34px;border-radius:30px;box-shadow:0 10px 30px -8px #3aa8ff}
+  button.go:active{transform:translateY(1px)}
+  .hint{color:#5a6294;font-size:12px;margin-top:16px}
+  .lvlrow{display:flex;gap:10px;margin-top:18px;flex-wrap:wrap;justify-content:center}
+  .lvlrow button{pointer-events:auto;cursor:pointer;font:inherit;font-weight:700;font-size:14px;color:#cdd6ff;
+    background:rgba(20,26,54,.8);border:1px solid rgba(120,140,220,.3);border-radius:12px;padding:10px 18px}
+  .lvlrow button:active{transform:scale(.95)}
+  #fade{position:fixed;inset:0;z-index:9;background:#000;opacity:0;pointer-events:none;transition:opacity .4s}
+</style>
+</head>
+<body>
+<div id="wrap"><canvas id="cv"></canvas></div>
+
+<div id="hud">
+  <span class="pill" id="timep">남은 시간 <b>30</b>s</span>
+  <span class="pill" id="keyp">🔑 열쇠 없음</span>
+  <span class="pill" id="lvlp">1층</span>
+</div>
+
+<div id="stick"><div id="knob"></div></div>
+<div id="btns">
+  <div class="abtn" id="bStone"><span class="ic">🌑</span>돌</div>
+  <div class="abtn" id="bClap"><span class="ic">👏</span>박수</div>
+</div>
+
+<div id="fade"></div>
+
+<div class="screen" id="title">
+  <div class="sub">ECHO DUNGEON</div>
+  <h1>소리로 그리는 던전</h1>
+  <p>화면은 <b style="color:#fff">완전한 어둠</b>. 눈이 아니라 <span class="k">소리</span>로 길을 찾아라.</p>
+  <p><span class="k">움직이면</span> 발소리가 주변을 잠깐 밝힌다 — 조용해서 몬스터는 못 듣는다.<br>
+     <span class="r">👏 박수</span>는 넓게 밝히지만 <span class="r">몬스터가 소리로 몰려온다.</span><br>
+     <span class="y">🌑 돌</span>을 먼 곳에 던져 몬스터를 유인하고 그 틈에 지나가라.</p>
+  <p><b style="color:#fff">🔑 열쇠</b>를 찾아 <b style="color:#6cff9e">출구</b>로 탈출하면 클리어.</p>
+  <button class="go" id="startBtn">들어가기</button>
+  <div class="hint">이어폰을 끼면 소리의 방향이 들립니다 · 모바일은 진동 지원</div>
+</div>
+
+<div class="screen win" id="winS" style="display:none">
+  <div class="sub">ESCAPED</div>
+  <h1 class="big">탈출 성공!</h1>
+  <p id="winMsg"></p>
+  <div class="lvlrow" id="winRow"></div>
+</div>
+
+<div class="screen lose" id="loseS" style="display:none">
+  <div class="sub" id="loseSub">CAUGHT</div>
+  <h1 class="big" id="loseTitle">잡혔다…</h1>
+  <p id="loseMsg"></p>
+  <button class="go" id="retryBtn">다시 시도</button>
+</div>
+
+<script>
+"use strict";
+(function(){
+/* =========================================================================
+   소리로 그리는 던전 (Echo Dungeon)
+   완전한 암흑 + 에코로케이션. 순수 단일 파일.
+   ========================================================================= */
+
+var cv=document.getElementById('cv'), ctx=cv.getContext('2d');
+var AW=800, AH=560;              // 논리 해상도
+var DPR=1, SC=1, OX=0, OY=0;     // 화면 맞춤
+
+function layout(){
+  DPR=Math.min(2, window.devicePixelRatio||1);
+  var vw=window.innerWidth, vh=window.innerHeight;
+  SC=Math.min(vw/AW, vh/AH);
+  var w=Math.round(AW*SC), h=Math.round(AH*SC);
+  OX=Math.round((vw-w)/2); OY=Math.round((vh-h)/2);
+  cv.style.width=w+'px'; cv.style.height=h+'px';
+  cv.width=Math.round(w*DPR); cv.height=Math.round(h*DPR);
+  ctx.setTransform(DPR*SC,0,0,DPR*SC,0,0);
+}
+window.addEventListener('resize',layout);
+
+/* ---------- 오디오 ---------- */
+var AC=null;
+function audio(){ if(!AC){ try{ AC=new (window.AudioContext||window.webkitAudioContext)(); }catch(e){} }
+  if(AC && AC.state==='suspended') AC.resume(); return AC; }
+// 공간감 있는 소리: srcX 는 논리좌표 x (플레이어 기준 팬)
+function blip(freq,dur,type,vol,srcX,slideTo){
+  var ac=audio(); if(!ac) return;
+  var t=ac.currentTime;
+  var o=ac.createOscillator(), g=ac.createGain(), p=ac.createStereoPanner?ac.createStereoPanner():null;
+  o.type=type||'sine'; o.frequency.setValueAtTime(freq,t);
+  if(slideTo) o.frequency.exponentialRampToValueAtTime(Math.max(30,slideTo),t+dur);
+  g.gain.setValueAtTime(0.0001,t);
+  g.gain.exponentialRampToValueAtTime(vol||0.2,t+0.012);
+  g.gain.exponentialRampToValueAtTime(0.0001,t+dur);
+  o.connect(g);
+  if(p){ var pan=0; if(srcX!=null && player) pan=Math.max(-1,Math.min(1,(srcX-player.x)/300)); p.pan.value=pan; g.connect(p); p.connect(ac.destination); }
+  else g.connect(ac.destination);
+  o.start(t); o.stop(t+dur+0.02);
+}
+function noise(dur,vol,srcX){
+  var ac=audio(); if(!ac) return;
+  var n=Math.floor(ac.sampleRate*dur), b=ac.createBuffer(1,n,ac.sampleRate), d=b.getChannelData(0);
+  for(var i=0;i<n;i++) d[i]=(Math.random()*2-1)*(1-i/n);
+  var s=ac.createBufferSource(); s.buffer=b;
+  var g=ac.createGain(); g.gain.value=vol||0.2;
+  var f=ac.createBiquadFilter(); f.type='lowpass'; f.frequency.value=1400;
+  var p=ac.createStereoPanner?ac.createStereoPanner():null;
+  s.connect(f); f.connect(g);
+  if(p){ var pan=0; if(srcX!=null&&player)pan=Math.max(-1,Math.min(1,(srcX-player.x)/300)); p.pan.value=pan; g.connect(p); p.connect(ac.destination);}
+  else g.connect(ac.destination);
+  s.start();
+}
+function vibrate(ms){ try{ if(navigator.vibrate) navigator.vibrate(ms); }catch(e){} }
+
+/* ---------- 레벨 ---------- */
+// 벽은 사각형. 좌표는 논리 픽셀. 외곽 테두리 + 내부 기둥/벽.
+function border(list){ // 외곽 벽
+  list.push({x:0,y:0,w:AW,h:16},{x:0,y:AH-16,w:AW,h:16},
+            {x:0,y:0,w:16,h:AH},{x:AW-16,y:0,w:16,h:AH});
+  return list;
+}
+var LEVELS=[
+  { name:"1층", time:34,
+    start:{x:70,y:70}, key:{x:730,y:80}, exit:{x:730,y:490},
+    walls:border([
+      {x:250,y:0,w:20,h:200}, {x:250,y:300,w:20,h:260},
+      {x:520,y:120,w:20,h:340},
+      {x:270,y:270,w:180,h:20},
+      {x:540,y:270,w:150,h:20},
+    ]),
+    mon:[ {x:400,y:430,sp:74}, {x:640,y:180,sp:70} ] },
+
+  { name:"2층", time:38,
+    start:{x:70,y:490}, key:{x:70,y:70}, exit:{x:730,y:70},
+    walls:border([
+      {x:210,y:16,w:20,h:384},   // 위에 붙은 벽 — 아래에 틈
+      {x:380,y:160,w:20,h:384},  // 아래에 붙은 벽 — 위에 틈
+      {x:550,y:16,w:20,h:384},   // 위에 붙은 벽 — 아래에 틈
+    ]),
+    mon:[ {x:300,y:470,sp:78}, {x:470,y:250,sp:74}, {x:650,y:470,sp:72} ] },
+
+  { name:"3층", time:38,
+    start:{x:400,y:280}, key:{x:70,y:70}, exit:{x:730,y:490},
+    walls:border([
+      {x:150,y:150,w:500,h:20},
+      {x:150,y:390,w:500,h:20},
+      {x:150,y:150,w:20,h:120},
+      {x:630,y:290,w:20,h:120},
+      {x:300,y:170,w:20,h:120},
+      {x:480,y:270,w:20,h:120},
+    ]),
+    mon:[ {x:250,y:80,sp:82}, {x:730,y:120,sp:80}, {x:120,y:480,sp:80}, {x:560,y:470,sp:78} ] },
+];
+
+/* ---------- 상태 ---------- */
+var L=null, walls=[], player=null, key=null, exit=null, monsters=[], pulses=[], stones=[], particles=[];
+var lvlIndex=0, hasKey=false, timeLeft=0, running=false, ended=false;
+var footTimer=0, stoneArmed=false, maxLevelDone=-1;
+try{ maxLevelDone=parseInt(localStorage.getItem('echo_prog')||'-1',10); if(isNaN(maxLevelDone))maxLevelDone=-1; }catch(e){}
+
+var PR=9;        // 플레이어 반지름
+var MR=12;       // 몬스터 반지름
+var CATCH=17;    // 잡히는 거리
+
+function loadLevel(i){
+  lvlIndex=i; L=LEVELS[i];
+  walls=L.walls.map(function(w){ return {x:w.x,y:w.y,w:w.w,h:w.h,lit:0}; });
+  player={x:L.start.x,y:L.start.y,vx:0,vy:0};
+  key={x:L.key.x,y:L.key.y,lit:0,got:false};
+  exit={x:L.exit.x,y:L.exit.y,lit:0};
+  monsters=L.mon.map(function(m){
+    return {x:m.x,y:m.y,sp:m.sp,hx:m.x,hy:m.y,hunt:0,lit:0,glow:0,
+            wx:m.x,wy:m.y,wt:0,growl:0,homeX:m.x,homeY:m.y};
+  });
+  pulses=[]; stones=[]; particles=[];
+  hasKey=false; timeLeft=L.time; footTimer=0; stoneArmed=false; ended=false;
+  document.getElementById('lvlp').textContent=L.name;
+  updHud();
+  // 시작 시 주변 한 번 밝혀 방향 잡게
+  emitPulse(player.x,player.y,150,false,'#6fd0ff');
+}
+
+/* ---------- 펄스(에코) ---------- */
+function emitPulse(x,y,maxR,aggro,color){
+  pulses.push({x:x,y:y,r:0,maxR:maxR,life:0,color:color||'#5fb8ff',speed:maxR/0.42});
+  if(aggro){
+    for(var i=0;i<monsters.length;i++){
+      var m=monsters[i];
+      m.hunt=1; m.hx=x; m.hy=y;      // 소리 위치로 추격
+    }
+  }
+}
+function reveal(px,py,r,obj){ // 링이 obj 에 닿았는지
+  var dx=obj.x-px, dy=obj.y-py;
+  if(dx*dx+dy*dy <= r*r){ obj.lit=1; return true; }
+  return false;
+}
+// 벽 사각형과 원(px,py,r) 이 겹치면 lit
+function revealWall(px,py,r,w){
+  var nx=Math.max(w.x,Math.min(px,w.x+w.w));
+  var ny=Math.max(w.y,Math.min(py,w.y+w.h));
+  var dx=px-nx, dy=py-ny;
+  if(dx*dx+dy*dy <= r*r) w.lit=1;
+}
+
+/* ---------- 입력 ---------- */
+var keys={};
+window.addEventListener('keydown',function(e){
+  if(e.repeat) return;
+  var k=e.key.toLowerCase();
+  if(['arrowup','arrowdown','arrowleft','arrowright',' '].indexOf(k)>=0) e.preventDefault();
+  if(k===' '){ if(running) clap(); return; }
+  keys[k]=true;
+});
+window.addEventListener('keyup',function(e){ keys[e.key.toLowerCase()]=false; });
+
+// 조이스틱
+var stick=document.getElementById('stick'), knob=document.getElementById('knob');
+var stickId=null, stVec={x:0,y:0};
+function stickStart(e){ var t=e.changedTouches?e.changedTouches[0]:e; stickId=e.changedTouches?t.identifier:'m';
+  stickMove(e); e.preventDefault(); }
+function stickMove(e){
+  var t=null;
+  if(e.changedTouches){ for(var i=0;i<e.changedTouches.length;i++) if(e.changedTouches[i].identifier===stickId) t=e.changedTouches[i]; }
+  else t=e;
+  if(!t) return;
+  var r=stick.getBoundingClientRect(), cx=r.left+r.width/2, cy=r.top+r.height/2;
+  var dx=t.clientX-cx, dy=t.clientY-cy, mag=Math.hypot(dx,dy), max=r.width/2;
+  if(mag>max){ dx=dx/mag*max; dy=dy/mag*max; }
+  knob.style.transform='translate('+dx+'px,'+dy+'px)';
+  stVec.x=dx/max; stVec.y=dy/max;
+  e.preventDefault();
+}
+function stickEnd(e){ stickId=null; stVec.x=0; stVec.y=0; knob.style.transform='translate(0,0)'; }
+stick.addEventListener('touchstart',stickStart,{passive:false});
+stick.addEventListener('touchmove',stickMove,{passive:false});
+stick.addEventListener('touchend',stickEnd);
+stick.addEventListener('touchcancel',stickEnd);
+stick.addEventListener('mousedown',stickStart);
+window.addEventListener('mousemove',function(e){ if(stickId==='m') stickMove(e); });
+window.addEventListener('mouseup',function(e){ if(stickId==='m') stickEnd(e); });
+
+// 박수 / 돌 버튼
+function clap(){
+  if(!running) return;
+  emitPulse(player.x,player.y,540,true,'#ff9e5e');
+  noise(0.18,0.32,player.x); blip(180,0.2,'square',0.14,player.x,90);
+  vibrate(40);
+  ripParticles(player.x,player.y,'#ff9e5e',18);
+}
+document.getElementById('bClap').addEventListener('click',clap);
+var bStone=document.getElementById('bStone');
+bStone.addEventListener('click',function(){
+  stoneArmed=!stoneArmed; bStone.classList.toggle('armed',stoneArmed);
+});
+
+// 캔버스 클릭/탭 = 돌 던지기 (조준)
+function canvasPos(clientX,clientY){
+  return { x:(clientX-OX)/SC, y:(clientY-OY)/SC };
+}
+function throwStoneTo(lx,ly){
+  if(!running) return;
+  // 벽 밖/밖으로 나가지 않게 살짝 클램프
+  lx=Math.max(20,Math.min(AW-20,lx)); ly=Math.max(20,Math.min(AH-20,ly));
+  var dx=lx-player.x, dy=ly-player.y, d=Math.hypot(dx,dy)||1;
+  stones.push({x:player.x,y:player.y,tx:lx,ty:ly,vx:dx/d*520,vy:dy/d*520});
+  blip(320,0.12,'triangle',0.12,player.x,180); // 던지는 소리(작음)
+}
+cv.addEventListener('click',function(e){
+  if(!running) return;
+  var p=canvasPos(e.clientX,e.clientY);
+  throwStoneTo(p.x,p.y);
+});
+cv.addEventListener('touchstart',function(e){
+  if(!running) return;
+  var t=e.changedTouches[0], p=canvasPos(t.clientX,t.clientY);
+  throwStoneTo(p.x,p.y); e.preventDefault();
+},{passive:false});
+
+/* ---------- 파티클 ---------- */
+function ripParticles(x,y,color,n){
+  for(var i=0;i<n;i++){ var a=Math.random()*6.28, s=40+Math.random()*90;
+    particles.push({x:x,y:y,vx:Math.cos(a)*s,vy:Math.sin(a)*s,life:1,color:color}); }
+}
+
+/* ---------- 이동 & 충돌 ---------- */
+function moveWithCollision(o,r,dx,dy){
+  o.x+=dx;
+  for(var i=0;i<walls.length;i++){ var w=walls[i];
+    var nx=Math.max(w.x,Math.min(o.x,w.x+w.w)), ny=Math.max(w.y,Math.min(o.y,w.y+w.h));
+    var ddx=o.x-nx, ddy=o.y-ny;
+    if(ddx*ddx+ddy*ddy < r*r){
+      // x축만 되돌림
+      if(o.x<nx) o.x=w.x-r; else o.x=w.x+w.w+r;
+    }
+  }
+  o.y+=dy;
+  for(var j=0;j<walls.length;j++){ var w2=walls[j];
+    var nx2=Math.max(w2.x,Math.min(o.x,w2.x+w2.w)), ny2=Math.max(w2.y,Math.min(o.y,w2.y+w2.h));
+    var ex=o.x-nx2, ey=o.y-ny2;
+    if(ex*ex+ey*ey < r*r){
+      if(o.y<ny2) o.y=w2.y-r; else o.y=w2.y+w2.h+r;
+    }
+  }
+}
+
+/* ---------- 업데이트 ---------- */
+var last=0;
+function loop(ts){
+  if(!last) last=ts;
+  var dt=Math.min(0.05,(ts-last)/1000); last=ts;
+  if(running && !ended) update(dt);
+  render();
+  requestAnimationFrame(loop);
+}
+
+function update(dt){
+  // 시간
+  timeLeft-=dt;
+  if(timeLeft<=0){ timeLeft=0; endLose('시간 초과','제한 시간 안에 탈출하지 못했다.'); }
+  updHud();
+
+  // 입력 → 이동 방향
+  var mx=0,my=0;
+  if(keys['arrowleft']||keys['a']) mx-=1;
+  if(keys['arrowright']||keys['d']) mx+=1;
+  if(keys['arrowup']||keys['w']) my-=1;
+  if(keys['arrowdown']||keys['s']) my+=1;
+  mx+=stVec.x; my+=stVec.y;
+  var mag=Math.hypot(mx,my);
+  var moving=mag>0.12;
+  if(mag>1){ mx/=mag; my/=mag; }
+  var SPEED=140;
+  if(moving){
+    var bx=player.x, by=player.y;
+    moveWithCollision(player,PR,mx*SPEED*dt,my*SPEED*dt);
+    // 벽에 부딪혀 거의 못 움직였으면 진동
+    if(Math.hypot(player.x-bx,player.y-by) < SPEED*dt*0.3) { if(!player._bump){ vibrate(12); player._bump=1; } }
+    else player._bump=0;
+    // 발소리 펄스 (조용 · 몬스터 안 들림)
+    footTimer-=dt;
+    if(footTimer<=0){ footTimer=0.34;
+      emitPulse(player.x,player.y,132,false,'#5fb8ff');
+      blip(560,0.05,'sine',0.05,player.x);
+    }
+  } else { footTimer=Math.min(footTimer,0.05); player._bump=0; }
+
+  // 펄스 진행 + 반사(지형 밝히기)
+  for(var i=pulses.length-1;i>=0;i--){ var p=pulses[i];
+    p.life+=dt; p.r=Math.min(p.maxR,p.r+p.speed*dt);
+    for(var w=0;w<walls.length;w++) revealWall(p.x,p.y,p.r,walls[w]);
+    reveal(p.x,p.y,p.r,key);
+    reveal(p.x,p.y,p.r,exit);
+    for(var m=0;m<monsters.length;m++) reveal(p.x,p.y,p.r,monsters[m]);
+    if(p.r>=p.maxR && p.life>0.5) pulses.splice(i,1);
+  }
+
+  // 돌
+  for(var s=stones.length-1;s>=0;s--){ var st=stones[s];
+    var sdx=st.tx-st.x, sdy=st.ty-st.y, sd=Math.hypot(sdx,sdy);
+    var step=Math.hypot(st.vx,st.vy)*dt;
+    if(sd<=step+2){
+      // 착지 → 큰 소리, 그 지점으로 몬스터 유인
+      emitPulse(st.tx,st.ty,300,false,'#9ff0ff'); // 밝히되(내가 이미 던진 곳)
+      for(var mm=0;mm<monsters.length;mm++){ monsters[mm].hunt=1; monsters[mm].hx=st.tx; monsters[mm].hy=st.ty; }
+      noise(0.16,0.28,st.tx); blip(150,0.16,'square',0.12,st.tx,70);
+      ripParticles(st.tx,st.ty,'#9ff0ff',14);
+      stones.splice(s,1);
+    } else { st.x+=st.vx*dt; st.y+=st.vy*dt; }
+  }
+
+  // 감쇠(lit fade)
+  var fade=dt/1.25;
+  for(var w2=0;w2<walls.length;w2++) if(walls[w2].lit>0) walls[w2].lit=Math.max(0,walls[w2].lit-fade);
+  if(key.lit>0) key.lit=Math.max(0,key.lit-fade);
+  if(exit.lit>0) exit.lit=Math.max(0,exit.lit-fade);
+
+  // 몬스터
+  for(var k=0;k<monsters.length;k++){ var M=monsters[k];
+    if(M.lit>0) M.lit=Math.max(0,M.lit-dt/1.0);
+    var tx,ty,spd;
+    if(M.hunt>0){
+      tx=M.hx; ty=M.hy; spd=M.sp;
+      // 목표 도달하면 잠시 배회 후 진정
+      if(Math.hypot(M.x-tx,M.y-ty)<14){ M.hunt-=dt/2.4; if(M.hunt<0)M.hunt=0;
+        M.wt-=dt; if(M.wt<=0){ M.wt=0.8+Math.random()*0.8; M.wx=M.hx+(Math.random()*120-60); M.wy=M.hy+(Math.random()*120-60);}
+        tx=M.wx; ty=M.wy; spd=M.sp*0.6;
+      }
+    } else {
+      // 배회: 홈 주변 랜덤 순찰
+      M.wt-=dt;
+      if(M.wt<=0){ M.wt=1.4+Math.random()*1.6; M.wx=M.homeX+(Math.random()*220-110); M.wy=M.homeY+(Math.random()*220-110); }
+      tx=M.wx; ty=M.wy; spd=M.sp*0.5;
+    }
+    var dx=tx-M.x, dy=ty-M.y, d=Math.hypot(dx,dy);
+    if(d>2){ moveWithCollision(M,MR,dx/d*spd*dt,dy/d*spd*dt); }
+
+    // 근접 경고 (아주 가까우면 은은한 붉은 글로우 + 으르렁 + 진동)
+    var pd=Math.hypot(M.x-player.x,M.y-player.y);
+    var warn=Math.max(0, 1-(pd-CATCH)/120);
+    M.glow=warn;
+    if(warn>0.35){ M.growl-=dt; if(M.growl<=0){ M.growl=0.5; blip(70+warn*30,0.22,'sawtooth',0.05+warn*0.06,M.x,60); if(warn>0.7) vibrate(18);} }
+    if(pd<CATCH+MR-2){ endLose('잡혔다…','몬스터에게 발각됐다. 더 조용히 움직여라.'); }
+  }
+
+  // 파티클
+  for(var pp=particles.length-1;pp>=0;pp--){ var P=particles[pp];
+    P.life-=dt*1.6; P.x+=P.vx*dt; P.y+=P.vy*dt; P.vx*=0.94; P.vy*=0.94;
+    if(P.life<=0) particles.splice(pp,1);
+  }
+
+  // 열쇠 획득
+  if(!hasKey && Math.hypot(player.x-key.x,player.y-key.y)<PR+12){
+    hasKey=true; key.got=true;
+    blip(880,0.12,'triangle',0.2,player.x,1320); setTimeout(function(){blip(1320,0.16,'triangle',0.16);},90);
+    vibrate([20,40,20]); ripParticles(key.x,key.y,'#ffd27a',20);
+    var kp=document.getElementById('keyp'); kp.textContent='🔑 열쇠 획득!'; kp.classList.add('got');
+    emitPulse(exit.x,exit.y,60,false,'#6cff9e'); // 출구 살짝 알려줌
+  }
+  // 탈출
+  if(hasKey && Math.hypot(player.x-exit.x,player.y-exit.y)<PR+14){
+    endWin();
+  }
+}
+
+/* ---------- 렌더 ---------- */
+function render(){
+  ctx.clearRect(0,0,AW,AH);
+  // 완전한 검정 배경 + 아주 옅은 비네트
+  ctx.fillStyle='#000'; ctx.fillRect(0,0,AW,AH);
+  if(!L){ return; }
+
+  ctx.lineJoin='round'; ctx.lineCap='round';
+
+  // 벽 (밝혀진 만큼 네온 외곽선)
+  for(var i=0;i<walls.length;i++){ var w=walls[i]; if(w.lit<=0.02) continue;
+    var a=w.lit;
+    ctx.save();
+    ctx.shadowColor='rgba(90,180,255,'+(0.7*a)+')'; ctx.shadowBlur=12*a;
+    ctx.strokeStyle='rgba(120,200,255,'+(0.85*a)+')'; ctx.lineWidth=2;
+    ctx.fillStyle='rgba(30,70,130,'+(0.18*a)+')';
+    ctx.fillRect(w.x,w.y,w.w,w.h);
+    ctx.strokeRect(w.x+0.5,w.y+0.5,w.w-1,w.h-1);
+    ctx.restore();
+  }
+
+  // 펄스 링
+  for(var p=0;p<pulses.length;p++){ var P=pulses[p];
+    var fade=1-P.r/P.maxR; if(fade<=0) continue;
+    ctx.save();
+    ctx.strokeStyle=P.color; ctx.globalAlpha=Math.max(0,fade*0.6);
+    ctx.shadowColor=P.color; ctx.shadowBlur=14; ctx.lineWidth=2.5;
+    ctx.beginPath(); ctx.arc(P.x,P.y,P.r,0,6.2832); ctx.stroke();
+    ctx.restore();
+  }
+
+  // 열쇠
+  if(!hasKey && key.lit>0.02){ var ka=key.lit;
+    ctx.save(); ctx.globalAlpha=ka;
+    ctx.shadowColor='#ffd27a'; ctx.shadowBlur=18;
+    ctx.fillStyle='#ffd27a'; ctx.font='20px serif'; ctx.textAlign='center'; ctx.textBaseline='middle';
+    ctx.fillText('🔑',key.x,key.y);
+    ctx.restore();
+  }
+
+  // 출구 (열쇠 있으면 초록, 없으면 잠긴 회청색)
+  if(exit.lit>0.02){ var ea=exit.lit;
+    ctx.save(); ctx.globalAlpha=ea;
+    var col=hasKey?'#6cff9e':'#5b6b9a';
+    ctx.shadowColor=col; ctx.shadowBlur=16; ctx.strokeStyle=col; ctx.lineWidth=2.5;
+    ctx.strokeRect(exit.x-16,exit.y-20,32,40);
+    ctx.fillStyle=col; ctx.globalAlpha=ea*0.9; ctx.font='16px serif'; ctx.textAlign='center'; ctx.textBaseline='middle';
+    ctx.fillText(hasKey?'🚪':'🔒',exit.x,exit.y);
+    ctx.restore();
+  }
+
+  // 돌 (희미한 자취)
+  for(var s=0;s<stones.length;s++){ var st=stones[s];
+    ctx.save(); ctx.globalAlpha=0.5; ctx.fillStyle='#9ff0ff';
+    ctx.beginPath(); ctx.arc(st.x,st.y,3,0,6.2832); ctx.fill(); ctx.restore();
+  }
+
+  // 몬스터: 밝혀졌을 때 붉은 네온 + 근접 글로우
+  for(var m=0;m<monsters.length;m++){ var M=monsters[m];
+    var a=Math.max(M.lit, M.glow*0.6);
+    if(a<=0.02) continue;
+    ctx.save();
+    var danger= M.hunt>0 ? '#ff5a5a' : '#ff8a6a';
+    ctx.shadowColor=danger; ctx.shadowBlur=20*a;
+    ctx.strokeStyle='rgba(255,90,90,'+Math.min(1,a)+')'; ctx.lineWidth=2.4;
+    ctx.fillStyle='rgba(120,20,20,'+(0.28*a)+')';
+    // 삐죽한 몸체
+    ctx.beginPath();
+    for(var t=0;t<8;t++){ var ang=t/8*6.2832; var rr=MR*(t%2?0.62:1);
+      var px=M.x+Math.cos(ang)*rr, py=M.y+Math.sin(ang)*rr;
+      if(t===0)ctx.moveTo(px,py); else ctx.lineTo(px,py); }
+    ctx.closePath(); ctx.fill(); ctx.stroke();
+    // 눈
+    ctx.fillStyle='rgba(255,230,120,'+Math.min(1,a)+')';
+    ctx.beginPath(); ctx.arc(M.x-3.5,M.y-1,1.6,0,6.28); ctx.arc(M.x+3.5,M.y-1,1.6,0,6.28); ctx.fill();
+    ctx.restore();
+  }
+
+  // 파티클
+  for(var pa=0;pa<particles.length;pa++){ var Pt=particles[pa];
+    ctx.save(); ctx.globalAlpha=Math.max(0,Pt.life); ctx.fillStyle=Pt.color;
+    ctx.beginPath(); ctx.arc(Pt.x,Pt.y,2,0,6.2832); ctx.fill(); ctx.restore();
+  }
+
+  // 플레이어 (항상 은은하게 보임 — 자기 위치는 앎)
+  ctx.save();
+  var pulse=0.6+0.4*Math.sin(last/220);
+  ctx.shadowColor='#bfe6ff'; ctx.shadowBlur=14+6*pulse;
+  ctx.fillStyle='#eaf4ff';
+  ctx.beginPath(); ctx.arc(player.x,player.y,PR,0,6.2832); ctx.fill();
+  ctx.strokeStyle='rgba(160,210,255,.8)'; ctx.lineWidth=2; ctx.stroke();
+  // 열쇠 소지 표시
+  if(hasKey){ ctx.fillStyle='#ffd27a'; ctx.font='11px serif'; ctx.textAlign='center'; ctx.fillText('🔑',player.x,player.y-PR-8); }
+  ctx.restore();
+
+  // 조준선(돌 무장 시 살짝)
+  // (모바일은 탭 위치로 던지므로 표시는 생략)
+}
+
+/* ---------- HUD & 종료 ---------- */
+function updHud(){
+  document.getElementById('timep').innerHTML='남은 시간 <b>'+Math.ceil(timeLeft)+'</b>s';
+}
+var fade=document.getElementById('fade');
+function endWin(){
+  if(ended) return; ended=true; running=false;
+  blip(660,0.14,'triangle',0.2,null,990); setTimeout(function(){blip(990,0.18,'triangle',0.18);},110);
+  setTimeout(function(){blip(1320,0.3,'triangle',0.16);},230);
+  vibrate([30,50,30,50,60]);
+  if(lvlIndex>maxLevelDone){ maxLevelDone=lvlIndex; try{localStorage.setItem('echo_prog',String(maxLevelDone));}catch(e){} }
+  var last=lvlIndex>=LEVELS.length-1;
+  document.getElementById('winMsg').innerHTML= last
+    ? '모든 층을 탈출했다! 완벽한 어둠 속 청각의 승리.'
+    : L.name+' 탈출 성공. 남은 시간 <b style="color:#9ff0ff">'+Math.ceil(timeLeft)+'초</b>.';
+  var row=document.getElementById('winRow'); row.innerHTML='';
+  if(!last){ var b=document.createElement('button'); b.textContent='다음 층 →';
+    b.onclick=function(){ show('winS',false); go(lvlIndex+1); }; row.appendChild(b); }
+  var r=document.createElement('button'); r.textContent= last?'처음부터':'이 층 다시';
+  r.onclick=function(){ show('winS',false); go(last?0:lvlIndex); }; row.appendChild(r);
+  show('winS',true);
+}
+function endLose(title,msg){
+  if(ended) return; ended=true; running=false;
+  blip(200,0.3,'sawtooth',0.2,player.x,60); noise(0.3,0.2,player.x);
+  vibrate([80,40,120]);
+  document.getElementById('loseTitle').textContent=title;
+  document.getElementById('loseMsg').textContent=msg;
+  show('loseS',true);
+}
+function show(id,on){ document.getElementById(id).style.display=on?'flex':'none'; }
+
+function go(i){
+  fade.style.opacity='1';
+  setTimeout(function(){
+    loadLevel(i);
+    running=true; ended=false; last=0;
+    var kp=document.getElementById('keyp'); kp.textContent='🔑 열쇠 없음'; kp.classList.remove('got');
+    fade.style.opacity='0';
+  },180);
+}
+
+/* ---------- 시작 ---------- */
+document.getElementById('startBtn').addEventListener('click',function(){
+  audio(); show('title',false); go(0);
+});
+document.getElementById('retryBtn').addEventListener('click',function(){
+  show('loseS',false); go(lvlIndex);
+});
+
+layout();
+loadLevel(0);           // 부팅 시 레벨 로드(렌더 가드용)
+requestAnimationFrame(loop);
+
+// 디버그용 노출
+window.__echo={get L(){return L;},get player(){return player;},get monsters(){return monsters;},
+  get walls(){return walls;},get key(){return key;},get exit(){return exit;},
+  get hasKey(){return hasKey;},get timeLeft(){return timeLeft;},get running(){return running;},
+  get ended(){return ended;},
+  loadLevel:loadLevel, clap:clap, throwStoneTo:throwStoneTo,
+  setRunning:function(v){running=v;}, emitPulse:emitPulse,
+  moveTo:function(x,y){player.x=x;player.y=y;}, step:function(dt){update(dt);} };
+})();
+</script>
+</body>
+</html>
