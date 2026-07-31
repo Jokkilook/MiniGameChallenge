@@ -1,0 +1,338 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+<title>접다 · Fold</title>
+<style>
+  :root{ --paper:#f3ecdd; --line:#2b2620; --seal:#c0392b; --blue:#2f6f9f; --sub:#7a6f5a; }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  html,body{margin:0;height:100%;overflow:hidden;background:#241f18;color:var(--line);
+    font-family:"Segoe UI","Malgun Gothic",sans-serif;-webkit-font-smoothing:antialiased;-webkit-user-select:none;user-select:none;touch-action:none}
+  #wrap{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:#241f18}
+  canvas{display:block;touch-action:none;box-shadow:0 10px 60px rgba(0,0,0,.6)}
+  #hud{position:fixed;top:0;left:0;right:0;padding:10px 16px;display:flex;gap:10px;align-items:center;justify-content:center;
+    pointer-events:none;z-index:5;font-size:13px;color:#f3ecdd}
+  #hud .pill{background:rgba(43,38,32,.6);border:1px solid rgba(243,236,221,.25);border-radius:6px;padding:5px 12px;letter-spacing:1px;font-weight:600}
+  #hud .pill b{color:#e8c47a}
+  .hbtn{pointer-events:auto;cursor:pointer;color:#e8c47a}
+  .screen{position:fixed;inset:0;z-index:20;display:none;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:26px;
+    background:radial-gradient(120% 100% at 50% 35%,#f3ecdd,#ddd2ba)}
+  .screen.on{display:flex}
+  .screen h1{margin:0 0 4px;font-size:clamp(30px,9vw,64px);font-weight:900;letter-spacing:10px;color:#2b2620}
+  .screen .sub{color:#c0392b;letter-spacing:6px;font-size:13px;margin-bottom:14px;font-weight:700}
+  .screen p{color:#5a4f3c;font-size:15px;line-height:1.9;max-width:460px} .screen p b{color:#2b2620}
+  button.go{margin-top:22px;pointer-events:auto;cursor:pointer;font:inherit;font-weight:800;font-size:17px;letter-spacing:3px;
+    color:#f3ecdd;background:#2b2620;border:0;padding:14px 42px;border-radius:4px;box-shadow:0 8px 24px -8px #000}
+  button.go:active{transform:translateY(1px)}
+  .row{display:flex;gap:10px;margin-top:16px;flex-wrap:wrap;justify-content:center}
+  .row button{pointer-events:auto;cursor:pointer;font:inherit;font-weight:700;font-size:14px;color:#2b2620;
+    background:rgba(43,38,32,.08);border:1px solid rgba(43,38,32,.3);border-radius:4px;padding:11px 20px}
+  .stars{font-size:34px;letter-spacing:10px;margin:6px 0;color:#c0392b}
+  .hint{color:#8a7d64;font-size:12.5px;margin-top:16px;line-height:1.7}
+  #tut{position:fixed;left:50%;bottom:6%;transform:translateX(-50%);z-index:15;width:min(90vw,520px);
+    background:rgba(43,38,32,.93);color:#f3ecdd;border:1px solid rgba(243,236,221,.3);border-radius:8px;padding:13px 18px;text-align:center;
+    display:none;box-shadow:0 12px 40px rgba(0,0,0,.5)}
+  #tut .st{font-size:11px;letter-spacing:2px;color:#e8c47a;font-weight:800;margin-bottom:4px}
+  #tut .tx{font-size:14.5px;line-height:1.55} #tut .tx b{color:#e8c47a}
+  #tut .skip{margin-top:8px;cursor:pointer;color:#b7ad96;text-decoration:underline;font-size:12px}
+</style>
+</head>
+<body>
+<div id="wrap"><canvas id="cv"></canvas></div>
+
+<div id="hud">
+  <span class="pill" id="lvlPill">壹</span>
+  <span class="pill">접기 <b id="foldV">0</b> 남음</span>
+  <span class="pill hbtn" id="undoBtn">↶ 되돌리기</span>
+  <span class="pill hbtn" id="resetBtn">↺ 다시</span>
+</div>
+
+<div class="screen on" id="title">
+  <div class="sub">FOLD</div>
+  <h1>접다</h1>
+  <p style="margin-top:8px">세상을 <b>종이처럼 접어</b> 끊긴 길을 이어라.<br>접으면 반대편이 <b>거울처럼</b> 넘어온다.</p>
+  <p class="hint">드래그로 접는 선을 긋고 방향을 정하세요 · 마우스/터치</p>
+  <button class="go" id="startBtn">시작</button>
+</div>
+
+<div class="screen" id="result">
+  <div class="sub">CLEAR</div>
+  <div class="stars" id="resStars"></div>
+  <h1 id="resTitle" style="font-size:clamp(24px,5vw,34px);letter-spacing:4px">모두 이었다</h1>
+  <p id="resMsg"></p>
+  <div class="row" id="resRow"></div>
+</div>
+
+<div id="tut">
+  <div class="st" id="tutStep">가르침 一</div>
+  <div class="tx" id="tutTx"></div>
+  <div class="skip" id="tutSkip">건너뛰기</div>
+</div>
+
+<script>
+"use strict";
+(function(){
+/* =========================================================================
+   접다 (Fold) — 종이 접기 공간 퍼즐
+   버그방지: 오디오 resume / resize+rect / dt기반 애니 / 클램핑+역루프 / 리스너 1회
+   ========================================================================= */
+var cv=document.getElementById('cv'), ctx=cv.getContext('2d');
+var AW=900, AH=560, DPR=1, SC=1;
+function layout(){                              // [규칙2]
+  DPR=Math.min(2,window.devicePixelRatio||1);
+  var vw=window.innerWidth, vh=window.innerHeight; SC=Math.min(vw/AW,vh/AH);
+  var w=Math.round(AW*SC), h=Math.round(AH*SC);
+  cv.style.width=w+'px'; cv.style.height=h+'px'; cv.width=Math.round(w*DPR); cv.height=Math.round(h*DPR);
+  ctx.setTransform(DPR*SC,0,0,DPR*SC,0,0);
+}
+window.addEventListener('resize',layout);        // [규칙5]
+
+/* ---------- 오디오 ---------- */
+var AC=null, master=null;
+function ensureAudio(){ if(!AC){ try{ AC=new (window.AudioContext||window.webkitAudioContext)(); master=AC.createGain(); master.gain.value=0.5; master.connect(AC.destination);}catch(e){} }
+  if(AC&&AC.state==='suspended'){ AC.resume(); } }
+function tone(f,dur,type,vol,to){ ensureAudio(); if(!AC)return; var t=AC.currentTime,o=AC.createOscillator(),g=AC.createGain();
+  o.type=type||'sine'; o.frequency.setValueAtTime(f,t); if(to)o.frequency.exponentialRampToValueAtTime(Math.max(30,to),t+dur);
+  g.gain.setValueAtTime(0.0001,t); g.gain.exponentialRampToValueAtTime(vol||0.14,t+0.01); g.gain.exponentialRampToValueAtTime(0.0001,t+dur);
+  o.connect(g); g.connect(master||AC.destination); o.start(t); o.stop(t+dur+0.02); }
+function sndFold(){ tone(320,0.14,'triangle',0.1,140); tone(180,0.08,'sine',0.06); }
+function sndConnect(){ [523,659,784,1046].forEach(function(f,i){setTimeout(function(){tone(f,0.16,'triangle',0.13);},i*90);}); }
+function sndNo(){ tone(180,0.12,'sawtooth',0.08,120); }
+function vibrate(ms){ try{if(navigator.vibrate)navigator.vibrate(ms);}catch(e){} }
+
+/* ---------- 접기 엔진 (순수) ---------- */
+var STEPUP=30, STEPGAP=28;
+function reflectX(x,cx){ return 2*cx-x; }
+function clipFold(segs, cx, dir){
+  var out=[];
+  for(var i=0;i<segs.length;i++){ var x1=segs[i].x1,x2=segs[i].x2,y=segs[i].y;
+    if(dir==='L'){ // 오른쪽을 왼쪽으로 접음 → 결과 x<=cx
+      if(x1<cx) out.push({x1:x1,x2:Math.min(x2,cx),y:y});
+      if(x2>cx){ var r1=reflectX(Math.max(x1,cx),cx), r2=reflectX(x2,cx); out.push({x1:Math.min(r1,r2),x2:Math.max(r1,r2),y:y}); }
+    } else {       // 왼쪽을 오른쪽으로 접음 → 결과 x>=cx
+      if(x2>cx) out.push({x1:Math.max(x1,cx),x2:x2,y:y});
+      if(x1<cx){ var q1=reflectX(x1,cx), q2=reflectX(Math.min(x2,cx),cx); out.push({x1:Math.min(q1,q2),x2:Math.max(q1,q2),y:y}); }
+    }
+  }
+  return mergeSegs(out);
+}
+function foldPoint(p,cx,dir){ if((dir==='L'&&p.x>cx)||(dir==='R'&&p.x<cx)) return {x:reflectX(p.x,cx),y:p.y}; return {x:p.x,y:p.y}; }
+function mergeSegs(segs){
+  segs=segs.filter(function(s){return s.x2-s.x1>1;});
+  segs.sort(function(a,b){ return a.y-b.y || a.x1-b.x1; });
+  var out=[];
+  for(var i=0;i<segs.length;i++){ var s=segs[i]; var m=null;
+    for(var j=0;j<out.length;j++){ if(Math.abs(out[j].y-s.y)<3 && s.x1<=out[j].x2+2 && s.x2>=out[j].x1-2){ m=out[j]; break; } }
+    if(m){ m.x1=Math.min(m.x1,s.x1); m.x2=Math.max(m.x2,s.x2); } else out.push({x1:s.x1,x2:s.x2,y:s.y}); }
+  return out;
+}
+function segAt(segs,p){ for(var i=0;i<segs.length;i++){ var s=segs[i]; if(p.x>=s.x1-6&&p.x<=s.x2+6&&Math.abs(p.y-s.y)<8)return i; } return -1; }
+function adj(a,b){ var dy=Math.abs(a.y-b.y); var gap=Math.max(0, Math.max(a.x1,b.x1)-Math.min(a.x2,b.x2)); return dy<=STEPUP && gap<=STEPGAP; }
+function connectedPath(segs,start,goal){
+  var si=segAt(segs,start), gi=segAt(segs,goal); if(si<0||gi<0)return null;
+  if(si===gi)return [si];
+  var prev={}; prev[si]=-1; var q=[si], seen={}; seen[si]=1;
+  while(q.length){ var c=q.shift(); if(c===gi){ var path=[],k=gi; while(k!==-1){path.unshift(k);k=prev[k];} return path; }
+    for(var j=0;j<segs.length;j++){ if(seen[j])continue; if(adj(segs[c],segs[j])){ seen[j]=1; prev[j]=c; q.push(j); } } }
+  return null;
+}
+// 접기 해답 탐색(검증용)
+function solve(level, maxDepth){
+  var creases=[]; for(var x=50;x<=850;x+=25)creases.push(x);
+  function rec(segs,st,gl,depth,seq){
+    if(connectedPath(segs,st,gl)) return seq;
+    if(depth>=maxDepth) return null;
+    for(var c=0;c<creases.length;c++){ for(var d=0;d<2;d++){ var dir=d?'R':'L';
+      var ns=clipFold(segs,creases[c],dir), nst=foldPoint(st,creases[c],dir), ngl=foldPoint(gl,creases[c],dir);
+      var r=rec(ns,nst,ngl,depth+1,seq.concat([{cx:creases[c],dir:dir}])); if(r)return r; } }
+    return null;
+  }
+  return rec(level.segs.map(function(s){return {x1:s.x1,x2:s.x2,y:s.y};}), {x:level.start.x,y:level.start.y},{x:level.goal.x,y:level.goal.y},0,[]);
+}
+
+/* ---------- 레벨 ---------- */
+function S(x1,x2,y){ return {x1:x1,x2:x2,y:y}; }
+var LEVELS=[
+  { tut:'一', maxFolds:2, hint:'오른쪽 발판을 <b>왼쪽으로 접어</b> 끊긴 길을 이으세요. (드래그)',
+    segs:[ S(60,220,320), S(680,860,320) ], start:{x:100,y:320}, goal:{x:820,y:320} },
+  { tut:'二', maxFolds:2, hint:'<b>거울처럼</b> 넘어옵니다. 접는 위치가 곧 답.',
+    segs:[ S(60,200,300), S(420,560,300), S(760,860,300) ], start:{x:90,y:300}, goal:{x:820,y:300} },
+  { tut:'三', maxFolds:2, hint:'<b>높이</b>가 달라도 살짝은 오르내릴 수 있어요.',
+    segs:[ S(60,220,360), S(420,560,300), S(700,860,360) ], start:{x:100,y:360}, goal:{x:820,y:360} },
+  { tut:null, name:'거울 계곡', maxFolds:2, hint:'',
+    segs:[ S(60,180,300), S(300,420,360), S(560,700,360), S(760,860,300) ], start:{x:100,y:300}, goal:{x:820,y:300} },
+  { tut:null, name:'엇갈림', maxFolds:2, hint:'',
+    segs:[ S(60,180,320), S(360,460,240), S(560,660,400), S(780,860,320) ], start:{x:100,y:320}, goal:{x:820,y:320} },
+  { tut:null, name:'거울 미궁', maxFolds:2, hint:'',
+    segs:[ S(60,170,300), S(260,360,380), S(470,560,260), S(640,730,380), S(790,860,300) ], start:{x:100,y:300}, goal:{x:825,y:300} },
+];
+
+/* ---------- 라이브 ---------- */
+var mode='title', L=null, segs=null, start=null, goal=null, foldsLeft=0, lvlIdx=0, undoStack=[];
+var tutOn=false;
+var anim={fold:null, walk:null}; // 접기/걷기 애니메이션
+function loadLevel(i){ lvlIdx=i; L=LEVELS[i];
+  segs=L.segs.map(function(s){return {x1:s.x1,x2:s.x2,y:s.y};}); start={x:L.start.x,y:L.start.y}; goal={x:L.goal.x,y:L.goal.y};
+  foldsLeft=L.maxFolds; undoStack=[]; anim.fold=null; anim.walk=null; mode='play';
+  document.getElementById('lvlPill').textContent = i<3?['一','二','三'][i]:(L.name||'?');
+  document.getElementById('foldV').textContent=foldsLeft;
+  if(tutOn){ var box=document.getElementById('tut'); box.style.display='block';
+    document.getElementById('tutStep').textContent='가르침 '+['一','二','三'][i]; document.getElementById('tutTx').innerHTML=L.hint; }
+  else document.getElementById('tut').style.display='none';
+}
+function snapshot(){ return { segs:segs.map(function(s){return {x1:s.x1,x2:s.x2,y:s.y};}), start:{x:start.x,y:start.y}, goal:{x:goal.x,y:goal.y}, folds:foldsLeft }; }
+function restore(s){ segs=s.segs.map(function(x){return {x1:x.x1,x2:x.x2,y:x.y};}); start={x:s.start.x,y:s.start.y}; goal={x:s.goal.x,y:s.goal.y}; foldsLeft=s.folds; document.getElementById('foldV').textContent=foldsLeft; }
+
+/* 입력: 드래그로 크레이즈+방향 */
+var dragging=false, dragStart=null, dragNow=null;
+function toLogic(cx,cy){ var r=cv.getBoundingClientRect(); return { x:(cx-r.left)/r.width*AW, y:(cy-r.top)/r.height*AH }; }
+function down(cx,cy){ ensureAudio(); if(mode!=='play'||anim.fold||anim.walk||foldsLeft<=0)return; var p=toLogic(cx,cy); dragging=true; dragStart=p; dragNow=p; }
+function moveP(cx,cy){ if(!dragging)return; dragNow=toLogic(cx,cy); }
+function snapX(x){ return Math.round(x/12)*12; }   // 정밀도 보정(스냅)
+function upP(){ if(!dragging)return; dragging=false; var dx=dragNow.x-dragStart.x;
+  if(Math.abs(dx)<24){ return; } // 너무 짧으면 무시
+  var cx=snapX(dragStart.x); var dir = dx<0 ? 'L' : 'R'; // 왼쪽으로 끌면 오른쪽을 접음(L)
+  commitFold(cx,dir);
+}
+cv.addEventListener('mousedown',function(e){ down(e.clientX,e.clientY); });
+window.addEventListener('mousemove',function(e){ moveP(e.clientX,e.clientY); });
+window.addEventListener('mouseup',upP);
+cv.addEventListener('touchstart',function(e){ var t=e.touches[0]; down(t.clientX,t.clientY); e.preventDefault(); },{passive:false});
+cv.addEventListener('touchmove',function(e){ var t=e.touches[0]; moveP(t.clientX,t.clientY); e.preventDefault(); },{passive:false});
+cv.addEventListener('touchend',function(e){ upP(); e.preventDefault(); },{passive:false});
+document.getElementById('undoBtn').addEventListener('click',function(){ if(undoStack.length&&mode==='play'&&!anim.fold&&!anim.walk){ restore(undoStack.pop()); sndFold(); } });
+document.getElementById('resetBtn').addEventListener('click',function(){ if(mode==='play')loadLevel(lvlIdx); });
+window.addEventListener('keydown',function(e){ if(e.key.toLowerCase()==='z'&&undoStack.length){ restore(undoStack.pop()); } if(e.key.toLowerCase()==='r')loadLevel(lvlIdx); });
+
+function commitFold(cx,dir){
+  undoStack.push(snapshot());
+  // 접기 애니메이션(0.4s) 후 실제 적용
+  anim.fold={cx:cx,dir:dir,t:0,dur:0.42,before:snapshot()};
+  sndFold(); vibrate(15); foldsLeft--; document.getElementById('foldV').textContent=foldsLeft;
+}
+function finishFold(){ var f=anim.fold; anim.fold=null;
+  segs=clipFold(segs,f.cx,f.dir); start=foldPoint(start,f.cx,f.dir); goal=foldPoint(goal,f.cx,f.dir);
+  var path=connectedPath(segs,start,goal);
+  if(path){ startWalk(path); }
+  else if(foldsLeft<=0){ setTimeout(function(){ if(mode==='play')loadLevel(lvlIdx); }, 700); sndNo(); }
+}
+function startWalk(path){ mode='walk'; sndConnect();
+  // 경로 세그먼트 중심을 잇는 점열
+  var pts=[{x:start.x,y:start.y}];
+  for(var i=0;i<path.length;i++){ var s=segs[path[i]]; pts.push({x:(s.x1+s.x2)/2,y:s.y-8}); }
+  pts.push({x:goal.x,y:goal.y-8});
+  anim.walk={pts:pts, i:0, t:0, x:start.x, y:start.y-8, done:false};
+  vibrate([20,40,20]);
+}
+
+/* ---------- 루프 ---------- */
+var last=0;
+function loop(now){ if(!last)last=now; var dt=Math.min(0.033,(now-last)/1000); last=now;   // [규칙3]
+  if(anim.fold){ anim.fold.t+=dt; if(anim.fold.t>=anim.fold.dur)finishFold(); }
+  if(anim.walk){ var w=anim.walk; w.t+=dt*2.2;
+    if(w.i<w.pts.length-1){ var a=w.pts[w.i], b=w.pts[w.i+1]; var f=Math.min(1,w.t);
+      w.x=a.x+(b.x-a.x)*f; w.y=a.y+(b.y-a.y)*f; if(f>=1){ w.i++; w.t=0; } }
+    else if(!w.done){ w.done=true; setTimeout(nextLevel, 500); } }
+  render();
+  requestAnimationFrame(loop);
+}
+function nextLevel(){
+  if(tutOn){ if(lvlIdx<2)loadLevel(lvlIdx+1); else { tutOn=false; document.getElementById('tut').style.display='none'; loadLevel(3);} return; }
+  if(lvlIdx>=LEVELS.length-1){ mode='result'; var used=L.maxFolds-foldsLeft;
+    document.getElementById('resStars').textContent = used<=L.maxFolds-1?'★★★':'★★☆';
+    document.getElementById('resTitle').textContent='모든 길을 이었다';
+    document.getElementById('resMsg').textContent='종이접기의 달인!';
+    var row=document.getElementById('resRow'); row.innerHTML=''; var b=document.createElement('button'); b.textContent='처음부터'; b.onclick=function(){document.getElementById('result').classList.remove('on');loadLevel(0);}; row.appendChild(b);
+    document.getElementById('result').classList.add('on');
+  } else loadLevel(lvlIdx+1);
+}
+
+/* ---------- 렌더 ---------- */
+function render(){
+  ctx.clearRect(0,0,AW,AH); ctx.fillStyle='#f3ecdd'; ctx.fillRect(0,0,AW,AH);
+  // 종이 결
+  ctx.fillStyle='rgba(120,100,70,.035)'; for(var i=0;i<50;i++){ var x=(i*137.5)%AW,y=(i*83.3)%AH; ctx.fillRect(x,y,2,2); }
+  ctx.strokeStyle='rgba(43,38,32,.06)'; ctx.lineWidth=1; ctx.strokeRect(24,24,AW-48,AH-48);
+  if(!L){ return; }
+  var foldAmt = anim.fold? Math.min(1,anim.fold.t/anim.fold.dur) : 0;
+  // 발판
+  var drawSegs = anim.fold? clipFoldPreview(segs, anim.fold.cx, anim.fold.dir, foldAmt) : {stat:segs, moving:[]};
+  // 고정 발판
+  ctx.lineCap='round'; ctx.lineWidth=10; ctx.strokeStyle='#2b2620';
+  for(var s=0;s<segs.length;s++){ if(anim.fold)break; var g=segs[s]; ctx.beginPath(); ctx.moveTo(g.x1,g.y); ctx.lineTo(g.x2,g.y); ctx.stroke(); }
+  if(anim.fold){ // 접히는 중: 넘어가는 쪽 반투명
+    var f=anim.fold;
+    for(var s2=0;s2<segs.length;s2++){ var g2=segs[s2];
+      // 접히지 않는 부분
+      ctx.strokeStyle='#2b2620'; ctx.globalAlpha=1; ctx.beginPath();
+      if(f.dir==='L'){ if(g2.x1<f.cx){ ctx.moveTo(g2.x1,g2.y); ctx.lineTo(Math.min(g2.x2,f.cx),g2.y);} }
+      else { if(g2.x2>f.cx){ ctx.moveTo(Math.max(g2.x1,f.cx),g2.y); ctx.lineTo(g2.x2,g2.y);} }
+      ctx.stroke();
+      // 접히는 부분(보간: 현재→반사 위치)
+      var hasFold = f.dir==='L'? g2.x2>f.cx : g2.x1<f.cx;
+      if(hasFold){ var a1,a2; if(f.dir==='L'){ a1=Math.max(g2.x1,f.cx); a2=g2.x2; } else { a1=g2.x1; a2=Math.min(g2.x2,f.cx); }
+        var b1=reflectX(a1,f.cx), b2=reflectX(a2,f.cx);
+        var cx1=a1+(b1-a1)*foldAmt, cx2=a2+(b2-a2)*foldAmt;
+        ctx.globalAlpha=0.5+0.5*foldAmt; ctx.strokeStyle='#c0392b'; ctx.beginPath(); ctx.moveTo(cx1,g2.y); ctx.lineTo(cx2,g2.y); ctx.stroke(); }
+    }
+    ctx.globalAlpha=1;
+    // 크레이즈
+    ctx.strokeStyle='rgba(192,57,43,.7)'; ctx.setLineDash([8,6]); ctx.lineWidth=2; ctx.beginPath(); ctx.moveTo(f.cx,30); ctx.lineTo(f.cx,AH-30); ctx.stroke(); ctx.setLineDash([]);
+  }
+  // 드래그 프리뷰
+  if(dragging && dragStart){ var cx=snapX(dragStart.x); var dir=(dragNow.x-dragStart.x)<0?'L':'R';
+    ctx.strokeStyle='rgba(192,57,43,.8)'; ctx.setLineDash([8,6]); ctx.lineWidth=2; ctx.beginPath(); ctx.moveTo(cx,30); ctx.lineTo(cx,AH-30); ctx.stroke(); ctx.setLineDash([]);
+    // 접힐 쪽 음영
+    ctx.fillStyle='rgba(192,57,43,.08)'; if(dir==='L')ctx.fillRect(cx,24,AW-48-cx+24,AH-48); else ctx.fillRect(24,24,cx-24,AH-48);
+    // 방향 화살표
+    ctx.fillStyle='#c0392b'; ctx.font='20px serif'; ctx.textAlign='center'; ctx.fillText(dir==='L'?'◀ 접기':'접기 ▶', cx, 52);
+    // 프리뷰 반사 발판
+    ctx.strokeStyle='rgba(192,57,43,.45)'; ctx.lineWidth=8;
+    for(var pv=0;pv<segs.length;pv++){ var pg=segs[pv]; var hf = dir==='L'? pg.x2>cx : pg.x1<cx; if(!hf)continue;
+      var pa1,pa2; if(dir==='L'){pa1=Math.max(pg.x1,cx);pa2=pg.x2;}else{pa1=pg.x1;pa2=Math.min(pg.x2,cx);}
+      ctx.beginPath(); ctx.moveTo(reflectX(pa1,cx),pg.y); ctx.lineTo(reflectX(pa2,cx),pg.y); ctx.stroke(); }
+    ctx.textAlign='left';
+  }
+  // 시작/목표
+  drawToken(start.x,start.y,'#2f6f9f','시작');
+  drawGoal(goal.x,goal.y);
+  // 연결 표시(정적일 때)
+  if(!anim.fold&&!dragging){ var p=connectedPath(segs,start,goal); if(p){ ctx.strokeStyle='rgba(47,111,159,.35)'; ctx.lineWidth=3; ctx.setLineDash([4,6]);
+    ctx.beginPath(); ctx.moveTo(start.x,start.y-8); for(var i2=0;i2<p.length;i2++){var ss=segs[p[i2]]; ctx.lineTo((ss.x1+ss.x2)/2,ss.y-8);} ctx.lineTo(goal.x,goal.y-8); ctx.stroke(); ctx.setLineDash([]); } }
+  // 걷기(성공)
+  if(anim.walk){ var w=anim.walk; drawToken(w.x,w.y+8,'#2f6f9f','');
+    ctx.fillStyle='#2f6f9f'; }
+  // 낙관
+  ctx.fillStyle='rgba(192,57,43,.85)'; ctx.fillRect(AW-44,AH-56,26,26); ctx.fillStyle='#f3ecdd'; ctx.font='14px serif'; ctx.textAlign='center'; ctx.fillText('摺',AW-31,AH-38); ctx.textAlign='left';
+}
+function clipFoldPreview(){ return {stat:[],moving:[]}; }
+function drawToken(x,y,col,label){ ctx.save(); ctx.fillStyle=col; ctx.strokeStyle='#2b2620'; ctx.lineWidth=2;
+  // 종이배 모양
+  ctx.beginPath(); ctx.moveTo(x-12,y-8); ctx.lineTo(x+12,y-8); ctx.lineTo(x,y-8-14); ctx.closePath(); ctx.fill(); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(x-14,y-8); ctx.lineTo(x+14,y-8); ctx.lineTo(x+8,y); ctx.lineTo(x-8,y); ctx.closePath(); ctx.fill(); ctx.stroke();
+  ctx.restore(); }
+function drawGoal(x,y){ ctx.save(); ctx.strokeStyle='#c0392b'; ctx.lineWidth=3; ctx.beginPath(); ctx.arc(x,y-14,15,0,6.28); ctx.stroke();
+  ctx.fillStyle='rgba(192,57,43,.12)'; ctx.beginPath(); ctx.arc(x,y-14,12,0,6.28); ctx.fill();
+  ctx.fillStyle='#c0392b'; ctx.font='16px serif'; ctx.textAlign='center'; ctx.textBaseline='middle'; ctx.fillText('家',x,y-13); ctx.restore(); ctx.textAlign='left'; ctx.textBaseline='alphabetic'; }
+
+/* ---------- 시작/튜토 ---------- */
+function startGame(){ tutOn=true; loadLevel(0); }
+document.getElementById('startBtn').addEventListener('click',function(){ ensureAudio(); document.getElementById('title').classList.remove('on'); startGame(); });
+document.getElementById('tutSkip').addEventListener('click',function(){ tutOn=false; document.getElementById('tut').style.display='none'; loadLevel(3); });
+
+document.getElementById('title').classList.add('on');
+layout(); requestAnimationFrame(loop);
+
+/* ---------- 검증 노출 ---------- */
+window.__fold={ clipFold:clipFold, foldPoint:foldPoint, connectedPath:connectedPath, solve:solve, LEVELS:LEVELS,
+  // 레벨 i가 maxFolds 내에 풀리는가 + 0접기로는 안 풀리는가
+  check:function(i){ var lv=LEVELS[i];
+    var seg0=lv.segs.map(function(s){return {x1:s.x1,x2:s.x2,y:s.y};});
+    var solvedAt0 = !!connectedPath(seg0, lv.start, lv.goal);
+    var sol=solve(lv, lv.maxFolds);
+    return { needsFold: !solvedAt0, solvable: !!sol, solLen: sol?sol.length:null, maxFolds:lv.maxFolds, sol:sol }; } };
+})();
+</script>
+</body>
+</html>
