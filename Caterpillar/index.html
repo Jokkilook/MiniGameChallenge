@@ -1,0 +1,322 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+<title>꿈틀 · Caterpillar Crawl</title>
+<style>
+  :root{ --sky:#bfe89a; --ink:#2a3a1a; --grass:#6fae3a; --leaf:#4a8a2a; --gold:#ffcf4a; }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  html,body{margin:0;height:100%;overflow:hidden;background:#8fd0e8;color:var(--ink);
+    font-family:"Segoe UI","Malgun Gothic",sans-serif;-webkit-font-smoothing:antialiased;-webkit-user-select:none;user-select:none;touch-action:none}
+  #wrap{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:#0b1a12}
+  canvas{display:block;touch-action:none}
+  #hud{position:fixed;top:0;left:0;right:0;padding:10px 14px;display:flex;gap:9px;align-items:center;justify-content:center;
+    pointer-events:none;z-index:5;font-size:13px;color:#1c2a10}
+  #hud .pill{background:rgba(255,255,255,.62);border:1px solid rgba(60,90,30,.3);border-radius:16px;padding:5px 12px;letter-spacing:.5px;font-weight:700}
+  #hud .pill b{color:#2a6a10}
+  #btnReset{pointer-events:auto;cursor:pointer}
+
+  /* 모바일 마디 버튼 */
+  #keys{position:fixed;left:0;right:0;bottom:0;display:flex;gap:6px;justify-content:center;padding:8px calc(8px + env(safe-area-inset-bottom));z-index:6}
+  .kbtn{width:60px;height:60px;border-radius:14px;border:2px solid rgba(60,90,30,.4);background:rgba(255,255,255,.72);
+    color:#2a3a1a;font-size:20px;font-weight:900;display:flex;align-items:center;justify-content:center;cursor:pointer;transition:transform .06s,background .1s}
+  .kbtn.on{background:#ffcf4a;transform:translateY(3px) scale(.94)}
+  .kbtn.guide{box-shadow:0 0 0 3px #ff7a3a, 0 0 18px #ff7a3a}
+
+  .screen{position:fixed;inset:0;z-index:20;display:none;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:26px;
+    background:radial-gradient(120% 100% at 50% 20%,#cdeeb0,#8fce6a)}
+  .screen.on{display:flex}
+  .screen h1{margin:0 0 4px;font-size:clamp(30px,8vw,54px);font-weight:900;letter-spacing:2px;color:#2a5a10;text-shadow:0 2px 0 #fff}
+  .screen .sub{color:#4a7a20;letter-spacing:5px;font-size:12px;margin-bottom:14px;font-weight:800}
+  .screen p{color:#33501c;font-size:15px;line-height:1.9;max-width:480px} .screen p b{color:#2a6a10}
+  .screen kbd{background:#fff;border:1px solid #9bc06a;border-radius:5px;padding:2px 8px;font-weight:800;color:#2a5a10;margin:0 1px}
+  button.go{margin-top:22px;pointer-events:auto;cursor:pointer;font:inherit;font-weight:800;font-size:17px;letter-spacing:2px;
+    color:#fff;background:#4a8a2a;border:0;padding:14px 40px;border-radius:30px;box-shadow:0 8px 24px -6px #2a5a10}
+  button.go:active{transform:translateY(1px)}
+  .row{display:flex;gap:10px;margin-top:16px;flex-wrap:wrap;justify-content:center}
+  .row button{pointer-events:auto;cursor:pointer;font:inherit;font-weight:700;font-size:14px;color:#2a5a10;
+    background:rgba(255,255,255,.6);border:1px solid rgba(60,90,30,.3);border-radius:12px;padding:11px 20px}
+  .stars{font-size:34px;letter-spacing:8px;margin:6px 0;color:#ffab2a}
+  .hint{color:#5a7a3a;font-size:12.5px;margin-top:16px;line-height:1.7}
+  #tut{position:fixed;left:50%;bottom:92px;transform:translateX(-50%);z-index:15;width:min(92vw,540px);
+    background:rgba(30,45,20,.92);color:#eaf5d8;border:1px solid rgba(180,220,140,.4);border-radius:12px;padding:12px 18px;text-align:center;
+    display:none;box-shadow:0 12px 40px rgba(0,0,0,.4)}
+  #tut .st{font-size:11px;letter-spacing:2px;color:#ffcf4a;font-weight:800;margin-bottom:4px}
+  #tut .tx{font-size:14.5px;line-height:1.5} #tut .tx b{color:#ffcf4a}
+  #tut .skip{margin-top:8px;cursor:pointer;color:#a9c088;text-decoration:underline;font-size:12px}
+</style>
+</head>
+<body>
+<div id="wrap"><canvas id="cv"></canvas></div>
+
+<div id="hud">
+  <span class="pill" id="stagePill">STAGE 1</span>
+  <span class="pill">거리 <b id="distV">0</b>m</span>
+  <span class="pill" id="timeV">0.0s</span>
+  <span class="pill" id="btnReset">↺</span>
+</div>
+
+<div id="keys">
+  <div class="kbtn" data-m="4">A</div><div class="kbtn" data-m="3">S</div><div class="kbtn" data-m="2">D</div><div class="kbtn" data-m="1">F</div><div class="kbtn" data-m="0">G</div>
+</div>
+
+<div class="screen on" id="title">
+  <div class="sub">CATERPILLAR CRAWL</div>
+  <h1>🐛 꿈틀</h1>
+  <p><b>A S D F G</b>가 애벌레의 다섯 마디!<br>왼쪽부터 <b>파도치듯 순서대로</b> 눌러 기어가라.</p>
+  <p class="hint"><kbd>A</kbd>→<kbd>S</kbd>→<kbd>D</kbd>→<kbd>F</kbd>→<kbd>G</kbd> 리듬으로 · 모바일은 하단 버튼</p>
+  <button class="go" id="startBtn">기어가기</button>
+</div>
+
+<div class="screen" id="result">
+  <div class="sub" id="resSub">도착!</div>
+  <div class="stars" id="resStars"></div>
+  <h1 id="resTitle" style="font-size:clamp(24px,5vw,36px)">잎에 도착!</h1>
+  <p id="resMsg"></p>
+  <div class="row" id="resRow"></div>
+</div>
+
+<div id="tut">
+  <div class="st" id="tutStep">STEP 1 / 3</div>
+  <div class="tx" id="tutTx"></div>
+  <div class="skip" id="tutSkip">건너뛰기</div>
+</div>
+
+<script>
+"use strict";
+(function(){
+/* =========================================================================
+   꿈틀 (Caterpillar Crawl) — 마디별 근육 입력 보행 시뮬 (Verlet + 비대칭 마찰)
+   버그방지: 오디오 resume / resize+rect / 고정 dt / 클램핑+역루프 / 리스너 1회
+   ========================================================================= */
+var cv=document.getElementById('cv'), ctx=cv.getContext('2d');
+var AW=960, AH=540, DPR=1, SC=1;
+function layout(){                              // [규칙2]
+  DPR=Math.min(2,window.devicePixelRatio||1);
+  var vw=window.innerWidth, vh=window.innerHeight; SC=Math.min(vw/AW,vh/AH);
+  var w=Math.round(AW*SC), h=Math.round(AH*SC);
+  cv.style.width=w+'px'; cv.style.height=h+'px'; cv.width=Math.round(w*DPR); cv.height=Math.round(h*DPR);
+  ctx.setTransform(DPR*SC,0,0,DPR*SC,0,0);
+}
+window.addEventListener('resize',layout);        // [규칙5]
+
+/* ---------- 오디오 ---------- */
+var AC=null, master=null;
+function ensureAudio(){ if(!AC){ try{ AC=new (window.AudioContext||window.webkitAudioContext)(); master=AC.createGain(); master.gain.value=0.5; master.connect(AC.destination);}catch(e){} }
+  if(AC&&AC.state==='suspended'){ AC.resume(); } }
+function tone(f,dur,type,vol,to){ ensureAudio(); if(!AC)return; var t=AC.currentTime,o=AC.createOscillator(),g=AC.createGain();
+  o.type=type||'sine'; o.frequency.setValueAtTime(f,t); if(to)o.frequency.exponentialRampToValueAtTime(Math.max(30,to),t+dur);
+  g.gain.setValueAtTime(0.0001,t); g.gain.exponentialRampToValueAtTime(vol||0.12,t+0.01); g.gain.exponentialRampToValueAtTime(0.0001,t+dur);
+  o.connect(g); g.connect(master||AC.destination); o.start(t); o.stop(t+dur+0.02); }
+function sndSquish(i){ tone(300+i*60,0.06,'sine',0.05,220); }
+function sndWin(){ [523,659,784,1046].forEach(function(f,i){setTimeout(function(){tone(f,0.16,'triangle',0.12);},i*90);}); }
+function vibrate(ms){ try{if(navigator.vibrate)navigator.vibrate(ms);}catch(e){} }
+
+/* ---------- 물리 상수 ---------- */
+var NNODE=6, NMUS=5, REST=38, CONTRACT=9, GRAV=1500, ITER=12, NR=13;
+var FR_FWD=0.16, FR_BACK=0.16, GRIP=0.96, AIR=0.994;
+
+/* ---------- 스테이지 ---------- */
+var STAGES=[
+  { name:'STAGE 1', sub:'평지', worldW:1150, goal:920, ground:function(x){ return 420; } },
+  { name:'STAGE 2', sub:'오르막', worldW:1400, goal:1120, ground:function(x){ return 420 - Math.max(0,(x-450))*0.14; } },
+  { name:'STAGE 3', sub:'언덕', worldW:1600, goal:1320, ground:function(x){ var h=48*Math.exp(-Math.pow((x-820)/380,2)); return 420-h; } },
+];
+
+/* ---------- 시뮬 ---------- */
+function makeSim(i){
+  var st=STAGES[i]; var nodes=[], x0=120;
+  for(var n=0;n<NNODE;n++){ var x=x0+n*REST, y=st.ground(x)-NR; nodes.push({x:x,y:y,px:x,py:y}); }
+  var mus=[]; for(var m=0;m<NMUS;m++)mus.push({len:REST, tgt:REST});
+  return { stage:i, st:st, nodes:nodes, mus:mus, t:0, win:false, dust:[], camX:0, startHead:nodes[NNODE-1].x };
+}
+function anchored(sim, j){ var h=sim._held||[]; return (j>0&&h[j-1]) || (j<NMUS&&h[j]); }
+function stepSim(sim, dt, held){
+  if(sim.win)return; sim._held=held; sim.t+=dt;
+  var N=sim.nodes, M=sim.mus, gy=sim.st.ground;
+  // 근육 목표 길이(수축/이완 이징)
+  for(var m=0;m<NMUS;m++){ var t=held&&held[m]?CONTRACT:REST; M[m].tgt=t; M[m].len+=(t-M[m].len)*Math.min(1,dt*16); }
+  // Verlet 적분
+  for(var i=0;i<N.length;i++){ var nd=N[i]; var vx=(nd.x-nd.px)*AIR, vy=(nd.y-nd.py)*AIR;
+    var sp=Math.hypot(vx,vy); if(sp>26){ vx=vx/sp*26; vy=vy/sp*26; }  // [규칙4]
+    nd.px=nd.x; nd.py=nd.y; nd.x+=vx; nd.y+=vy+GRAV*dt*dt; }
+  // 제약 반복
+  for(var it=0;it<ITER;it++){
+    for(var k=0;k<NMUS;k++){ var a=N[k], b=N[k+1], L=M[k].len;
+      var dx=b.x-a.x, dy=b.y-a.y, d=Math.hypot(dx,dy)||0.001, diff=(L-d)/d*0.5;
+      var ox=dx*diff, oy=dy*diff; a.x-=ox; a.y-=oy; b.x+=ox; b.y+=oy; }
+    // 지면
+    for(var g=0;g<N.length;g++){ var ndg=N[g]; var yy=gy(ndg.x)-NR; if(ndg.y>yy){ ndg.y=yy; } if(ndg.x<10)ndg.x=10; }
+  }
+  // 지면 마찰(비대칭 + 그립) — 접지 노드
+  for(var f=0;f<N.length;f++){ var nf=N[f]; var onG = nf.y >= gy(nf.x)-NR-2;
+    if(onG){ var vxf=nf.x-nf.px; var coeff;
+      if(anchored(sim,f)){ coeff=GRIP; } else { coeff = vxf<0? FR_BACK : FR_FWD; }
+      var nvx=vxf*(1-coeff); nf.px=nf.x-nvx;
+      if(vxf>2&&Math.random()<0.3&&!sim.win){ sim.dust.push({x:nf.x,y:nf.y+NR,vx:-20-Math.random()*30,vy:-10-Math.random()*20,life:0.5}); }
+    }
+  }
+  // 먼지 [규칙4 역루프]
+  for(var d2=sim.dust.length-1;d2>=0;d2--){ var du=sim.dust[d2]; du.life-=dt*2; du.x+=du.vx*dt; du.y+=du.vy*dt; du.vy+=200*dt; if(du.life<=0)sim.dust.splice(d2,1); }
+  // 목표(머리 = 마지막 노드)
+  var head=N[NNODE-1];
+  if(head.x>=sim.st.goal){ sim.win=true; }
+}
+function comX(sim){ var s=0; for(var i=0;i<sim.nodes.length;i++)s+=sim.nodes[i].x; return s/sim.nodes.length; }
+
+/* ---------- 라이브 ---------- */
+var mode='title', sim=null, held=[false,false,false,false,false], tutOn=false, tutStep=0;
+var acc=0, STEP=1/120;
+function loadStage(i){ sim=makeSim(i); mode='play'; held=[false,false,false,false,false]; acc=0;
+  document.getElementById('stagePill').textContent=STAGES[i].name+' · '+STAGES[i].sub;
+  if(tutOn){ document.getElementById('tut').style.display='block'; loadTutStep(); } else document.getElementById('tut').style.display='none';
+}
+
+/* 입력 [규칙5] 1회 등록 */
+var KEYMAP={a:4,s:3,d:2,f:1,g:0};  // A=머리쪽 근육 … G=꼬리쪽. A→G 파도가 전진
+window.addEventListener('keydown',function(e){ ensureAudio(); var k=e.key.toLowerCase(); if(k in KEYMAP){ if(!held[KEYMAP[k]]){ held[KEYMAP[k]]=true; setKeyUI(KEYMAP[k],true); sndSquish(KEYMAP[k]); } e.preventDefault(); }
+  if(k==='r'&&sim)loadStage(sim.stage); });
+window.addEventListener('keyup',function(e){ var k=e.key.toLowerCase(); if(k in KEYMAP){ held[KEYMAP[k]]=false; setKeyUI(KEYMAP[k],false); } });
+function setKeyUI(m,on){ var el=document.querySelector('.kbtn[data-m="'+m+'"]'); if(el)el.classList.toggle('on',on); }
+// 모바일 버튼
+document.querySelectorAll('.kbtn').forEach(function(el){ var m=+el.dataset.m;
+  el.addEventListener('touchstart',function(e){ ensureAudio(); held[m]=true; el.classList.add('on'); sndSquish(m); e.preventDefault(); },{passive:false});
+  el.addEventListener('touchend',function(e){ held[m]=false; el.classList.remove('on'); e.preventDefault(); },{passive:false});
+  el.addEventListener('mousedown',function(){ ensureAudio(); held[m]=true; el.classList.add('on'); sndSquish(m); });
+  el.addEventListener('mouseup',function(){ held[m]=false; el.classList.remove('on'); });
+});
+document.getElementById('btnReset').addEventListener('click',function(){ if(sim)loadStage(sim.stage); });
+
+/* 튜토리얼 */
+var TUT=[
+  {tx:'키 <b>A·S·D·F·G</b>가 애벌레의 다섯 마디예요. 하나씩 눌러 <b>마디가 수축</b>하는 걸 느껴보세요.'},
+  {tx:'이제 <b>A→S→D→F→G</b> 순서로 <b>파도치듯</b> 눌러보세요! (가이드를 따라)'},
+  {tx:'그 리듬을 반복하면 앞으로 <b>기어갑니다</b>! 잎까지 가보세요 🍃'},
+];
+function loadTutStep(){ document.getElementById('tutStep').textContent='STEP '+(tutStep+1)+' / 3'; document.getElementById('tutTx').innerHTML=TUT[tutStep].tx; }
+var guideT=0;
+function tutTick(dt){ if(!tutOn||!sim)return;
+  // step2/3: 가이드 하이라이트가 A→G로 흐름
+  document.querySelectorAll('.kbtn').forEach(function(el){el.classList.remove('guide');});
+  if(tutStep>=1){ guideT+=dt; var gi=Math.floor((guideT*4)%5); var btns=document.querySelectorAll('.kbtn'); if(btns[gi])btns[gi].classList.add('guide'); }
+  // 진행 조건
+  if(tutStep===0){ if(held.some(function(x){return x;}))setTimeout(function(){if(tutStep===0){tutStep=1;loadTutStep();}},600); }
+  else if(tutStep===1){ if(comX(sim)-120>60){ tutStep=2; loadTutStep(); } }
+  else if(tutStep===2){ /* 도착 시 넘어감 */ }
+}
+
+/* HUD/결과 */
+function updHud(){ if(!sim)return;
+  var d=Math.max(0, Math.round((comX(sim)-120)/20));
+  document.getElementById('distV').textContent=d;
+  document.getElementById('timeV').textContent=sim.t.toFixed(1)+'s'; }
+function onWin(){ mode='win'; sndWin(); vibrate([20,40,20]);
+  document.querySelectorAll('.kbtn').forEach(function(el){el.classList.remove('guide');});
+  setTimeout(function(){
+    if(tutOn){ tutOn=false; document.getElementById('tut').style.display='none'; loadStage(0); return; }
+    var i=sim.stage;
+    var t=sim.t; var stars = t<18?'★★★':t<30?'★★☆':'★☆☆';
+    document.getElementById('resStars').textContent=stars;
+    document.getElementById('resTitle').textContent= i>=2?'완주! 🦋':'잎에 도착! 🍃';
+    document.getElementById('resMsg').textContent='기록 '+t.toFixed(1)+'초';
+    var row=document.getElementById('resRow'); row.innerHTML=''; var last=i>=STAGES.length-1;
+    if(!last)row.appendChild(mkbtn('다음 스테이지 →',function(){hideR();loadStage(i+1);}));
+    else row.appendChild(mkbtn('처음부터',function(){hideR();loadStage(0);}));
+    row.appendChild(mkbtn('이 판 다시',function(){hideR();loadStage(i);}));
+    document.getElementById('result').classList.add('on');
+  }, 700);
+}
+function mkbtn(t,fn){ var b=document.createElement('button'); b.textContent=t; b.onclick=fn; return b; }
+function hideR(){ document.getElementById('result').classList.remove('on'); }
+
+/* ---------- 루프 (고정 dt [규칙3]) ---------- */
+var last=0;
+function loop(now){ if(!last)last=now; var dt=Math.min(0.05,(now-last)/1000); last=now;
+  if(mode==='play' && sim){
+    acc+=dt; var guard=0; while(acc>=STEP && guard<12){ stepSim(sim,STEP,held); acc-=STEP; guard++; }
+    if(tutOn) tutTick(dt);
+    updHud();
+    if(sim.win && mode==='play'){ onWin(); }
+  }
+  render();
+  requestAnimationFrame(loop);
+}
+
+/* ---------- 렌더 ---------- */
+function render(){
+  ctx.clearRect(0,0,AW,AH);
+  // 하늘
+  var sky=ctx.createLinearGradient(0,0,0,AH); sky.addColorStop(0,'#a8e0f0'); sky.addColorStop(1,'#dff0c8'); ctx.fillStyle=sky; ctx.fillRect(0,0,AW,AH);
+  if(!sim){ return; }
+  var head=sim.nodes[NNODE-1];
+  sim.camX=Math.max(0,Math.min(sim.st.worldW-AW, head.x-AW*0.42));
+  ctx.save(); ctx.translate(-sim.camX,0);
+  var cam=sim.camX;
+  // 구름
+  ctx.fillStyle='rgba(255,255,255,.7)'; for(var c=0;c<6;c++){ var cx=(c*420+80); if(cx<cam-100||cx>cam+AW+100)continue; ctx.beginPath(); ctx.arc(cx,80+((c*53)%40),26,0,6.28); ctx.arc(cx+28,80+((c*53)%40),20,0,6.28); ctx.fill(); }
+  // 땅
+  var gy=sim.st.ground;
+  ctx.beginPath(); ctx.moveTo(cam,AH); ctx.lineTo(cam,gy(cam));
+  for(var x=cam;x<=cam+AW;x+=8)ctx.lineTo(x,gy(x)); ctx.lineTo(cam+AW,AH); ctx.closePath();
+  var grd=ctx.createLinearGradient(0,300,0,AH); grd.addColorStop(0,'#7fbe4a'); grd.addColorStop(1,'#4a6a2a'); ctx.fillStyle=grd; ctx.fill();
+  ctx.strokeStyle='#3a5a1a'; ctx.lineWidth=3; ctx.beginPath(); ctx.moveTo(cam,gy(cam)); for(var x2=cam;x2<=cam+AW;x2+=8)ctx.lineTo(x2,gy(x2)); ctx.stroke();
+  // 잎(목표)
+  var glx=sim.st.goal, gly=gy(glx);
+  ctx.save(); ctx.translate(glx,gly); ctx.fillStyle='#2a7a1a';
+  ctx.beginPath(); ctx.ellipse(0,-40,16,34,0.5,0,6.28); ctx.fill(); ctx.strokeStyle='#1a5a0a'; ctx.lineWidth=2; ctx.beginPath(); ctx.moveTo(0,-8); ctx.lineTo(0,-70); ctx.stroke();
+  ctx.fillStyle='#1a5a0a'; ctx.font='12px Segoe UI'; ctx.textAlign='center'; ctx.fillText('GOAL',0,10); ctx.restore();
+  // 먼지
+  for(var d=0;d<sim.dust.length;d++){ var du=sim.dust[d]; ctx.globalAlpha=Math.max(0,du.life); ctx.fillStyle='#c8b088'; ctx.beginPath(); ctx.arc(du.x,du.y,2.4,0,6.28); ctx.fill(); } ctx.globalAlpha=1;
+  // 애벌레
+  drawCat(sim);
+  ctx.restore();
+}
+function drawCat(sim){
+  var N=sim.nodes;
+  // 몸통(뒤→앞 겹친 원)
+  for(var i=0;i<N.length;i++){ var nd=N[i]; var t=i/(N.length-1);
+    var r=NR + (i===NNODE-1?2:0);
+    // 마디 색(연둣→초록 그라디언트) + 수축 시 살짝 부풀기
+    var contracted = (i<NMUS && sim.mus[i].len<REST*0.75) || (i>0 && sim.mus[i-1].len<REST*0.75);
+    ctx.fillStyle = contracted? '#8fd84a' : '#6fbe3a';
+    ctx.strokeStyle='#3a6a1a'; ctx.lineWidth=2;
+    ctx.beginPath(); ctx.arc(nd.x,nd.y, r+(contracted?2:0),0,6.28); ctx.fill(); ctx.stroke();
+    // 다리(proleg)
+    ctx.strokeStyle='#3a6a1a'; ctx.lineWidth=2; ctx.beginPath(); ctx.moveTo(nd.x-4,nd.y+r-2); ctx.lineTo(nd.x-6,nd.y+r+5); ctx.moveTo(nd.x+4,nd.y+r-2); ctx.lineTo(nd.x+6,nd.y+r+5); ctx.stroke();
+  }
+  // 머리(마지막 노드) 얼굴
+  var h=N[NNODE-1];
+  ctx.fillStyle='#5aa82a'; ctx.beginPath(); ctx.arc(h.x,h.y,NR+3,0,6.28); ctx.fill(); ctx.strokeStyle='#3a6a1a'; ctx.lineWidth=2; ctx.stroke();
+  // 더듬이
+  ctx.strokeStyle='#3a6a1a'; ctx.lineWidth=2; ctx.beginPath(); ctx.moveTo(h.x+4,h.y-NR); ctx.lineTo(h.x+10,h.y-NR-10); ctx.moveTo(h.x+8,h.y-NR+2); ctx.lineTo(h.x+15,h.y-NR-6); ctx.stroke();
+  ctx.fillStyle='#3a6a1a'; ctx.beginPath(); ctx.arc(h.x+10,h.y-NR-10,2,0,6.28); ctx.arc(h.x+15,h.y-NR-6,2,0,6.28); ctx.fill();
+  // 눈
+  ctx.fillStyle='#fff'; ctx.beginPath(); ctx.arc(h.x+5,h.y-3,4,0,6.28); ctx.arc(h.x+11,h.y-2,3.5,0,6.28); ctx.fill();
+  ctx.fillStyle='#1a2a0a'; ctx.beginPath(); ctx.arc(h.x+6,h.y-3,2,0,6.28); ctx.arc(h.x+12,h.y-2,1.8,0,6.28); ctx.fill();
+  // 미소
+  ctx.strokeStyle='#1a2a0a'; ctx.lineWidth=1.5; ctx.beginPath(); ctx.arc(h.x+7,h.y+4,4,0.1,Math.PI-0.1); ctx.stroke();
+}
+
+/* ---------- 시작/튜토 ---------- */
+document.getElementById('startBtn').addEventListener('click',function(){ ensureAudio(); document.getElementById('title').classList.remove('on'); tutOn=true; tutStep=0; loadStage(0); });
+document.getElementById('tutSkip').addEventListener('click',function(){ tutOn=false; document.getElementById('tut').style.display='none'; document.querySelectorAll('.kbtn').forEach(function(el){el.classList.remove('guide');}); loadStage(0); });
+
+document.getElementById('title').classList.add('on');
+layout(); requestAnimationFrame(loop);
+
+/* ---------- 검증 노출 ---------- */
+window.__cat={ makeSim:makeSim, stepSim:stepSim, comX:comX, STAGES:STAGES, REST:REST,
+  hasNaN:function(s){ for(var i=0;i<s.nodes.length;i++)if(!isFinite(s.nodes[i].x)||!isFinite(s.nodes[i].y))return true; return false; },
+  // 입력 패턴(pattern(t)->held[5]) 으로 secs초 시뮬 → 전진량
+  run:function(stage, pattern, secs){ var s=makeSim(stage); var dt=1/120; var x0=comX(s);
+    for(var f=0; f<Math.round(secs/dt); f++){ var held=pattern(f*dt); stepSim(s,dt,held); if(s.win)break; }
+    return { dx:Math.round(comX(s)-x0), win:s.win, headX:Math.round(s.nodes[NNODE-1].x), t:Math.round(s.t*10)/10, nan:this.hasNaN(s) }; },
+  // 파도 패턴
+  wave:function(period, hold, offset){ period=period||0.6; hold=hold||0.22; offset=offset||0.09;
+    return function(t){ var h=[false,false,false,false,false]; for(var m=0;m<5;m++){ var start=(m*offset)%period; var tt=((t-start)%period+period)%period; if(tt<hold)h[m]=true; } return h; }; }
+};
+})();
+</script>
+</body>
+</html>
