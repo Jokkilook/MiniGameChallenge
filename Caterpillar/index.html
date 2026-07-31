@@ -52,7 +52,7 @@
 
 <div id="hud">
   <span class="pill" id="stagePill">STAGE 1</span>
-  <span class="pill">거리 <b id="distV">0</b>m</span>
+  <span class="pill">🍃 <b id="leafV">0/0</b></span>
   <span class="pill" id="timeV">0.0s</span>
   <span class="pill" id="btnReset">↺</span>
 </div>
@@ -116,12 +116,19 @@ function vibrate(ms){ try{if(navigator.vibrate)navigator.vibrate(ms);}catch(e){}
 /* ---------- 물리 상수 ---------- */
 var NNODE=5, NMUS=4, REST=38, CONTRACT=9, GRAV=1500, ITER=12, NR=13;
 var GRIP=0.9, LIFT=0.05, AIR=0.994;   // 정지 마디=붙잡음(GRIP), 수축 마디=들림(LIFT)
+var MUD=0.6, SHROOM_UP=10, SHROOM_FWD=5;
 
 /* ---------- 스테이지 ---------- */
+function flat(x){ return 420; }
 var STAGES=[
-  { name:'STAGE 1', sub:'평지', worldW:1150, goal:920, ground:function(x){ return 420; } },
-  { name:'STAGE 2', sub:'오르막', worldW:1400, goal:1120, ground:function(x){ return 420 - Math.max(0,(x-450))*0.14; } },
-  { name:'STAGE 3', sub:'언덕', worldW:1600, goal:1320, ground:function(x){ var h=48*Math.exp(-Math.pow((x-820)/380,2)); return 420-h; } },
+  { name:'STAGE 1', sub:'새싹 들판', worldW:1350, goal:1180, ground:flat,
+    gaps:[], mud:[{x1:600,x2:720}], shrooms:[], leaves:[380,720,980], checkpoints:[120] },
+  { name:'STAGE 2', sub:'굽이 언덕', worldW:1750, goal:1560,
+    ground:function(x){ return 420 - 42*Math.exp(-Math.pow((x-520)/300,2)) - 42*Math.exp(-Math.pow((x-1150)/320,2)); },
+    gaps:[], mud:[], shrooms:[{x:850}], leaves:[360,720,1060,1360], checkpoints:[120] },
+  { name:'STAGE 3', sub:'진흙 고개', worldW:2000, goal:1800,
+    ground:function(x){ return 420 - 50*Math.exp(-Math.pow((x-650)/360,2)); },
+    gaps:[], mud:[{x1:1280,x2:1440}], shrooms:[{x:400}], leaves:[340,560,900,1250,1620], checkpoints:[120] },
 ];
 
 /* ---------- 시뮬 ---------- */
@@ -129,7 +136,17 @@ function makeSim(i){
   var st=STAGES[i]; var nodes=[], x0=120;
   for(var n=0;n<NNODE;n++){ var x=x0+n*REST, y=st.ground(x)-NR; nodes.push({x:x,y:y,px:x,py:y}); }
   var mus=[]; for(var m=0;m<NMUS;m++)mus.push({len:REST, tgt:REST});
-  return { stage:i, st:st, nodes:nodes, mus:mus, t:0, win:false, dust:[], camX:0, startHead:nodes[NNODE-1].x };
+  var leaves=(st.leaves||[]).map(function(lx){ return {x:lx, y:st.ground(lx)-26, eaten:false}; });
+  var shrooms=(st.shrooms||[]).map(function(s){ return {x:s.x, y:st.ground(s.x), cd:0, sq:0}; });
+  return { stage:i, st:st, nodes:nodes, mus:mus, t:0, win:false, dust:[], camX:0, startHead:nodes[NNODE-1].x,
+    gaps:st.gaps||[], mud:st.mud||[], shrooms:shrooms, leaves:leaves, leafCount:0, cps:(st.checkpoints||[120]).slice(), cp:120, respawns:0 };
+}
+function inGap(sim,x){ for(var i=0;i<sim.gaps.length;i++)if(x>sim.gaps[i].x1&&x<sim.gaps[i].x2)return true; return false; }
+function inMud(sim,x){ for(var i=0;i<sim.mud.length;i++)if(x>sim.mud[i].x1&&x<sim.mud[i].x2)return true; return false; }
+function respawn(sim){ var head=sim.nodes[NNODE-1].x, cp=sim.cps[0];
+  for(var i=0;i<sim.cps.length;i++)if(sim.cps[i]<=head)cp=sim.cps[i];
+  sim.cp=cp; sim.respawns++;
+  for(var n=0;n<NNODE;n++){ var x=cp+n*REST, y=sim.st.ground(x)-NR; sim.nodes[n].x=x; sim.nodes[n].y=y; sim.nodes[n].px=x; sim.nodes[n].py=y; }
 }
 function anchored(sim, j){ var h=sim._held||[]; return (j>0&&h[j-1]) || (j<NMUS&&h[j]); }
 function stepSim(sim, dt, held){
@@ -146,19 +163,36 @@ function stepSim(sim, dt, held){
     for(var k=0;k<NMUS;k++){ var a=N[k], b=N[k+1], L=M[k].len;
       var dx=b.x-a.x, dy=b.y-a.y, d=Math.hypot(dx,dy)||0.001, diff=(L-d)/d*0.5;
       var ox=dx*diff, oy=dy*diff; a.x-=ox; a.y-=oy; b.x+=ox; b.y+=oy; }
-    // 지면
-    for(var g=0;g<N.length;g++){ var ndg=N[g]; var yy=gy(ndg.x)-NR; if(ndg.y>yy){ ndg.y=yy; } if(ndg.x<10)ndg.x=10; }
+    // 지면(구멍이면 바닥 없음 → 낙하)
+    for(var g=0;g<N.length;g++){ var ndg=N[g]; if(!inGap(sim,ndg.x)){ var yy=gy(ndg.x)-NR; if(ndg.y>yy){ ndg.y=yy; } } if(ndg.x<10)ndg.x=10; }
   }
-  // 지면 마찰(비대칭 + 그립) — 접지 노드
-  for(var f=0;f<N.length;f++){ var nf=N[f]; var onG = nf.y >= gy(nf.x)-NR-2;
+  // 지면 마찰(그립/들림 + 진흙 끈적) — 접지 노드
+  for(var f=0;f<N.length;f++){ var nf=N[f]; var onG = !inGap(sim,nf.x) && nf.y >= gy(nf.x)-NR-2;
     if(onG){ var vxf=nf.x-nf.px; var coeff;
       if(anchored(sim,f)){ coeff=LIFT; } else { coeff=GRIP; }   // 수축 마디는 들려 미끄럼, 나머진 붙잡음
+      if(inMud(sim,nf.x)) coeff=Math.max(coeff, MUD);           // 진흙: 들려도 끈적
       var nvx=vxf*(1-coeff); nf.px=nf.x-nvx;
-      if(vxf>2&&Math.random()<0.3&&!sim.win){ sim.dust.push({x:nf.x,y:nf.y+NR,vx:-20-Math.random()*30,vy:-10-Math.random()*20,life:0.5}); }
+      if(vxf>2&&Math.random()<0.3&&!sim.win){ sim.dust.push({x:nf.x,y:nf.y+NR,vx:-20-Math.random()*30,vy:-10-Math.random()*20,life:0.5,c:inMud(sim,nf.x)?'#7a5a3a':'#c8b088'}); }
     }
+    // 버섯 스프링
+    for(var sh=0;sh<sim.shrooms.length;sh++){ var Sh=sim.shrooms[sh];
+      if(Sh.cd<=0 && Math.abs(nf.x-Sh.x)<24 && nf.y>=Sh.y-NR-6 && nf.y<=Sh.y+8 && (nf.y-nf.py)>16){
+        nf.py=nf.y+SHROOM_UP; nf.px=nf.x-SHROOM_FWD; Sh.cd=0.4; Sh.sq=0.35; tone(520,0.1,'sine',0.08,900); }
+    }
+  }
+  for(var s2=0;s2<sim.shrooms.length;s2++){ if(sim.shrooms[s2].cd>0)sim.shrooms[s2].cd-=dt; if(sim.shrooms[s2].sq>0)sim.shrooms[s2].sq-=dt*2; }
+  // 잎 먹기
+  for(var lf=0;lf<sim.leaves.length;lf++){ var LV=sim.leaves[lf]; if(LV.eaten)continue;
+    for(var nn=0;nn<N.length;nn++){ if(Math.hypot(N[nn].x-LV.x,N[nn].y-LV.y)<22){ LV.eaten=true; sim.leafCount++;
+      tone(700,0.08,'triangle',0.1,1046);
+      for(var pp=0;pp<10;pp++){ var an=Math.random()*6.28, spd=30+Math.random()*80; sim.dust.push({x:LV.x,y:LV.y,vx:Math.cos(an)*spd,vy:Math.sin(an)*spd-20,life:0.6,c:'#4a8a2a'}); }
+      break; } }
   }
   // 먼지 [규칙4 역루프]
   for(var d2=sim.dust.length-1;d2>=0;d2--){ var du=sim.dust[d2]; du.life-=dt*2; du.x+=du.vx*dt; du.y+=du.vy*dt; du.vy+=200*dt; if(du.life<=0)sim.dust.splice(d2,1); }
+  // 추락(구멍) → 체크포인트 리스폰
+  var comy=0; for(var cy=0;cy<N.length;cy++)comy+=N[cy].y; comy/=N.length;
+  if(comy>500){ respawn(sim); }
   // 목표(머리 = 마지막 노드)
   var head=N[NNODE-1];
   if(head.x>=sim.st.goal){ sim.win=true; }
@@ -208,18 +242,18 @@ function tutTick(dt){ if(!tutOn||!sim)return;
 
 /* HUD/결과 */
 function updHud(){ if(!sim)return;
-  var d=Math.max(0, Math.round((comX(sim)-120)/20));
-  document.getElementById('distV').textContent=d;
+  document.getElementById('leafV').textContent=sim.leafCount+'/'+sim.leaves.length;
   document.getElementById('timeV').textContent=sim.t.toFixed(1)+'s'; }
 function onWin(){ mode='win'; sndWin(); vibrate([20,40,20]);
   document.querySelectorAll('.kbtn').forEach(function(el){el.classList.remove('guide');});
   setTimeout(function(){
     if(tutOn){ tutOn=false; document.getElementById('tut').style.display='none'; loadStage(0); return; }
     var i=sim.stage;
-    var t=sim.t; var stars = t<18?'★★★':t<30?'★★☆':'★☆☆';
+    var t=sim.t; var all=sim.leafCount===sim.leaves.length;
+    var stars = all ? (t<26?'★★★':'★★☆') : (sim.leafCount>=sim.leaves.length*0.6?'★★☆':'★☆☆');
     document.getElementById('resStars').textContent=stars;
     document.getElementById('resTitle').textContent= i>=2?'완주! 🦋':'잎에 도착! 🍃';
-    document.getElementById('resMsg').textContent='기록 '+t.toFixed(1)+'초';
+    document.getElementById('resMsg').textContent='🍃 잎 '+sim.leafCount+'/'+sim.leaves.length+' · 기록 '+t.toFixed(1)+'초'+(all?' · 모든 잎 수집!':'');
     var row=document.getElementById('resRow'); row.innerHTML=''; var last=i>=STAGES.length-1;
     if(!last)row.appendChild(mkbtn('다음 스테이지 →',function(){hideR();loadStage(i+1);}));
     else row.appendChild(mkbtn('처음부터',function(){hideR();loadStage(0);}));
@@ -261,13 +295,35 @@ function render(){
   for(var x=cam;x<=cam+AW;x+=8)ctx.lineTo(x,gy(x)); ctx.lineTo(cam+AW,AH); ctx.closePath();
   var grd=ctx.createLinearGradient(0,300,0,AH); grd.addColorStop(0,'#7fbe4a'); grd.addColorStop(1,'#4a6a2a'); ctx.fillStyle=grd; ctx.fill();
   ctx.strokeStyle='#3a5a1a'; ctx.lineWidth=3; ctx.beginPath(); ctx.moveTo(cam,gy(cam)); for(var x2=cam;x2<=cam+AW;x2+=8)ctx.lineTo(x2,gy(x2)); ctx.stroke();
+  // 진흙
+  for(var mm=0;mm<sim.mud.length;mm++){ var md=sim.mud[mm];
+    ctx.fillStyle='rgba(84,56,28,.7)'; ctx.beginPath(); ctx.moveTo(md.x1,gy(md.x1)+2);
+    for(var mx=md.x1;mx<=md.x2;mx+=6)ctx.lineTo(mx,gy(mx)+7); ctx.lineTo(md.x2,gy(md.x2)+2); ctx.closePath(); ctx.fill();
+    ctx.fillStyle='rgba(50,34,16,.7)'; for(var bb=md.x1+16;bb<md.x2;bb+=28){ ctx.beginPath(); ctx.arc(bb,gy(bb)-1,3,0,6.28); ctx.fill(); }
+  }
+  // 버섯 스프링
+  for(var shR=0;shR<sim.shrooms.length;shR++){ var Sr=sim.shrooms[shR]; var sqz=Sr.sq>0?Sr.sq:0;
+    ctx.save(); ctx.translate(Sr.x,Sr.y);
+    ctx.fillStyle='#e6ddc4'; ctx.fillRect(-5,-15,10,15);
+    ctx.fillStyle='#e0503a'; ctx.beginPath(); ctx.ellipse(0,-15+sqz*5,20,13-sqz*5,0,Math.PI,0,true); ctx.fill();
+    ctx.fillStyle='#fff'; ctx.beginPath(); ctx.arc(-8,-19,2.5,0,6.28); ctx.arc(6,-17,2,0,6.28); ctx.arc(1,-22,2,0,6.28); ctx.fill();
+    ctx.restore();
+  }
+  // 먹을 잎(수집)
+  for(var lfc=0;lfc<sim.leaves.length;lfc++){ var LV=sim.leaves[lfc]; if(LV.eaten)continue;
+    ctx.save(); ctx.translate(LV.x, LV.y+5*Math.sin(sim.t*2+lfc));
+    ctx.fillStyle='#5aba2a'; ctx.strokeStyle='#2a6a1a'; ctx.lineWidth=1.5;
+    ctx.beginPath(); ctx.ellipse(0,0,13,8,0.5,0,6.28); ctx.fill(); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(-9,5); ctx.lineTo(9,-5); ctx.stroke();
+    ctx.restore();
+  }
   // 잎(목표)
   var glx=sim.st.goal, gly=gy(glx);
   ctx.save(); ctx.translate(glx,gly); ctx.fillStyle='#2a7a1a';
   ctx.beginPath(); ctx.ellipse(0,-40,16,34,0.5,0,6.28); ctx.fill(); ctx.strokeStyle='#1a5a0a'; ctx.lineWidth=2; ctx.beginPath(); ctx.moveTo(0,-8); ctx.lineTo(0,-70); ctx.stroke();
   ctx.fillStyle='#1a5a0a'; ctx.font='12px Segoe UI'; ctx.textAlign='center'; ctx.fillText('GOAL',0,10); ctx.restore();
   // 먼지
-  for(var d=0;d<sim.dust.length;d++){ var du=sim.dust[d]; ctx.globalAlpha=Math.max(0,du.life); ctx.fillStyle='#c8b088'; ctx.beginPath(); ctx.arc(du.x,du.y,2.4,0,6.28); ctx.fill(); } ctx.globalAlpha=1;
+  for(var d=0;d<sim.dust.length;d++){ var du=sim.dust[d]; ctx.globalAlpha=Math.max(0,du.life); ctx.fillStyle=du.c||'#c8b088'; ctx.beginPath(); ctx.arc(du.x,du.y,2.4,0,6.28); ctx.fill(); } ctx.globalAlpha=1;
   // 애벌레
   drawCat(sim);
   ctx.restore();
@@ -311,7 +367,8 @@ window.__cat={ makeSim:makeSim, stepSim:stepSim, comX:comX, STAGES:STAGES, REST:
   // 입력 패턴(pattern(t)->held[5]) 으로 secs초 시뮬 → 전진량
   run:function(stage, pattern, secs){ var s=makeSim(stage); var dt=1/120; var x0=comX(s);
     for(var f=0; f<Math.round(secs/dt); f++){ var held=pattern(f*dt); stepSim(s,dt,held); if(s.win)break; }
-    return { dx:Math.round(comX(s)-x0), win:s.win, headX:Math.round(s.nodes[NNODE-1].x), t:Math.round(s.t*10)/10, nan:this.hasNaN(s) }; },
+    return { dx:Math.round(comX(s)-x0), win:s.win, headX:Math.round(s.nodes[NNODE-1].x), t:Math.round(s.t*10)/10,
+      leaves:s.leafCount, totalLeaves:s.leaves.length, respawns:s.respawns, nan:this.hasNaN(s) }; },
   // 파도 패턴
   wave:function(period, hold, offset){ period=period||0.6; hold=hold||0.22; offset=offset||0.09;
     return function(t){ var h=[false,false,false,false,false]; for(var m=0;m<5;m++){ var start=(m*offset)%period; var tt=((t-start)%period+period)%period; if(tt<hold)h[m]=true; } return h; }; }
