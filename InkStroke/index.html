@@ -1,0 +1,354 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+<title>먹 · 한 획 · Ink, One Stroke</title>
+<style>
+  :root{ --paper:#efe7d4; --ink:#1c1712; --sub:#6b5f4c; --seal:#b0322a; }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  html,body{margin:0;height:100%;overflow:hidden;background:#2a241a;color:var(--ink);
+    font-family:"Segoe UI","Malgun Gothic",serif;-webkit-font-smoothing:antialiased;-webkit-user-select:none;user-select:none;touch-action:none}
+  #wrap{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:#2a241a}
+  canvas{display:block;touch-action:none;box-shadow:0 10px 60px rgba(0,0,0,.6)}
+
+  #hud{position:fixed;top:0;left:0;right:0;padding:10px 16px;display:flex;gap:10px;align-items:center;justify-content:center;
+    pointer-events:none;z-index:5;font-size:13px;color:#efe7d4}
+  #hud .pill{background:rgba(28,23,18,.6);border:1px solid rgba(239,231,212,.25);border-radius:6px;padding:5px 12px;letter-spacing:1px;font-weight:600}
+  #inkbar{width:120px;height:8px;background:rgba(239,231,212,.15);border-radius:2px;overflow:hidden;display:inline-block;vertical-align:middle}
+  #inkfill{height:100%;background:linear-gradient(90deg,#1c1712,#6b5f4c);background:#1c1712}
+  #btnReset{pointer-events:auto;cursor:pointer;color:#efd9a0}
+
+  .screen{position:fixed;inset:0;z-index:20;display:none;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:26px;
+    background:radial-gradient(120% 100% at 50% 35%,#efe7d4,#d8ccb0)}
+  .screen.on{display:flex}
+  .screen h1{margin:0 0 4px;font-size:clamp(30px,8vw,58px);font-weight:900;letter-spacing:8px;color:#1c1712}
+  .screen .sub{color:#8a1a14;letter-spacing:6px;font-size:13px;margin-bottom:14px;font-weight:700}
+  .screen p{color:#4a3f2e;font-size:15px;line-height:1.9;max-width:460px}
+  .screen p b{color:#1c1712}
+  button.go{margin-top:22px;pointer-events:auto;cursor:pointer;font:inherit;font-weight:800;font-size:17px;letter-spacing:3px;
+    color:#efe7d4;background:#1c1712;border:0;padding:14px 40px;border-radius:4px;box-shadow:0 8px 24px -8px #000}
+  button.go:active{transform:translateY(1px)}
+  .row{display:flex;gap:10px;margin-top:16px;flex-wrap:wrap;justify-content:center}
+  .row button{pointer-events:auto;cursor:pointer;font:inherit;font-weight:700;font-size:14px;color:#1c1712;
+    background:rgba(28,23,18,.08);border:1px solid rgba(28,23,18,.3);border-radius:4px;padding:11px 20px}
+  .stars{font-size:34px;letter-spacing:10px;margin:6px 0;color:#b0322a}
+  .hint{color:#8a7d64;font-size:12.5px;margin-top:16px;line-height:1.7}
+
+  #tut{position:fixed;left:50%;bottom:6%;transform:translateX(-50%);z-index:15;width:min(90vw,500px);
+    background:rgba(28,23,18,.92);color:#efe7d4;border:1px solid rgba(239,231,212,.3);border-radius:8px;padding:13px 18px;text-align:center;
+    display:none;box-shadow:0 12px 40px rgba(0,0,0,.5)}
+  #tut .st{font-size:11px;letter-spacing:2px;color:#e0b060;font-weight:800;margin-bottom:4px}
+  #tut .tx{font-size:14.5px;line-height:1.55} #tut .tx b{color:#e0b060}
+  #tut .skip{margin-top:8px;cursor:pointer;color:#9a8d74;text-decoration:underline;font-size:12px}
+  #goBtn{position:fixed;left:50%;bottom:calc(6% + 92px);transform:translateX(-50%);z-index:14;display:none;pointer-events:auto;cursor:pointer;
+    font:inherit;font-weight:800;font-size:16px;letter-spacing:2px;color:#efe7d4;background:var(--seal);border:0;padding:11px 30px;border-radius:6px;box-shadow:0 8px 24px -6px #000}
+</style>
+</head>
+<body>
+<div id="wrap"><canvas id="cv"></canvas></div>
+
+<div id="hud">
+  <span class="pill" id="lvlPill">壹</span>
+  <span class="pill">먹 <span id="inkbar"><span id="inkfill"></span></span></span>
+  <span class="pill" id="phasePill">한 획을 그리세요</span>
+  <span class="pill" id="btnReset">↺ 다시</span>
+</div>
+
+<button id="goBtn">▶ 풀기 (Space)</button>
+
+<div class="screen on" id="title">
+  <div class="sub">INK · ONE STROKE</div>
+  <h1>한 획</h1>
+  <p style="margin-top:8px"><b>단 한 번의 붓질</b>로 세상을 그려,<br>먹물 정령을 <b>둥지</b>로 굴려 보내라.</p>
+  <p class="hint">그린 먹선이 살아나 발판이 된다 · 마우스/터치로 한 획</p>
+  <button class="go" id="startBtn">시작</button>
+</div>
+
+<div class="screen" id="result">
+  <div class="sub" id="resSub">歸 · 귀환</div>
+  <div class="stars" id="resStars"></div>
+  <h1 id="resTitle" style="font-size:clamp(24px,5vw,34px);letter-spacing:4px">둥지로 돌아왔다</h1>
+  <p id="resMsg"></p>
+  <div class="row" id="resRow"></div>
+</div>
+
+<div id="tut">
+  <div class="st" id="tutStep">가르침 一</div>
+  <div class="tx" id="tutTx"></div>
+  <div class="skip" id="tutSkip">건너뛰기</div>
+</div>
+
+<script>
+"use strict";
+(function(){
+/* =========================================================================
+   먹 · 한 획 (Ink, One Stroke) — 한 획 물리 퍼즐 (수묵)
+   버그방지: 오디오 resume / resize+rect / dt기반 서브스텝 / 클램핑+역루프 / 리스너 1회
+   ========================================================================= */
+var cv=document.getElementById('cv'), ctx=cv.getContext('2d');
+var AW=900, AH=560, DPR=1, SC=1;
+function layout(){                              // [규칙2]
+  DPR=Math.min(2,window.devicePixelRatio||1);
+  var vw=window.innerWidth, vh=window.innerHeight; SC=Math.min(vw/AW,vh/AH);
+  var w=Math.round(AW*SC), h=Math.round(AH*SC);
+  cv.style.width=w+'px'; cv.style.height=h+'px'; cv.width=Math.round(w*DPR); cv.height=Math.round(h*DPR);
+  ctx.setTransform(DPR*SC,0,0,DPR*SC,0,0);
+}
+window.addEventListener('resize',layout);        // [규칙5] 1회
+
+/* ---------- 오디오 ---------- */
+var AC=null, master=null;
+function ensureAudio(){ if(!AC){ try{ AC=new (window.AudioContext||window.webkitAudioContext)(); master=AC.createGain(); master.gain.value=0.5; master.connect(AC.destination);}catch(e){} }
+  if(AC&&AC.state==='suspended'){ AC.resume(); } }
+function tone(f,dur,type,vol,to){ ensureAudio(); if(!AC)return; var t=AC.currentTime,o=AC.createOscillator(),g=AC.createGain();
+  o.type=type||'sine'; o.frequency.setValueAtTime(f,t); if(to)o.frequency.exponentialRampToValueAtTime(Math.max(30,to),t+dur);
+  g.gain.setValueAtTime(0.0001,t); g.gain.exponentialRampToValueAtTime(vol||0.14,t+0.01); g.gain.exponentialRampToValueAtTime(0.0001,t+dur);
+  o.connect(g); g.connect(master||AC.destination); o.start(t); o.stop(t+dur+0.02); }
+function sndBrush(){ tone(240,0.05,'triangle',0.03); }
+function sndTap(){ tone(200,0.08,'sine',0.08,120); }
+function sndWin(){ [523,587,784,880,1175].forEach(function(f,i){setTimeout(function(){tone(f,0.4,'triangle',0.12);},i*130);}); }
+function sndFail(){ tone(160,0.3,'sawtooth',0.12,60); }
+function vibrate(ms){ try{if(navigator.vibrate)navigator.vibrate(ms);}catch(e){} }
+
+/* ---------- 레벨 ---------- */
+function seg(x1,y1,x2,y2){ return [x1,y1,x2,y2]; }
+// goalBasin: 둥지 바닥 + 뒷벽으로 받아 안착
+function basin(gx,gy){ return [ seg(gx-46,gy+18,gx+42,gy+18), seg(gx+42,gy+18,gx+42,gy-40) ]; }
+var WATER=seg(0,AH-16,AW,AH-16);
+var LEVELS=[
+  // ---- 가르침(튜토) ----
+  { tut:'一', hint:'먹물 방울 아래로 <b>다리</b>를 한 획에 그어 둥지로 굴려 보내세요.',
+    spawn:[150,120], goal:[720,360,34], ink:1500,
+    solids:[ WATER ].concat(basin(720,360)),
+    hazards:[], sol:[[70,150],[720,344]] },
+  { tut:'二', hint:'멀어도 괜찮아요. <b>완만한 경사</b>로 이어 굴리세요.',
+    spawn:[130,110], goal:[780,420,34], ink:1700,
+    solids:[ WATER ].concat(basin(780,420)),
+    hazards:[], sol:[[60,145],[780,404]] },
+  { tut:'三', hint:'먹은 <b>한정</b>! 곧고 짧은 한 획이 별을 부릅니다.',
+    spawn:[140,110], goal:[770,300,34], ink:1200,
+    solids:[ WATER ].concat(basin(770,300)),
+    hazards:[], sol:[[60,140],[770,284]] },
+  // ---- 본 스테이지 ----
+  { tut:null, name:'가시 늪', hint:'<b>가시</b>를 넘는 아치 다리를 한 획에!',
+    spawn:[130,110], goal:[790,380,34], ink:1700,
+    solids:[ WATER ].concat(basin(790,380)),
+    hazards:[ spikeRow(300,AH-40,320) ], sol:[[60,150],[330,240],[560,270],[790,362]] },
+  { tut:null, name:'바위 문', hint:'<b>바위</b>를 피해 아래로 돌아 흘려보내세요.',
+    spawn:[120,100], goal:[800,430,34], ink:1900,
+    solids:[ WATER, seg(430,0,430,300), seg(430,300,520,300) ].concat(basin(800,430)),
+    hazards:[ spikeRow(540,AH-40,220) ], sol:[[60,150],[400,320],[560,380],[800,412]] },
+  { tut:null, name:'좁은 여울', hint:'<b>적은 먹</b>으로 두 가시 사이를 정확히!',
+    spawn:[130,100], goal:[800,340,30], ink:1350,
+    solids:[ WATER ].concat(basin(800,340)),
+    hazards:[ spikeRow(300,AH-40,120), spikeRow(540,AH-40,120), seg(470,0,470,180) ],
+    sol:[[60,140],[470,300],[800,322]] },
+];
+function spikeRow(x,y,w){ return {spike:true, x:x, y:y, w:w}; }
+
+/* ---------- 시뮬 ---------- */
+var R=11, GRAV=1700, REST=0.16, FRIC=0.06, SUB=6;
+function makeSim(i){
+  var L=LEVELS[i];
+  return { lvl:i, L:L, ball:{x:L.spawn[0],y:L.spawn[1],vx:0,vy:0,rest:0,restT:0},
+    stroke:[], strokeLen:0, inkMax:L.ink, phase:'draw', t:0, win:false, fail:false, stars:0, particles:[] };
+}
+function strokeSegs(s){ var out=[]; for(var i=0;i<s.stroke.length-1;i++){ var a=s.stroke[i],b=s.stroke[i+1]; out.push([a[0],a[1],b[0],b[1]]); } return out; }
+function collide(b, x1,y1,x2,y2){
+  var dx=x2-x1, dy=y2-y1, L2=dx*dx+dy*dy;
+  var t = L2>0? ((b.x-x1)*dx+(b.y-y1)*dy)/L2 : 0; t=Math.max(0,Math.min(1,t));
+  var cx=x1+dx*t, cy=y1+dy*t; var nx=b.x-cx, ny=b.y-cy, d=Math.hypot(nx,ny);
+  if(d<R && d>1e-4){ nx/=d; ny/=d; var pen=R-d; b.x+=nx*pen; b.y+=ny*pen;
+    var vn=b.vx*nx+b.vy*ny;
+    if(vn<0){ b.vx-=(1+REST)*vn*nx; b.vy-=(1+REST)*vn*ny; }  // 경사 미끄럼(마찰은 전역 공기저항으로)
+    return true; }
+  return false;
+}
+function stepSim(s,dt){
+  if(s.phase!=='sim')return; s.t+=dt;
+  var b=s.ball, sdt=dt/SUB, L=s.L; var segs=strokeSegs(s);
+  var drag=Math.exp(-0.35*dt); b.vx*=drag; b.vy*=drag;   // 완만한 공기저항(프레임당 1회)
+  for(var k=0;k<SUB;k++){
+    b.vy+=GRAV*sdt;
+    var sp=Math.hypot(b.vx,b.vy); if(sp>1500){ b.vx=b.vx/sp*1500; b.vy=b.vy/sp*1500; } // [규칙4]
+    b.x+=b.vx*sdt; b.y+=b.vy*sdt;
+    // 고정 지형
+    for(var i=0;i<L.solids.length;i++){ var g=L.solids[i]; collide(b,g[0],g[1],g[2],g[3]); }
+    // 그린 획
+    for(var j=0;j<segs.length;j++){ collide(b,segs[j][0],segs[j][1],segs[j][2],segs[j][3]); }
+    // 가시(위험)
+    for(var h=0;h<L.hazards.length;h++){ var hz=L.hazards[h];
+      if(hz.spike){ if(b.y+R> hz.y-14 && b.x>hz.x && b.x<hz.x+hz.w){ s.fail=true; s.failR='가시에 찔림'; } }
+      else { var d=distToSeg(b.x,b.y,hz[0],hz[1],hz[2],hz[3]); if(d<R+2){ s.fail=true; s.failR='물에 빠짐'; } }
+    }
+    // 물 바닥
+    if(b.y+R>=AH-16){ s.fail=true; s.failR='물에 빠짐'; }
+    // 둥지
+    if(Math.hypot(b.x-L.goal[0],b.y-L.goal[1])<L.goal[2]){ s.win=true; }
+    // 경계 [규칙4]
+    if(b.x<-40||b.x>AW+40||b.y>AH+60){ s.fail=true; s.failR='화면 밖으로'; }
+  }
+  // 정지 감지(막힘)
+  if(Math.hypot(b.vx,b.vy)<12){ b.restT+=dt; } else b.restT=0;
+  if(b.restT>1.6 && !s.win){ s.fail=true; s.failR='움직임이 멈췄다'; }
+  if(s.t>10 && !s.win){ s.fail=true; s.failR='시간 초과'; }
+  // 파티클 [규칙4 역루프]
+  for(var p=s.particles.length-1;p>=0;p--){ var pt=s.particles[p]; pt.life-=dt*1.6; pt.x+=pt.vx*dt; pt.y+=pt.vy*dt; pt.vy+=400*dt; if(pt.life<=0)s.particles.splice(p,1); }
+  if(s.win){ s.phase='win'; onWin(s); }
+  else if(s.fail){ s.phase='fail'; onFail(s); }
+}
+function distToSeg(px,py,x1,y1,x2,y2){ var dx=x2-x1,dy=y2-y1,l2=dx*dx+dy*dy; var t=l2>0?((px-x1)*dx+(py-y1)*dy)/l2:0; t=Math.max(0,Math.min(1,t)); return Math.hypot(px-(x1+dx*t),py-(y1+dy*t)); }
+
+/* ---------- 라이브 ---------- */
+var mode='title', sim=null, drawing=false, tutOn=false, tutStep=0;
+var NUM=['壹','貳','參','肆','伍','陸'];
+function loadLevel(i){ sim=makeSim(i); mode='play'; drawing=false;
+  document.getElementById('lvlPill').textContent = i<3 ? ['一','二','三'][i] : (LEVELS[i].name||NUM[i]);
+  document.getElementById('phasePill').textContent='한 획을 그리세요';
+  document.getElementById('goBtn').style.display='none';
+  updInk();
+  if(tutOn){ var box=document.getElementById('tut'); box.style.display='block';
+    document.getElementById('tutStep').textContent='가르침 '+['一','二','三'][i]; document.getElementById('tutTx').innerHTML=LEVELS[i].hint; }
+  else document.getElementById('tut').style.display='none';
+}
+function updInk(){ if(!sim)return; document.getElementById('inkfill').style.width=Math.max(0,100-sim.strokeLen/sim.inkMax*100)+'%'; }
+
+/* 입력 [규칙5] 1회 등록 */
+function toLogic(clientX,clientY){ var r=cv.getBoundingClientRect(); return { x:(clientX-r.left)/r.width*AW, y:(clientY-r.top)/r.height*AH }; }
+function down(cx,cy){ ensureAudio(); if(!sim||sim.phase!=='draw')return; var p=toLogic(cx,cy);
+  drawing=true; sim.stroke=[[p.x,p.y]]; sim.strokeLen=0; document.getElementById('goBtn').style.display='none'; updInk(); }
+function move(cx,cy){ if(!drawing||!sim)return; var p=toLogic(cx,cy); var last=sim.stroke[sim.stroke.length-1];
+  var dl=Math.hypot(p.x-last[0],p.y-last[1]); if(dl<3)return;
+  if(sim.strokeLen+dl>sim.inkMax){ drawing=false; endStroke(); return; } // 먹 소진
+  sim.stroke.push([p.x,p.y]); sim.strokeLen+=dl; updInk(); if(sim.stroke.length%3===0)sndBrush(); }
+function up(){ if(!drawing)return; drawing=false; endStroke(); }
+function endStroke(){ if(sim && sim.stroke.length>1){ document.getElementById('goBtn').style.display='block'; document.getElementById('phasePill').textContent='풀기를 누르세요'; } }
+cv.addEventListener('mousedown',function(e){ down(e.clientX,e.clientY); });
+window.addEventListener('mousemove',function(e){ move(e.clientX,e.clientY); });
+window.addEventListener('mouseup',up);
+cv.addEventListener('touchstart',function(e){ var t=e.touches[0]; down(t.clientX,t.clientY); e.preventDefault(); },{passive:false});
+cv.addEventListener('touchmove',function(e){ var t=e.touches[0]; move(t.clientX,t.clientY); e.preventDefault(); },{passive:false});
+cv.addEventListener('touchend',function(e){ up(); e.preventDefault(); },{passive:false});
+function release(){ if(!sim||sim.phase!=='draw'||sim.stroke.length<2)return; sim.phase='sim'; sim.t=0;
+  document.getElementById('goBtn').style.display='none'; document.getElementById('phasePill').textContent='먹물이 구른다…'; sndTap(); }
+document.getElementById('goBtn').addEventListener('click',function(){ ensureAudio(); release(); });
+window.addEventListener('keydown',function(e){ if(e.key===' '){ ensureAudio(); if(sim&&sim.phase==='draw')release(); e.preventDefault(); }
+  if(e.key.toLowerCase()==='r'){ if(sim)loadLevel(sim.lvl); } });
+document.getElementById('btnReset').addEventListener('click',function(){ if(sim)loadLevel(sim.lvl); });
+
+/* 결과 */
+function onWin(s){ sndWin(); vibrate([20,40,20]); for(var i=0;i<40;i++){ var a=Math.random()*6.28,sp=40+Math.random()*160;
+    s.particles.push({x:s.ball.x,y:s.ball.y,vx:Math.cos(a)*sp,vy:Math.sin(a)*sp,life:1}); }
+  // 별점: 먹 절약
+  var eff=1-s.strokeLen/s.inkMax; s.stars = eff>0.45?3 : eff>0.2?2 : 1;
+  setTimeout(function(){ nextOrResult(s); }, 900); }
+function onFail(s){ sndFail(); vibrate(60); document.getElementById('phasePill').textContent=(s.failR||'실패')+' — 다시 그리세요';
+  setTimeout(function(){ if(sim===s)loadLevel(s.lvl); }, 900); }
+function nextOrResult(s){
+  if(tutOn){ if(s.lvl<2){ loadLevel(s.lvl+1); } else { tutOn=false; document.getElementById('tut').style.display='none'; loadLevel(3); } return; }
+  // 본 스테이지 결과
+  var last=s.lvl>=LEVELS.length-1;
+  if(!last){ loadLevel(s.lvl+1); showToastWin(s); return; }
+  // 마지막 → 결과 화면
+  mode='result';
+  document.getElementById('resStars').textContent='★★★☆☆'.substr(0,0)+ '★'.repeat(s.stars)+'☆'.repeat(3-s.stars);
+  document.getElementById('resTitle').textContent='모든 둥지로 돌아왔다';
+  document.getElementById('resMsg').textContent='한 획의 미학을 완성했습니다.';
+  var row=document.getElementById('resRow'); row.innerHTML='';
+  row.appendChild(mkbtn('처음부터',function(){hideR();loadLevel(0);}));
+  document.getElementById('result').classList.add('on');
+}
+function showToastWin(s){ document.getElementById('phasePill').textContent='歸 · 다음 획'; }
+function hideR(){ document.getElementById('result').classList.remove('on'); }
+function mkbtn(t,fn){ var b=document.createElement('button'); b.textContent=t; b.onclick=fn; return b; }
+
+/* 튜토리얼/시작 */
+function startGame(){ tutOn=true; tutStep=0; loadLevel(0); }
+document.getElementById('startBtn').addEventListener('click',function(){ ensureAudio(); document.getElementById('title').classList.remove('on'); startGame(); });
+document.getElementById('tutSkip').addEventListener('click',function(){ tutOn=false; document.getElementById('tut').style.display='none'; loadLevel(3); });
+
+/* ---------- 루프 ---------- */
+var last=0;
+function loop(now){ if(!last)last=now; var dt=Math.min(0.033,(now-last)/1000); last=now;   // [규칙3]
+  if(sim && sim.phase==='sim') stepSim(sim,dt);
+  render();
+  requestAnimationFrame(loop);
+}
+
+/* ---------- 렌더(수묵) ---------- */
+function render(){
+  ctx.clearRect(0,0,AW,AH);
+  // 화선지
+  ctx.fillStyle='#efe7d4'; ctx.fillRect(0,0,AW,AH);
+  ctx.fillStyle='rgba(120,100,70,.04)'; for(var i=0;i<40;i++){ var x=(i*137.5)%AW,y=(i*83.3)%AH; ctx.fillRect(x,y,2,2); }
+  if(!sim){ return; }
+  var L=sim.L;
+  // 물(하단)
+  ctx.fillStyle='rgba(60,90,120,.18)'; ctx.fillRect(0,AH-16,AW,16);
+  ctx.strokeStyle='rgba(40,70,110,.4)'; ctx.lineWidth=1;
+  ctx.beginPath(); for(var wx=0;wx<AW;wx+=8){ ctx.lineTo(wx,AH-16+Math.sin(wx*0.1+ (last/300))*2); } ctx.stroke();
+  // 고정 지형(먹 바위)
+  ctx.strokeStyle='rgba(28,23,18,.85)'; ctx.lineWidth=7; ctx.lineCap='round';
+  for(var g=0;g<L.solids.length;g++){ var s=L.solids[g]; if(s===WATER)continue; ctx.beginPath(); ctx.moveTo(s[0],s[1]); ctx.lineTo(s[2],s[3]); ctx.stroke(); }
+  // 가시
+  for(var h=0;h<L.hazards.length;h++){ var hz=L.hazards[h];
+    if(hz.spike){ ctx.fillStyle='#1c1712'; var n=Math.floor(hz.w/16);
+      for(var t=0;t<n;t++){ ctx.beginPath(); ctx.moveTo(hz.x+t*16,hz.y); ctx.lineTo(hz.x+t*16+8,hz.y-18); ctx.lineTo(hz.x+(t+1)*16,hz.y); ctx.fill(); } }
+    else { ctx.strokeStyle='rgba(40,70,110,.5)'; ctx.lineWidth=6; ctx.beginPath(); ctx.moveTo(hz[0],hz[1]); ctx.lineTo(hz[2],hz[3]); ctx.stroke(); } }
+  // 둥지(둥근 낙관)
+  var gx=L.goal[0], gy=L.goal[1];
+  ctx.save(); ctx.strokeStyle='#b0322a'; ctx.lineWidth=3; ctx.beginPath(); ctx.arc(gx,gy,L.goal[2],0,6.28); ctx.stroke();
+  ctx.fillStyle='rgba(176,50,42,.1)'; ctx.beginPath(); ctx.arc(gx,gy,L.goal[2]-4,0,6.28); ctx.fill();
+  ctx.fillStyle='#b0322a'; ctx.font='18px serif'; ctx.textAlign='center'; ctx.textBaseline='middle'; ctx.fillText('歸',gx,gy+1); ctx.restore();
+  // 그린 획(먹 번짐)
+  drawInkStroke(sim.stroke, sim.phase==='draw');
+  // 먹물 정령
+  var b=sim.ball;
+  ctx.save(); ctx.fillStyle='#1c1712';
+  // 물방울형
+  ctx.beginPath(); ctx.arc(b.x,b.y+2,R,0,6.28); ctx.fill();
+  ctx.beginPath(); ctx.moveTo(b.x,b.y-R-3); ctx.quadraticCurveTo(b.x+R*0.9,b.y-2,b.x+R*0.7,b.y+3); ctx.quadraticCurveTo(b.x,b.y+R,b.x-R*0.7,b.y+3); ctx.quadraticCurveTo(b.x-R*0.9,b.y-2,b.x,b.y-R-3); ctx.fill();
+  // 눈
+  ctx.fillStyle='#efe7d4'; ctx.beginPath(); ctx.arc(b.x-3.5,b.y,2,0,6.28); ctx.arc(b.x+3.5,b.y,2,0,6.28); ctx.fill();
+  ctx.fillStyle='#1c1712'; ctx.beginPath(); ctx.arc(b.x-3.5,b.y+0.5,1,0,6.28); ctx.arc(b.x+3.5,b.y+0.5,1,0,6.28); ctx.fill();
+  ctx.restore();
+  // 파티클(먹 튐)
+  for(var p=0;p<sim.particles.length;p++){ var pt=sim.particles[p]; ctx.globalAlpha=Math.max(0,pt.life)*0.7; ctx.fillStyle='#1c1712';
+    ctx.beginPath(); ctx.arc(pt.x,pt.y,2.4,0,6.28); ctx.fill(); } ctx.globalAlpha=1;
+  // 낙관(우하단)
+  ctx.fillStyle='rgba(176,50,42,.85)'; ctx.fillRect(AW-42,AH-56,26,26);
+  ctx.fillStyle='#efe7d4'; ctx.font='14px serif'; ctx.textAlign='center'; ctx.fillText('墨',AW-29,AH-38);
+  ctx.textAlign='left'; ctx.textBaseline='alphabetic';
+}
+function drawInkStroke(st, live){
+  if(st.length<2)return;
+  ctx.save(); ctx.strokeStyle='#1c1712'; ctx.lineCap='round'; ctx.lineJoin='round';
+  // 번짐(넓고 옅게)
+  ctx.globalAlpha=0.12; ctx.lineWidth=14; ctx.beginPath(); ctx.moveTo(st[0][0],st[0][1]); for(var i=1;i<st.length;i++)ctx.lineTo(st[i][0],st[i][1]); ctx.stroke();
+  // 본선
+  ctx.globalAlpha=1; ctx.lineWidth=7; ctx.beginPath(); ctx.moveTo(st[0][0],st[0][1]); for(var j=1;j<st.length;j++)ctx.lineTo(st[j][0],st[j][1]); ctx.stroke();
+  ctx.restore();
+}
+
+document.getElementById('title').classList.add('on');
+layout(); requestAnimationFrame(loop);
+
+/* ---------- 검증 노출 ---------- */
+window.__ink={ makeSim:makeSim, stepSim:stepSim, LEVELS:LEVELS,
+  setStroke:function(s,pts){ s.stroke=pts.map(function(p){return [p[0],p[1]];}); s.strokeLen=0;
+    for(var i=1;i<s.stroke.length;i++)s.strokeLen+=Math.hypot(s.stroke[i][0]-s.stroke[i-1][0], s.stroke[i][1]-s.stroke[i-1][1]); },
+  release:function(s){ if(s.stroke.length>=2){ s.phase='sim'; s.t=0; } },
+  // 해답 획으로 클리어 검증
+  runSol:function(i){ var s=makeSim(i); this.setStroke(s, LEVELS[i].sol); this.release(s); var dt=1/60;
+    for(var f=0;f<60*12;f++){ stepSim(s,dt); if(s.win)return {win:true, stars:s.stars, ink:Math.round(s.strokeLen), inkMax:s.inkMax, t:Math.round(s.t*10)/10};
+      if(s.fail)return {win:false, reason:s.failR, ballx:Math.round(s.ball.x), bally:Math.round(s.ball.y), t:Math.round(s.t*10)/10}; }
+    return {win:false, timeout:true, ballx:Math.round(s.ball.x)}; },
+  // 획 없이(빈 획) → 물에 빠져 실패해야
+  runEmpty:function(i){ var s=makeSim(i); s.stroke=[[s.ball.x,-50],[s.ball.x,-40]]; s.phase='sim'; var dt=1/60;
+    for(var f=0;f<60*12;f++){ stepSim(s,dt); if(s.win)return {win:true}; if(s.fail)return {win:false,reason:s.failR}; } return {win:false,timeout:true}; },
+  hasNaN:function(s){ return !isFinite(s.ball.x)||!isFinite(s.ball.y); } };
+})();
+</script>
+</body>
+</html>
