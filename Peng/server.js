@@ -92,7 +92,17 @@ server.on('upgrade', function(req, socket){
   }
   function onMessage(str){
     var m; try{ m = JSON.parse(str); }catch(e){ return; }
-    if(m.t === 'join'){ if(typeof m.name === 'string') client.name = m.name.slice(0,24); sendRoster(room); return; }
+    if(m.t === 'join'){
+      if(typeof m.name === 'string') client.name = m.name.slice(0,24);
+      sendRoster(room);
+      // 이미 방에 있던 사람들의 외형을 새로 들어온 사람에게 전달
+      var r0 = rooms[room];
+      if(r0) Object.keys(r0).forEach(function(k){
+        var o = r0[k];
+        if(o.id !== id && o.cfg) send(socket, JSON.stringify({ t:'cfg', id:o.id, c:o.cfg }));
+      });
+      return;
+    }
     if(m.t === 'start'){                       // 호스트만 시작시킬 수 있다
       if(id !== hostOf(room)) return;
       broadcast(room, id, JSON.stringify({ t:'start' })); return;
@@ -102,6 +112,18 @@ server.on('upgrade', function(req, socket){
       if(!text.trim()) return;
       var out = JSON.stringify({ t:'ch', id:id, name:client.name, text:text });
       var r = rooms[room]; if(r) Object.keys(r).forEach(function(k){ send(r[k].socket, out); });
+      return;
+    }
+    if(m.t === 'cfg'){ // 캐릭터 외형 설정 — 숫자/짧은 문자열만 통과시킨다
+      var c = m.c; if(!c || typeof c !== 'object') return;
+      var out = {};
+      Object.keys(c).slice(0, 40).forEach(function(k){
+        var v = c[k];
+        if(typeof v === 'number' && isFinite(v)) out[k] = v;
+        else if(typeof v === 'string' && /^#[0-9a-fA-F]{6}$/.test(v)) out[k] = v;
+      });
+      client.cfg = out;
+      broadcast(room, id, JSON.stringify({ t:'cfg', id:id, c:out }));
       return;
     }
     if(m.t === 'st'){  m.id = id; m.name = client.name; broadcast(room, id, JSON.stringify(m)); return; }
