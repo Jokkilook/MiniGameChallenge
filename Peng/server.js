@@ -238,6 +238,27 @@ server.on('upgrade', function(req, socket){
       broadcast(room, id, JSON.stringify({ t:'gm', mode:m.mode }));
       return;
     }
+    if(m.t === 'lvl'){          // 대기방에서 호스트가 고른 맵 — 방에 저장해 두고 전원에게
+      if(id !== hostOf(room)) return;
+      if(typeof m.level !== 'string' || !m.level || m.level.length > 64) return;
+      roomLevel[room] = m.level;
+      broadcast(room, id, JSON.stringify({ t:'lvl', level:m.level }));
+      return;
+    }
+    if(m.t === 'start'){        // 게임 시작 — 호스트만. 시작 시점의 맵을 같이 실어 보낸다
+      if(id !== hostOf(room)) return;
+      var lv = (typeof m.level === 'string' && m.level && m.level.length <= 64) ? m.level : roomLevel[room];
+      if(lv) roomLevel[room] = lv;
+      broadcast(room, id, JSON.stringify({ t:'start', level:lv }));
+      return;
+    }
+    if(m.t === 'ch'){           // 채팅 — 보낸 사람에게도 되돌려 줘야 자기 화면에 뜬다
+      if(typeof m.text !== 'string') return;
+      var txt = m.text.slice(0,120); if(!txt) return;
+      var line = JSON.stringify({ t:'ch', id:id, name:client.name, text:txt });
+      broadcast(room, id, line); send(socket, line);
+      return;
+    }
     if(m.t === 'fell'){         // 아레나 밖으로 떨어짐 — 떨어진 본인이 알린다
       broadcast(room, id, JSON.stringify({ t:'fell', id:id }));
       return;
