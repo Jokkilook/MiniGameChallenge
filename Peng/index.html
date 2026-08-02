@@ -90,6 +90,32 @@
   .screen.asPanel .menu{width:100%;margin-top:12px}
   .screen.asPanel .menu.row button{padding:10px 6px;font-size:12px}
   .screen.asPanel .hint{font-size:11px;margin-top:8px}
+  /* 디버그 패널 */
+  #dbgBtn{position:fixed;top:10px;right:10px;z-index:41;cursor:pointer;font:inherit;
+    font-size:10.5px;font-weight:900;letter-spacing:2px;color:#9dabc4;background:rgba(8,11,17,.8);
+    border:1px solid var(--line2);padding:6px 11px;border-radius:0;transition:color .12s,border-color .12s}
+  #dbgBtn:hover,#dbgBtn.on{color:var(--acc);border-color:var(--acc)}
+  #dbgPanel{position:fixed;top:40px;right:10px;z-index:40;width:min(330px,92vw);max-height:82vh;overflow-y:auto;
+    background:rgba(8,11,17,.94);border:1px solid var(--line);padding:10px 12px 12px}
+  #dbgPanel.off{display:none}
+  .dbgHead{display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;
+    font-size:9.5px;font-weight:900;letter-spacing:2.4px;color:var(--acc);text-transform:uppercase}
+  .dbgSmall{cursor:pointer;font:inherit;font-size:9.5px;font-weight:800;letter-spacing:1.4px;color:#9dabc4;
+    background:transparent;border:1px solid var(--line2);padding:3px 7px;border-radius:0;text-transform:uppercase}
+  .dbgSmall:hover{color:var(--acc);border-color:var(--acc)}
+  .dbgSec{margin-top:9px;padding-top:6px;border-top:1px solid var(--line);
+    font-size:9px;font-weight:900;letter-spacing:2px;color:#6f7d96;text-transform:uppercase}
+  .dbgRow{display:flex;align-items:center;gap:7px;margin:4px 0}
+  .dbgRow label{flex:0 0 96px;font-size:10.5px;font-weight:700;color:#9dabc4}
+  .dbgRow input[type=range]{flex:1;-webkit-appearance:none;appearance:none;height:2px;background:var(--line2);outline:none;margin:0}
+  .dbgRow input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:11px;height:15px;background:var(--acc);cursor:pointer;border:0}
+  .dbgRow input[type=number]{flex:0 0 58px;font:inherit;font-family:var(--mono);font-size:11px;font-weight:700;
+    color:#fff;background:transparent;border:1px solid var(--line2);border-radius:0;padding:3px 5px;outline:none;
+    -moz-appearance:textfield}
+  .dbgRow input[type=number]::-webkit-outer-spin-button,
+  .dbgRow input[type=number]::-webkit-inner-spin-button{-webkit-appearance:none;margin:0}
+  .dbgRow input[type=number]:focus{border-color:var(--acc)}
+  .dbgNote{margin-top:10px;font-size:10px;color:#6f7d96;line-height:1.5}
   /* 채팅: 각진 좌측 액센트 */
   #chat{position:fixed;left:0;bottom:0;z-index:30;width:min(400px,62vw);padding:0 0 12px 12px;pointer-events:none}
   #chatLog{display:flex;flex-direction:column;gap:1px;margin-bottom:5px}
@@ -129,6 +155,17 @@
 <div id="chat">
   <div id="chatLog"></div>
   <input id="chatInput" maxlength="120" autocomplete="off" placeholder="메시지 입력 후 Enter · Esc 취소" />
+</div>
+
+<!-- 디버그: 실시간 파라미터 조절 -->
+<button id="dbgBtn" title="디버그 패널">DEBUG</button>
+<div id="dbgPanel" class="off">
+  <div class="dbgHead">
+    <span>파라미터</span>
+    <button id="dbgReset" class="dbgSmall">기본값</button>
+  </div>
+  <div id="dbgRows"></div>
+  <div class="dbgNote">값은 이 세션에만 적용됩니다. 새로고침하면 원래대로 돌아갑니다.</div>
 </div>
 
 <div id="hud">
@@ -289,6 +326,11 @@ var RUN=_P.RUN, JUMPV=_P.JUMPV, GRAV=_P.GRAV, EYE=_P.EYE, PH_HX=_P.PH_HX, PH_HY=
 var BLAST_R=_P.BLAST_R, BLAST_F=_P.BLAST_F, BLAST_RANGE=_P.BLAST_RANGE;
 var AMMO_MAX=_P.AMMO_MAX, AMMO_REGEN=_P.AMMO_REGEN, PROJ_SPD=_P.PROJ_SPD;
 var KB_TIME=_P.KB_TIME;   // 폭발 후 조작 권한이 약해지는 시간(초)
+/* 3인칭 카메라 · 조준(우클릭) — 디버그 패널에서 실시간 조절 */
+var CAM_DIST=3.8;    // 평소 카메라 거리
+var AIM_SIDE=0.95;   // 조준 시 오른쪽으로 비키는 양(캐릭터가 화면 왼쪽으로)
+var AIM_PULL=1.1;    // 조준 시 당겨지는 거리
+var AIM_RISE=0.18;   // 조준 시 살짝 올라가는 높이
 var COYOTE=_P.COYOTE, JUMP_BUF=_P.JUMP_BUF, PITCH_LIM=_P.PITCH_LIM, FUSE_R=_P.FUSE_R;
 
 function makeSim(){  // practice 를 켜면 기록/승리 없이 자유 연습
@@ -552,8 +594,8 @@ function setCamera(s){ var f=forwardVec(s);
     // 조준(우클릭 홀드) 중에는 카메라를 오른쪽으로 밀어 캐릭터가 화면 왼쪽으로 비켜서게 한다
     // — 그래야 정중앙의 조준점이 몸에 가리지 않는다. a 는 0→1 로 부드럽게 변한다.
     var a=s.aim||0;
-    var pivot={x:s.p.x, y:s.p.y+1.0+a*0.18, z:s.p.z}, D=3.8-a*1.1;
-    var side=a*0.95;
+    var pivot={x:s.p.x, y:s.p.y+1.0+a*AIM_RISE, z:s.p.z}, D=CAM_DIST-a*AIM_PULL;
+    var side=a*AIM_SIDE;
     CAMPOS={ x:pivot.x-AIMF.x*D+AIMR.x*side, y:pivot.y-AIMF.y*D+AIMR.y*side, z:pivot.z-AIMF.z*D+AIMR.z*side };
     CAMF=AIMF; CAMR=AIMR; CAMU=AIMU;
   } else { CAMPOS=eye; CAMF=AIMF; CAMR=AIMR; CAMU=AIMU; }
@@ -741,6 +783,8 @@ function sphereGL(cx,cy,cz,r,col){
     triPush(A,c); triPush(C,c); triPush(D,c);
   }
 }
+/* 눈 배치·굴림 — 디버그 패널에서 조절할 수 있게 변수로 뺀다 */
+var EYE_Y=1.42, EYE_X=0.15, EYE_Z=0.295, EYE_R=0.115, EYE_PUPIL_R=0.058, EYE_ROLL=0.85;
 var PLAYER_COL='#ff8a3a';
 // 1인칭 PoofGun 3D 모델(카메라 로컬: x=오른쪽, y=위, z=앞)
 // 1·3인칭 공통 손 위치(몸에 붙게 자연스럽게). x=오른쪽, y=위, z=앞(조준 기저).
@@ -778,16 +822,20 @@ function emitCharacter(px,py,pz,yaw,pitch,recoil,col){
   var U={x:f.y*R.z-f.z*R.y, y:f.z*R.x-f.x*R.z, z:f.x*R.y-f.y*R.x};
   var eye={x:px,y:py+EYE,z:pz};
   capsuleGL(px,py+0.9,pz,0.35,0.55,col);   // 캡슐은 외곽선 없이 매끈하게(캐시 재사용)
-  // 눈 — 어느 쪽을 보는지 식별용. 수평(yaw) 기준 + pitch 는 살짝만 반영.
+  // 눈 — 흰자는 고정, 눈동자가 시선(pitch)을 따라 흰자 표면 위를 굴러간다.
+  // 몸이 yaw 를 따라 돌므로 좌우 성분은 이미 반영돼 있고, 여기서는 상하가 남는다.
   var HF={x:Math.sin(yaw),y:0,z:Math.cos(yaw)}, HU={x:0,y:1,z:0};
-  var hy=py+1.42+Math.max(-0.12,Math.min(0.12,(pitch||0)*0.14));
-  // 머리 로컬(좌우 R · 위 HU · 앞 HF) → 월드. 구는 방향이 없으니 위치만 구하면 된다.
+  var hy=py+EYE_Y;
   function headPos(lx,ly,lz){
     return { x:px+R.x*lx+HU.x*ly+HF.x*lz, y:hy+R.y*lx+HU.y*ly+HF.y*lz, z:pz+R.z*lx+HU.z*ly+HF.z*lz }; }
+  var lp=Math.max(-1.15, Math.min(1.15, (pitch||0)*EYE_ROLL));   // 눈이 뒤집히지 않게 제한
+  var ldy=Math.sin(lp), ldz=Math.cos(lp);                        // 머리 기준 시선 방향
+  var orbit=EYE_R - EYE_PUPIL_R*0.45;                            // 눈동자가 흰자 표면에 얹히는 반경
   for(var s=-1;s<=1;s+=2){
-    var w=headPos(s*0.15, 0, 0.295), p=headPos(s*0.15, -0.005, 0.355);
-    sphereGL(w.x,w.y,w.z, 0.115, '#ffffff');   // 흰자
-    sphereGL(p.x,p.y,p.z, 0.058, '#101c33');   // 눈동자
+    var w=headPos(s*EYE_X, 0, EYE_Z);
+    var p=headPos(s*EYE_X, ldy*orbit, EYE_Z + ldz*orbit);
+    sphereGL(w.x,w.y,w.z, EYE_R, '#ffffff');            // 흰자
+    sphereGL(p.x,p.y,p.z, EYE_PUPIL_R, '#101c33');      // 눈동자
   }
   var kick=(recoil||0)*(recoil||0);
   for(var gi=0;gi<GUN.length;gi++){ var gp=GUN[gi];
@@ -1016,6 +1064,74 @@ document.getElementById('copyCode').addEventListener('click',function(e){ e.prev
     setTimeout(function(){ e.target.textContent='코드 복사'; },1200); },function(){ prompt('세션 코드:',c); }); }
   else prompt('세션 코드:',c); });
 
+
+/* ---------- 디버그 파라미터 패널 ----------
+   게임이 실제로 읽는 변수를 get/set 으로 직접 건드린다(복사본이 아니라).
+   슬라이더와 숫자 입력이 양방향으로 묶여 있고, 숫자칸에는 슬라이더 범위 밖 값도 넣을 수 있다. */
+var DBG_SPEC=[
+  ['sec','이동'],
+  ['달리기 속도',   1,   15,  0.1,  function(){return RUN;},        function(v){RUN=v;}],
+  ['점프력',        3,   20,  0.1,  function(){return JUMPV;},      function(v){JUMPV=v;}],
+  ['중력',          5,   45,  0.5,  function(){return GRAV;},       function(v){GRAV=v;}],
+  ['코요테 시간',   0,   0.4, 0.01, function(){return COYOTE;},     function(v){COYOTE=v;}],
+  ['점프 선입력',   0,   0.4, 0.01, function(){return JUMP_BUF;},   function(v){JUMP_BUF=v;}],
+  ['sec','펑건'],
+  ['폭발 세기',     0,   40,  0.5,  function(){return BLAST_F;},    function(v){BLAST_F=v;}],
+  ['폭발 반경',     0.5, 12,  0.1,  function(){return BLAST_R;},    function(v){BLAST_R=v;}],
+  ['사거리',        5,   80,  1,    function(){return BLAST_RANGE;},function(v){BLAST_RANGE=v;}],
+  ['투사체 속도',   5,   200, 1,    function(){return PROJ_SPD;},   function(v){PROJ_SPD=v;}],
+  ['넉백 지속(초)', 0,   1.5, 0.05, function(){return KB_TIME;},    function(v){KB_TIME=v;}],
+  ['팀원 명중 반경',0,   2,   0.05, function(){return FUSE_R;},     function(v){FUSE_R=v;}],
+  ['sec','탄창'],
+  ['최대 탄',       1,   9,   1,    function(){return AMMO_MAX;},   function(v){AMMO_MAX=Math.round(v);}],
+  ['재충전(초)',    0.1, 4,   0.05, function(){return AMMO_REGEN;}, function(v){AMMO_REGEN=v;}],
+  ['sec','카메라 · 조준(우클릭)'],
+  ['3인칭 거리',    1,   10,  0.1,  function(){return CAM_DIST;},   function(v){CAM_DIST=v;}],
+  ['조준 옆이동',   0,   3,   0.05, function(){return AIM_SIDE;},   function(v){AIM_SIDE=v;}],
+  ['조준 당김',     0,   3,   0.05, function(){return AIM_PULL;},   function(v){AIM_PULL=v;}],
+  ['조준 높이',     -1,  1,   0.02, function(){return AIM_RISE;},   function(v){AIM_RISE=v;}],
+  ['시야각(도)',    50,  110, 1,    function(){return FOV*180/Math.PI;}, function(v){FOV=v*Math.PI/180;}],
+  ['sec','눈'],
+  ['눈 굴림',       0,   2,   0.05, function(){return EYE_ROLL;},   function(v){EYE_ROLL=v;}],
+  ['눈 크기',       0.03,0.3, 0.005,function(){return EYE_R;},      function(v){EYE_R=v;}],
+  ['눈동자 크기',   0.01,0.2, 0.005,function(){return EYE_PUPIL_R;},function(v){EYE_PUPIL_R=v;}],
+  ['눈 간격',       0,   0.4, 0.005,function(){return EYE_X;},      function(v){EYE_X=v;}],
+  ['눈 높이',       0.8, 2.2, 0.01, function(){return EYE_Y;},      function(v){EYE_Y=v;}],
+  ['sec','멀티'],
+  ['보간 지연(ms)', 0,   400, 5,    function(){return INTERP_MS;},  function(v){INTERP_MS=v;}]
+];
+var DBG_DEFAULTS=null, dbgRows=[];
+function dbgBuild(){
+  var host=document.getElementById('dbgRows'); host.innerHTML=''; dbgRows=[];
+  if(!DBG_DEFAULTS){ DBG_DEFAULTS=DBG_SPEC.map(function(r){ return r[0]==='sec' ? null : r[4](); }); }
+  DBG_SPEC.forEach(function(r, idx){
+    if(r[0]==='sec'){ var h=document.createElement('div'); h.className='dbgSec'; h.textContent=r[1]; host.appendChild(h); return; }
+    var name=r[0], lo=r[1], hi=r[2], st=r[3], get=r[4], set=r[5];
+    var row=document.createElement('div'); row.className='dbgRow';
+    var lab=document.createElement('label'); lab.textContent=name; row.appendChild(lab);
+    var sl=document.createElement('input'); sl.type='range'; sl.min=lo; sl.max=hi; sl.step=st;
+    var nm=document.createElement('input'); nm.type='number'; nm.step=st;
+    function show(v){ sl.value=v; nm.value=(Math.round(v*1000)/1000); }
+    show(get());
+    sl.addEventListener('input',function(){ var v=parseFloat(sl.value); set(v); nm.value=(Math.round(v*1000)/1000); });
+    // 숫자칸은 슬라이더 범위를 벗어난 값도 허용(극단값 실험용)
+    nm.addEventListener('change',function(){ var v=parseFloat(nm.value);
+      if(!isFinite(v)){ show(get()); return; } set(v); sl.value=v; });
+    row.appendChild(sl); row.appendChild(nm); host.appendChild(row);
+    dbgRows.push({idx:idx, show:show, get:get});
+  });
+}
+function dbgSync(){ dbgRows.forEach(function(r){ r.show(r.get()); }); }
+document.getElementById('dbgBtn').addEventListener('click',function(){
+  var pan=document.getElementById('dbgPanel'), off=pan.classList.toggle('off');
+  this.classList.toggle('on', !off);
+  if(!off){ dbgBuild(); if(locked) document.exitPointerLock(); }   // 열면 커서를 돌려줘야 조작 가능
+});
+document.getElementById('dbgReset').addEventListener('click',function(){
+  DBG_SPEC.forEach(function(r,i){ if(r[0]!=='sec' && DBG_DEFAULTS[i]!=null) r[5](DBG_DEFAULTS[i]); });
+  dbgSync();
+});
+
 /* ---------- 라이브 입력/루프 ---------- */
 var keys={}, locked=false, jumpEdge=false;
 // levelId 를 주면 그 맵으로 바꿔서 시작한다(멀티: 호스트가 고른 맵). 없으면 현재 맵 유지.
@@ -1085,6 +1201,8 @@ document.addEventListener('contextmenu',function(e){
    다른 버튼과 겹치면 누락될 수 있어, 조준(우클릭) 중 좌클릭이 씹히는 원인이 된다. */
 window.addEventListener('mousedown',function(e){
   if(chatting || !sim) return;
+  // 디버그 패널·버튼을 누른 건 조작이 아니다(잠금 중이면 발사로 새어나간다)
+  if(e.target && e.target.closest && e.target.closest('#dbgPanel,#dbgBtn')) return;
   if(e.button===2){ sim.aimHold=true; return; }
   if(e.button===0 && locked && (mode==='play'||mode==='lobbyScr')){ ensureAudio(); doFire(sim); }
 });
