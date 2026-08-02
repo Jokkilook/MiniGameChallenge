@@ -16,39 +16,39 @@
   }
   *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
   html,body{margin:0;height:100%;overflow:hidden;background:var(--bg);color:var(--ink);
-    font-family:"Inter","Segoe UI","Malgun Gothic",sans-serif;-webkit-font-smoothing:antialiased;
-    -webkit-user-select:none;user-select:none}
+    font-family:"Pretendard","Inter","Segoe UI","Malgun Gothic",sans-serif;font-weight:600;
+    -webkit-font-smoothing:antialiased;-webkit-user-select:none;user-select:none}
   #wrap{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:#04060a}
   canvas{display:block;cursor:none}
   #hud{position:fixed;inset:0;pointer-events:none;z-index:5}
   #crosshair{position:absolute;left:50%;top:50%;width:18px;height:18px;transform:translate(-50%,-50%);opacity:.9}
   /* HUD: 각진 칩, 수치는 고정폭 */
   #topbar{position:absolute;top:0;left:0;right:0;padding:12px;display:flex;gap:1px;justify-content:center}
-  #topbar .pill{background:rgba(8,11,17,.72);border:1px solid var(--line);padding:6px 13px;
-    font-size:11px;font-weight:600;letter-spacing:1.4px;text-transform:uppercase;color:var(--dim)}
-  #topbar .pill b{color:var(--ink);font-family:var(--mono);font-weight:600;letter-spacing:0}
+  #topbar .pill{background:rgba(8,11,17,.75);border:1px solid var(--line);padding:7px 14px;
+    font-size:12px;font-weight:800;letter-spacing:1.2px;text-transform:uppercase;color:#9dabc4}
+  #topbar .pill b{color:#fff;font-family:var(--mono);font-weight:700;letter-spacing:0}
   #ammo{position:absolute;right:18px;bottom:18px;display:flex;gap:4px}
   #ammo .p{width:5px;height:24px;background:transparent;border:1px solid var(--line2)}
   #ammo .p.on{background:var(--acc);border-color:var(--acc)}
-  #msg{position:absolute;left:50%;top:22%;transform:translateX(-50%);font-weight:600;font-size:clamp(15px,2.4vw,21px);
-    letter-spacing:.4px;color:var(--ink);background:rgba(8,11,17,.7);border-left:2px solid var(--acc);
-    padding:8px 16px;opacity:0;transition:opacity .18s;text-align:left}
+  #msg{position:absolute;left:50%;top:22%;transform:translateX(-50%);font-weight:800;font-size:clamp(17px,2.7vw,24px);
+    letter-spacing:-.1px;color:#fff;background:rgba(8,11,17,.78);border-left:3px solid var(--acc);
+    padding:9px 18px;opacity:0;transition:opacity .18s;text-align:left}
   #msg.on{opacity:1}
-  #msg b{color:var(--acc);font-weight:700}
+  #msg b{color:var(--acc);font-weight:900}
   /* 화면 */
   .screen{position:fixed;inset:0;z-index:20;display:flex;flex-direction:column;align-items:center;justify-content:center;
     text-align:center;padding:28px;background:var(--bg)}
   .screen.off{display:none}
-  .screen h1{margin:0;font-size:clamp(34px,8vw,62px);font-weight:800;letter-spacing:-1.5px;color:#fff;line-height:1}
-  .screen .sub{color:var(--acc);letter-spacing:4px;font-size:10px;margin-bottom:10px;font-weight:700;text-transform:uppercase}
-  .screen p{color:var(--dim);font-size:14px;line-height:1.75;max-width:520px;margin:6px 0}
-  .screen p b{color:var(--ink);font-weight:600}
-  .screen kbd{font-family:var(--mono);font-size:11.5px;background:transparent;border:1px solid var(--line2);
-    padding:2px 6px;margin:0 1px;color:var(--ink)}
+  .screen h1{margin:0;font-size:clamp(38px,9vw,68px);font-weight:900;letter-spacing:-2px;color:#fff;line-height:.95}
+  .screen .sub{color:var(--acc);letter-spacing:4px;font-size:11px;margin-bottom:10px;font-weight:900;text-transform:uppercase}
+  .screen p{color:#9dabc4;font-size:14.5px;font-weight:500;line-height:1.7;max-width:520px;margin:6px 0}
+  .screen p b{color:#fff;font-weight:800}
+  .screen kbd{font-family:var(--mono);font-size:11.5px;font-weight:700;background:transparent;border:1px solid var(--line2);
+    padding:2px 7px;margin:0 1px;color:#fff}
   /* 버튼: 플랫 + 1px 선. 기본은 아웃라인, 주버튼만 단색 채움 */
-  button.go{margin-top:0;cursor:pointer;font:inherit;font-weight:700;font-size:13px;letter-spacing:2px;
+  button.go{margin-top:0;cursor:pointer;font:inherit;font-weight:900;font-size:14.5px;letter-spacing:1.6px;
     text-transform:uppercase;color:#03080f;background:var(--acc);border:1px solid var(--acc);
-    padding:13px 26px;border-radius:0;transition:background .12s,color .12s,border-color .12s}
+    padding:14px 26px;border-radius:0;transition:background .12s,color .12s,border-color .12s}
   button.go:hover{background:#7cc8ff;border-color:#7cc8ff}
   button.go:active{transform:none;background:#2f9de8}
   button.go.alt{background:transparent;color:var(--ink);border-color:var(--line2)}
@@ -57,51 +57,52 @@
   button.go:disabled:hover{background:transparent;color:#3d4a60;border-color:var(--line)}
   .menu{display:flex;flex-direction:column;gap:8px;margin-top:22px;width:min(320px,86vw)}
   .menu.row{flex-direction:row}
-  .menu.row button{flex:1;padding:11px 8px;font-size:12px;letter-spacing:1.4px}
+  .menu.row button{flex:1;padding:12px 8px;font-size:13px;letter-spacing:1.2px}
   .menu button{width:100%}
   /* 코드 입력/표시: 고정폭, 각진 테두리 */
-  #codeInput{margin-top:18px;width:min(320px,80vw);text-align:center;font:600 28px/1.3 var(--mono);letter-spacing:12px;
-    text-transform:uppercase;color:var(--ink);background:transparent;border:1px solid var(--line2);
+  #codeInput{margin-top:18px;width:min(320px,80vw);text-align:center;font:800 29px/1.3 var(--mono);letter-spacing:12px;
+    text-transform:uppercase;color:#fff;background:transparent;border:1px solid var(--line2);
     border-radius:0;padding:12px 8px 12px 20px;outline:none;transition:border-color .12s}
   #codeInput:focus{border-color:var(--acc)}
-  #codeBig{margin-top:4px;font:600 clamp(30px,7vw,46px)/1.15 var(--mono);letter-spacing:14px;
+  #codeBig{margin-top:4px;font:800 clamp(32px,7.5vw,48px)/1.1 var(--mono);letter-spacing:14px;
     color:var(--acc);padding-left:14px}
   /* 명단: 각진 행, 좌측 상태 바 */
   #playerList{list-style:none;margin:16px 0 0;padding:0;width:min(320px,86vw);display:flex;flex-direction:column;gap:1px}
-  #playerList li{background:rgba(255,255,255,.03);border-left:2px solid var(--acc2);padding:9px 12px;
-    font-size:13px;font-weight:500;color:var(--ink);display:flex;align-items:center;gap:9px;text-align:left}
+  #playerList li{background:rgba(255,255,255,.04);border-left:3px solid var(--acc2);padding:10px 13px;
+    font-size:13.5px;font-weight:700;color:#fff;display:flex;align-items:center;gap:9px;text-align:left}
   #playerList li.me{border-left-color:#ff8a3a}
   #playerList li .dot{display:none}
-  #playerList li .tag{margin-left:auto;font-size:9.5px;font-weight:700;letter-spacing:1.6px;color:var(--dim);
-    border:1px solid var(--line2);padding:1px 5px}
+  #playerList li .tag{margin-left:auto;font-size:10px;font-weight:900;letter-spacing:1.4px;color:#9dabc4;
+    border:1px solid var(--line2);padding:2px 6px}
   /* 대기방(연습장): 전체를 가리지 않는 각진 패널 */
   .screen.asPanel{inset:auto;top:0;right:0;width:min(300px,84vw);height:auto;padding:16px 18px;
     background:rgba(8,11,17,.88);border:0;border-left:1px solid var(--line);border-bottom:1px solid var(--line);
     align-items:stretch;text-align:left}
-  .screen.asPanel h1{font-size:22px;letter-spacing:-.5px;margin:0}
-  .screen.asPanel .sub{font-size:9px;margin-bottom:4px;letter-spacing:3px}
-  .screen.asPanel p{font-size:11.5px;line-height:1.5;margin:2px 0}
-  .screen.asPanel #codeBig{font-size:27px;letter-spacing:9px;margin-top:2px;padding-left:9px}
+  .screen.asPanel h1{font-size:25px;letter-spacing:-1px;margin:0}
+  .screen.asPanel .sub{font-size:10px;margin-bottom:4px;letter-spacing:3px}
+  .screen.asPanel p{font-size:12px;font-weight:600;line-height:1.5;margin:2px 0}
+  .screen.asPanel #codeBig{font-size:29px;letter-spacing:9px;margin-top:2px;padding-left:9px}
   .screen.asPanel #playerList{width:100%;margin-top:10px}
-  .screen.asPanel #playerList li{padding:7px 10px;font-size:12px}
+  .screen.asPanel #playerList li{padding:8px 11px;font-size:12.5px}
   .screen.asPanel .menu{width:100%;margin-top:12px}
-  .screen.asPanel .menu.row button{padding:9px 6px;font-size:11px}
-  .screen.asPanel .hint{font-size:10.5px;margin-top:8px}
+  .screen.asPanel .menu.row button{padding:10px 6px;font-size:12px}
+  .screen.asPanel .hint{font-size:11px;margin-top:8px}
   /* 채팅: 각진 좌측 액센트 */
   #chat{position:fixed;left:0;bottom:0;z-index:30;width:min(400px,62vw);padding:0 0 12px 12px;pointer-events:none}
   #chatLog{display:flex;flex-direction:column;gap:1px;margin-bottom:5px}
-  .cmsg{background:rgba(8,11,17,.72);border-left:2px solid var(--acc2);border-radius:0;
-    padding:4px 10px;font-size:12.5px;line-height:1.4;color:var(--ink);transition:opacity .6s;word-break:break-word}
+  .cmsg{background:rgba(8,11,17,.78);border-left:3px solid var(--acc2);border-radius:0;
+    padding:5px 11px;font-size:13px;font-weight:600;line-height:1.4;color:#fff;transition:opacity .6s;word-break:break-word}
   .cmsg.me{border-left-color:#ff8a3a}
-  .cmsg.sys{border-left-color:var(--line2);color:var(--dim);font-style:normal}
+  .cmsg.sys{border-left-color:var(--line2);color:#9dabc4;font-style:normal;font-weight:600}
   .cmsg.old{opacity:.14}
-  .cmsg b{color:var(--acc2);font-weight:600}
+  .cmsg b{color:var(--acc2);font-weight:900}
   .cmsg.me b{color:#ff9d55}
-  #chatInput{display:none;width:100%;pointer-events:auto;font:inherit;font-size:13px;color:var(--ink);
-    background:rgba(8,11,17,.94);border:1px solid var(--acc);border-radius:0;padding:8px 11px;outline:none}
+  #chatInput{display:none;width:100%;pointer-events:auto;font:inherit;font-size:13.5px;font-weight:600;color:#fff;
+    background:rgba(8,11,17,.94);border:1px solid var(--acc);border-radius:0;padding:9px 11px;outline:none}
   #chatInput.on{display:block}
-  .hint{color:#5d6a82;font-size:11.5px;margin-top:14px;line-height:1.7}
-  .hint b{color:var(--dim);font-weight:600}
+  /* .screen p 보다 우선하도록 명시도를 맞춘다(안 그러면 크기가 덮어씌워짐) */
+  .screen p.hint, .hint{color:#8a97ae;font-size:12px;font-weight:600;margin-top:14px;line-height:1.75}
+  .screen p.hint b, .hint b{color:#cfd9e8;font-weight:800}
 </style>
 </head>
 <body>
@@ -134,7 +135,7 @@
 <div class="screen" id="title">
   <div class="sub">PROTOTYPE · P0</div>
   <h1>PENG!</h1>
-  <p style="color:#8492ad;letter-spacing:5px;font-size:11px;text-transform:uppercase;margin:6px 0 14px">공기폭발 협동 질주</p>
+  <p style="color:#b7c3d8;letter-spacing:5px;font-size:12.5px;font-weight:800;text-transform:uppercase;margin:8px 0 16px">공기폭발 협동 질주</p>
   <p><b>PoofGun</b>은 닿는 곳에서 공기를 <b>뻥</b> 터뜨려 사람을 날린다.<br>
      발밑을 쏴 <b>로켓점프</b>로 못 넘는 협곡을 넘어 <b>결승선(초록)</b>까지!</p>
   <p class="hint"><kbd>WASD</kbd> 이동 · <kbd>마우스</kbd> 시점 · <kbd>좌클릭</kbd> 펑! · <kbd>Space</kbd> 점프 · <kbd>R</kbd> 리스폰 · <kbd>V</kbd> 3인칭 · <kbd>Enter</kbd> 채팅<br>화면을 클릭하면 마우스가 잠깁니다(FPS). <kbd>ESC</kbd>로 해제.</p>
