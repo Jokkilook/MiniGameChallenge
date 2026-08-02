@@ -892,8 +892,17 @@ document.getElementById('copyCode').addEventListener('click',function(e){ e.prev
 var keys={}, locked=false, jumpEdge=false;
 // levelId 를 주면 그 맵으로 바꿔서 시작한다(멀티: 호스트가 고른 맵). 없으면 현재 맵 유지.
 function startGame(levelId){
+  // 내게 없는 맵이면 setLevel 이 기본 맵으로 떨군다. 그걸 조용히 넘기면
+  // "같은 방인데 서로 다른 맵을 달리는" 상태가 되고, 한참 뒤에야 알아채게 된다.
+  var missing = levelId && !PENG.getLevel(levelId);
   if(levelId) setLevel(levelId);
   sim=makeSim(); MP.peers={}; showScreen('play'); acc=0; last=0; requestLock();
+  if(missing){
+    var warn='⚠ 내 컴퓨터에 "'+levelId+'" 맵이 없어 "'+(LEVEL.name||CURLEVEL)+'" 로 시작했습니다 — 서로 다른 코스를 달리는 중입니다. levels/ 폴더를 받아주세요.';
+    // 방 전원에게 알린다(서버가 본인에게도 되돌려 주므로 내 화면에도 뜬다).
+    // 호스트도 알아야 다시 시작하든 맵을 바꾸든 할 수 있다.
+    if(MP.connected) mpSend({t:'ch', text:warn}); else pushChat('', warn, false, true);
+  }
 }
 // 다시하기: 멀티면 대기방으로, 솔로면 바로 재시작
 document.getElementById('retryBtn').addEventListener('click',function(){ ensureAudio();

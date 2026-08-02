@@ -109,7 +109,14 @@ var server = http.createServer(function(req, res){
     res.writeHead(403); res.end('forbidden'); return; }
   fs.readFile(filePath, function(err, data){
     if(err){ res.writeHead(404); res.end('not found'); return; }
-    res.writeHead(200, { 'Content-Type': MIME[path.extname(filePath).toLowerCase()] || 'application/octet-stream' });
+    res.writeHead(200, {
+      'Content-Type': MIME[path.extname(filePath).toLowerCase()] || 'application/octet-stream',
+      // 캐시 헤더가 아예 없으면 브라우저가 휴리스틱으로 예전 파일을 계속 쓴다.
+      // 맵을 추가했는데 상대 화면에만 안 뜨는(= 같은 방에서 서로 다른 맵) 원인이 된다.
+      // 개발·LAN 서버라 매번 새로 받는 게 맞다.
+      'Cache-Control': 'no-cache, no-store, must-revalidate',
+      'Pragma': 'no-cache'
+    });
     res.end(data);
   });
 });
