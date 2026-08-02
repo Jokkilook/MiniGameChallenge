@@ -49,6 +49,20 @@
   #playerList li .dot{width:10px;height:10px;border-radius:50%;background:#42d6c8;flex:none}
   #playerList li.me .dot{background:#ff8a3a}
   #playerList li .tag{margin-left:auto;font-size:11.5px;font-weight:800;letter-spacing:1px;color:#7f8bc0}
+  /* --- 대기방 = 연습장: 전체를 가리지 않는 구석 패널 --- */
+  .screen.asPanel{inset:auto;top:12px;right:12px;width:min(320px,84vw);height:auto;padding:14px 16px;
+    background:rgba(10,16,32,.82);border:1px solid rgba(120,150,230,.35);border-radius:16px;
+    box-shadow:0 18px 50px -18px #000;align-items:stretch;text-align:center;
+    -webkit-backdrop-filter:blur(5px);backdrop-filter:blur(5px)}
+  .screen.asPanel h1{font-size:26px;letter-spacing:2px;margin:0 0 2px}
+  .screen.asPanel .sub{font-size:10px;margin-bottom:6px;letter-spacing:3px}
+  .screen.asPanel p{font-size:12.5px;line-height:1.55;margin:2px 0}
+  .screen.asPanel #codeBig{font-size:30px;letter-spacing:7px;margin-top:2px}
+  .screen.asPanel #playerList{width:100%;margin-top:10px}
+  .screen.asPanel #playerList li{padding:7px 11px;font-size:13px}
+  .screen.asPanel .menu{width:100%;margin-top:12px;gap:8px}
+  .screen.asPanel .menu.row button{padding:10px 8px;font-size:13.5px}
+  .screen.asPanel .hint{font-size:11.5px;margin-top:8px}
   /* --- 채팅 --- */
   #chat{position:fixed;left:14px;bottom:14px;z-index:30;width:min(400px,62vw);pointer-events:none}
   #chatLog{display:flex;flex-direction:column;gap:3px;margin-bottom:6px}
@@ -115,8 +129,8 @@
 </div>
 
 <!-- 대기방 -->
-<div class="screen off" id="lobbyScr">
-  <div class="sub">LOBBY</div>
+<div class="screen off asPanel" id="lobbyScr">
+  <div class="sub">LOBBY · 연습장</div>
   <h1>대기방</h1>
   <p>세션 코드 — 친구에게 알려주세요</p>
   <div id="codeBig">------</div>
@@ -311,7 +325,9 @@ function stepSim(s, dt, inp){
   // 낙하
   if(s.p.y < LEVEL.killY){ respawn(s); }
   // 결승
-  var g=LEVEL.goal; if(Math.hypot(s.p.x-g.cx, s.p.z-g.cz)<g.r && Math.abs(s.p.y-(g.cy-1))<2.5){ s.win=true; }
+  // 연습(대기방)에서는 결승에 닿아도 승리로 치지 않는다
+  if(!s.practice){ var g=LEVEL.goal;
+    if(Math.hypot(s.p.x-g.cx, s.p.z-g.cz)<g.r && Math.abs(s.p.y-(g.cy-1))<2.5){ s.win=true; } }
 }
 // 한 축 이동 후 충돌 해소. 첫 충돌에서 멈추면 두 박스에 동시에 걸렸을 때
 // 나머지 하나에 파고든 채 남으므로, 모든 박스를 검사해 가장 깊이 밀어내는 해를 쓴다.
@@ -771,11 +787,13 @@ function renderLobby(){
     hint.textContent= enough ? '모두 준비됐어요! 시작을 누르세요.' : '친구가 코드를 입력해 들어오면 시작할 수 있어요.'; }
   else { btn.disabled=true; btn.textContent='호스트 대기 중…';
     hint.textContent='호스트가 게임을 시작하면 함께 출발합니다.'; }
-  hint.textContent += '  (Enter: 채팅)';
+  // 연습장 안내: 화면 클릭으로 조작, Esc 로 마우스를 풀어야 버튼을 누를 수 있다
+  hint.innerHTML += '<br>기다리는 동안 <b>자유롭게 연습</b>하세요 — 화면 클릭 후 이동·펑!<br>'+
+    '<b>Esc</b> 로 마우스를 풀면 버튼을 누를 수 있어요 · <b>Enter</b> 채팅 · <b>R</b> 리스폰';
 }
 document.getElementById('soloBtn').addEventListener('click',function(){ ensureAudio(); mpDisconnect(); startGame(); });
 document.getElementById('hostBtn').addEventListener('click',function(){ ensureAudio(); setWarn('서버에 연결 중…');
-  mpConnect(mpCode(), function(){ setWarn(''); showScreen('lobbyScr'); renderLobby(); },
+  mpConnect(mpCode(), function(){ setWarn(''); enterLobby(); },
     function(){ setWarn(noServerMsg()); }); });
 // 왜 연결이 안 되는지 현재 주소를 보고 구체적으로 안내
 function noServerMsg(){
@@ -797,7 +815,7 @@ function doJoin(){ ensureAudio();
   var err=document.getElementById('joinErr');
   if(code.length<4){ err.textContent='세션 코드를 입력하세요.'; return; }
   err.textContent='접속 중…';
-  mpConnect(code, function(){ err.textContent=''; showScreen('lobbyScr'); renderLobby(); },
+  mpConnect(code, function(){ err.textContent=''; enterLobby(); },
     function(why){ if(why==='nosuch') err.textContent='“'+code+'” 방을 찾을 수 없어요. 코드를 다시 확인하세요.';
       else err.innerHTML=noServerMsg(); }, true);
 }
@@ -811,14 +829,19 @@ document.getElementById('copyCode').addEventListener('click',function(e){ e.prev
 
 /* ---------- 라이브 입력/루프 ---------- */
 var keys={}, locked=false, jumpEdge=false;
-function startGame(){ sim=makeSim(); MP.peers={}; showScreen('play'); acc=0; last=0; requestLock(); }
-// 다시하기: 멀티면 대기방으로, 솔로면 바로 재시작
+function startGame(){ sim=makeSim(); showScreen('play'); acc=0; last=0; requestLock(); }
+// 대기방 = 연습장. 기다리는 동안 실제로 움직이고 쏴볼 수 있다(기록은 세지 않음).
+function enterLobby(){
+  if(!sim || !sim.practice){ sim=makeSim(); sim.practice=true; }
+  acc=0; last=0; showScreen('lobbyScr'); renderLobby();
+}
+// 다시하기: 멀티면 대기방(연습장)으로, 솔로면 바로 재시작
 document.getElementById('retryBtn').addEventListener('click',function(){ ensureAudio();
-  if(MP.connected){ showScreen('lobbyScr'); renderLobby(); } else startGame(); });
+  if(MP.connected){ sim=makeSim(); sim.practice=true; enterLobby(); } else startGame(); });
 document.getElementById('menuBtn').addEventListener('click',function(){ mpDisconnect(); showScreen('title'); setWarn(''); });
 function requestLock(){ try{ cv.requestPointerLock(); }catch(e){} }
 cv.addEventListener('click',function(){ ensureAudio(); if(chatting) return;
-  if(mode==='play'){ if(!locked)requestLock(); else doFire(sim); } });
+  if(mode==='play'||mode==='lobbyScr'){ if(!locked)requestLock(); else doFire(sim); } });
 document.addEventListener('pointerlockchange',function(){ locked=(document.pointerLockElement===cv); });
 document.addEventListener('mousemove',function(e){ if(!locked||!sim)return; var sX=0.0022;
   sim.yaw+=e.movementX*sX; sim.pitch-=e.movementY*sX; sim.pitch=Math.max(-1.45,Math.min(1.45,sim.pitch)); });
@@ -837,21 +860,23 @@ window.addEventListener('keyup',function(e){ if(chatting) return; keys[e.key.toL
 
 var last=0, acc=0, STEP=1/120;
 function loop(now){ if(!last)last=now; var dt=Math.min(0.05,(now-last)/1000); last=now;
-  if(mode==='play' && sim){
+  // 본선(play)과 대기방 연습(lobbyScr) 모두 물리를 돌린다 — 기다리는 동안 몸을 풀 수 있게
+  var active = (mode==='play' || mode==='lobbyScr');
+  if(active && sim){
     var inp={ mf:keys['w'], mb:keys['s'], ml:keys['a'], mr:keys['d'], jump:jumpEdge };
     acc+=dt; var guard=0; while(acc>=STEP && guard<12){ stepSim(sim,STEP, inp); inp.jump=false; acc-=STEP; guard++; }
     jumpEdge=false;
-    // 멀티: 내 상태 ~22Hz 전송 + 끊긴 피어 정리
+    // 멀티: 내 상태 ~22Hz 전송 + 끊긴 피어 정리 (대기방에서도 서로 보이도록)
     if(MP.connected && now-MP.lastSend>45){ MP.lastSend=now;
       mpSend({t:'st', name:MP.name, x:Math.round(sim.p.x*1000)/1000, y:Math.round(sim.p.y*1000)/1000, z:Math.round(sim.p.z*1000)/1000,
         yaw:Math.round(sim.yaw*1000)/1000, pitch:Math.round(sim.pitch*1000)/1000, rc:Math.round((sim.recoil||0)*100)/100}); }
     for(var _pid in MP.peers){ if(now-(MP.peers[_pid].seen||0)>5000) delete MP.peers[_pid]; }
     // HUD
-    document.getElementById('timeV').textContent=sim.t.toFixed(1);
-    document.getElementById('cpV').textContent='체크포인트 '+sim.cpIdx;
+    document.getElementById('timeV').textContent = sim.practice ? '연습' : sim.t.toFixed(1);
+    document.getElementById('cpV').textContent = sim.practice ? '자유 연습' : ('체크포인트 '+sim.cpIdx);
     renderAmmo(sim.ammo);
     if(sim.win){ document.getElementById('winMsg').textContent='기록 '+sim.t.toFixed(1)+'초!'; showScreen('win'); sndWin(); if(locked)document.exitPointerLock(); }
-    showHint(sim);
+    if(mode==='play') showHint(sim); else showHint(null);
   }
   render();
   requestAnimationFrame(loop);
@@ -860,6 +885,7 @@ function renderAmmo(n){ var el=document.getElementById('ammo'); if(el.children.l
   for(var i=0;i<AMMO_MAX;i++)el.children[i].classList.toggle('on', i<n); }
 var lastHint='';
 function showHint(s){ var m=document.getElementById('msg'); var h='';
+  if(!s){ if(lastHint!==''){ lastHint=''; m.innerHTML=''; m.classList.remove('on'); } return; }
   if(s.cpIdx===0 && s.p.z<8) h='앞으로 달려 <b>Space</b>로 협곡을 건너요';
   else if(s.cpIdx===1) h='이번 협곡은 넓어요! <b>점프 후 발밑을 좌클릭</b>해 로켓점프!';
   else if(s.cpIdx===2) h='위로! <b>점프 + 발밑 펑!</b>으로 높은 발판을 오르세요';
