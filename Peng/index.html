@@ -286,8 +286,20 @@ function render(){
     var lc=[gp.lc[0]+gtp[0], gp.lc[1]+gtp[1]-0.05*kick, gp.lc[2]+gtp[2]-0.16*kick];
     emitFaces(orientedBox(lc, gp.lh, eye, AIMR, AIMU, AIMF), gp.col, false, faces);
   }
+  // 발사체(공기 탄환)를 깊이 정렬용 스프라이트로 추가 → 캡슐/벽에 가려지게(관통 방지)
+  for(var pj=0;pj<sim.projectiles.length;pj++){ var pr=sim.projectiles[pj]; var pc=toCam([pr.x,pr.y,pr.z]); if(pc.z<=NEAR)continue;
+    var psp=project(pc); var pr2=Math.max(2,0.16/pc.z*FOCAL);
+    var tb=toCam([pr.x-pr.dx*1.1, pr.y-pr.dy*1.1, pr.z-pr.dz*1.1]); var tsp=(tb.z>NEAR)?project(tb):psp;
+    faces.push({spr:1, sx:psp.x, sy:psp.y, r:pr2, tx:tsp.x, ty:tsp.y, z:pc.z}); }
   faces.sort(function(a,b){return b.z-a.z;});
   for(var d=0;d<faces.length;d++){ var fa=faces[d];
+    if(fa.spr){ // 빛나는 오브 + 트레일
+      if(fa.tx!==fa.sx||fa.ty!==fa.sy){ ctx.strokeStyle='rgba(150,220,255,.45)'; ctx.lineWidth=Math.max(1,fa.r*0.8); ctx.beginPath(); ctx.moveTo(fa.tx,fa.ty); ctx.lineTo(fa.sx,fa.sy); ctx.stroke(); }
+      var grd=ctx.createRadialGradient(fa.sx,fa.sy,0,fa.sx,fa.sy,fa.r*2.2);
+      grd.addColorStop(0,'#f2ffff'); grd.addColorStop(0.45,'#7fd0ff'); grd.addColorStop(1,'rgba(120,200,255,0)');
+      ctx.fillStyle=grd; ctx.beginPath(); ctx.arc(fa.sx,fa.sy,fa.r*2.2,0,6.28); ctx.fill();
+      ctx.fillStyle='#fff'; ctx.beginPath(); ctx.arc(fa.sx,fa.sy,fa.r*0.75,0,6.28); ctx.fill(); continue;
+    }
     ctx.fillStyle=fa.col; ctx.beginPath(); ctx.moveTo(fa.pts[0].x,fa.pts[0].y);
     for(var p=1;p<fa.pts.length;p++)ctx.lineTo(fa.pts[p].x,fa.pts[p].y); ctx.closePath(); ctx.fill();
     if(fa.stroke!==false){ ctx.strokeStyle='rgba(0,0,0,.18)'; ctx.lineWidth=1; ctx.stroke(); }
@@ -304,15 +316,6 @@ function render(){
       ctx.fillStyle='rgba(140,220,255,.5)'; ctx.beginPath(); ctx.arc(msp.x,msp.y,(0.22+0.4*kk)/mc.z*FOCAL,0,6.28); ctx.fill(); ctx.globalAlpha=1; } }
   // 결승 기둥 빛
   drawBeam(LEVEL.goal.cx, LEVEL.goal.cy, LEVEL.goal.cz);
-  // 발사체(공기 탄환) — 빛나는 오브 + 트레일
-  for(var pj=0;pj<sim.projectiles.length;pj++){ var pr=sim.projectiles[pj]; var pc=toCam([pr.x,pr.y,pr.z]); if(pc.z<=NEAR)continue;
-    var psp=project(pc); var pr2=Math.max(2,0.16/pc.z*FOCAL);
-    var tb=toCam([pr.x-pr.dx*1.1, pr.y-pr.dy*1.1, pr.z-pr.dz*1.1]);
-    if(tb.z>NEAR){ var tsp=project(tb); ctx.strokeStyle='rgba(150,220,255,.45)'; ctx.lineWidth=Math.max(1,pr2*0.8); ctx.beginPath(); ctx.moveTo(tsp.x,tsp.y); ctx.lineTo(psp.x,psp.y); ctx.stroke(); }
-    var grd=ctx.createRadialGradient(psp.x,psp.y,0,psp.x,psp.y,pr2*2.2);
-    grd.addColorStop(0,'#f2ffff'); grd.addColorStop(0.45,'#7fd0ff'); grd.addColorStop(1,'rgba(120,200,255,0)');
-    ctx.fillStyle=grd; ctx.beginPath(); ctx.arc(psp.x,psp.y,pr2*2.2,0,6.28); ctx.fill();
-    ctx.fillStyle='#fff'; ctx.beginPath(); ctx.arc(psp.x,psp.y,pr2*0.75,0,6.28); ctx.fill(); }
   // 블래스트(구)
   for(var b2=0;b2<sim.blasts.length;b2++){ var bl=sim.blasts[b2]; var c=toCam([bl.x,bl.y,bl.z]); if(c.z<=NEAR)continue;
     var sp=project(c); var rad=(BLAST_R*bl.t)/c.z*FOCAL; ctx.strokeStyle='rgba(160,220,255,'+(1-bl.t)+')'; ctx.lineWidth=3;
