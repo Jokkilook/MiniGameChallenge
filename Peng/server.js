@@ -23,9 +23,11 @@ var server = http.createServer(function(req, res){
   // 클라이언트가 "멀티 서버가 맞는지" 확인하는 용도
   if(urlPath === '/__peng'){ res.writeHead(200, {'Content-Type':'application/json'}); res.end('{"peng":1}'); return; }
   if(urlPath === '/' || urlPath === '') urlPath = '/index.html';
-  // 경로 탈출 방지
-  var filePath = path.normalize(path.join(ROOT, urlPath));
-  if(filePath.indexOf(ROOT) !== 0){ res.writeHead(403); res.end('forbidden'); return; }
+  // 경로 탈출 방지: 단순 접두사 비교는 형제 폴더(예: <ROOT>_evil)도 통과하므로
+  // ROOT 자신이거나 ROOT + 구분자로 시작하는 경우만 허용한다.
+  var filePath = path.resolve(ROOT, '.' + path.sep + urlPath);
+  if(filePath !== ROOT && filePath.indexOf(ROOT + path.sep) !== 0){
+    res.writeHead(403); res.end('forbidden'); return; }
   fs.readFile(filePath, function(err, data){
     if(err){ res.writeHead(404); res.end('not found'); return; }
     res.writeHead(200, { 'Content-Type': MIME[path.extname(filePath).toLowerCase()] || 'application/octet-stream' });
@@ -65,14 +67,15 @@ server.on('upgrade', function(req, socket){
   sendRoster(room, socket);
   log('join', 'room='+room, 'id='+id, 'now='+Object.keys(rooms[room]).length);
 
-  var buf = Buffer.alloc(0);
+  var buf = Buffer.alloc(0), fragState = { frag:null, fragLen:0, fragOp:0 };
   socket.on('data', function(chunk){
+    if(closed) return;
     buf = Buffer.concat([buf, chunk]);
-    buf = parseFrames(buf, function(opcode, payload){
+    buf = parseFrames(buf, fragState, function(opcode, payload){
       if(opcode === 0x8){ closeClient(); }                     // close
       else if(opcode === 0x9){ send(socket, payload, 0xA); }   // ping -> pong
       else if(opcode === 0x1){ onMessage(payload.toString('utf8')); } // text
-    });
+    }, function(reason){ log('protocol', 'id='+id, reason); closeClient(); });
   });
   socket.on('error', closeClient);
   socket.on('close', closeClient);
@@ -90,7 +93,10 @@ server.on('upgrade', function(req, socket){
   function onMessage(str){
     var m; try{ m = JSON.parse(str); }catch(e){ return; }
     if(m.t === 'join'){ if(typeof m.name === 'string') client.name = m.name.slice(0,24); sendRoster(room); return; }
-    if(m.t === 'start'){ broadcast(room, id, JSON.stringify({ t:'start' })); return; } // 호스트가 전원 시작
+    if(m.t === 'start'){                       // 호스트만 시작시킬 수 있다
+      if(id !== hostOf(room)) return;
+      broadcast(room, id, JSON.stringify({ t:'start' })); return;
+    }
     if(m.t === 'ch'){   // 채팅: 길이 제한 후 본인 포함 방 전원에게(모두 같은 순서로 보이도록)
       var text = String(m.text == null ? '' : m.text).slice(0, 120);
       if(!text.trim()) return;
@@ -103,6 +109,12 @@ server.on('upgrade', function(req, socket){
   }
 });
 
+/* 방의 호스트 = 가장 먼저 들어온(id 최소) 사람 */
+function hostOf(room){
+  var r = rooms[room]; if(!r) return null;
+  var ids = Object.keys(r).map(Number); if(!ids.length) return null;
+  return Math.min.apply(null, ids);
+}
 /* 대기방 명단: 방 전원에게 {players, host}. host = 방에서 가장 먼저 들어온(id 최소) 사람.
    onlySocket 을 주면 그 한 명에게만 보낸다. */
 function sendRoster(room, onlySocket){
@@ -119,23 +131,44 @@ function broadcast(room, exceptId, str){
   for(var id in r){ if(+id === exceptId) continue; send(r[id].socket, str); }
 }
 
-/* WebSocket 프레임 파서: 버퍼에서 완성된 프레임을 뽑아 콜백, 남은 바이트 반환 */
-function parseFrames(b, onFrame){
+/* WebSocket 프레임 파서
+   - 프레임 하나와 조립 중인 메시지 전체에 크기 상한을 둔다(메모리 고갈 방지).
+   - FIN=0 / opcode=0(continuation) 분할 메시지를 조립한다.
+   - 한도를 넘거나 규격을 벗어나면 onFatal 로 연결을 끊는다. */
+var MAX_FRAME = 64 * 1024, MAX_MESSAGE = 256 * 1024;
+function parseFrames(b, state, onFrame, onFatal){
   var off = 0;
   while(off + 2 <= b.length){
-    var b1 = b[off+1];
+    var b0 = b[off], b1 = b[off+1];
+    var fin = (b0 & 0x80) !== 0, opcode = b0 & 0x0f;
     var masked = (b1 & 0x80) !== 0;
     var len = b1 & 0x7f;
     var p = off + 2;
     if(len === 126){ if(p+2 > b.length) break; len = b.readUInt16BE(p); p += 2; }
-    else if(len === 127){ if(p+8 > b.length) break; len = Number(b.readBigUInt64BE(p)); p += 8; }
-    var mask = null;
-    if(masked){ if(p+4 > b.length) break; mask = b.slice(p, p+4); p += 4; }
-    if(p + len > b.length) break;                 // 프레임 미완성 → 대기
+    else if(len === 127){ if(p+8 > b.length) break;
+      var big = b.readBigUInt64BE(p);
+      if(big > BigInt(MAX_FRAME)){ onFatal('frame too large'); return Buffer.alloc(0); }
+      len = Number(big); p += 8; }
+    if(len > MAX_FRAME){ onFatal('frame too large'); return Buffer.alloc(0); }
+    if(!masked){ onFatal('client frame must be masked'); return Buffer.alloc(0); }  // 규격상 필수
+    if(p+4 > b.length) break;
+    var mask = b.slice(p, p+4); p += 4;
+    if(p + len > b.length) break;                 // 프레임 미완성 → 더 받을 때까지 대기
     var payload = b.slice(p, p+len);
-    if(masked){ for(var i=0;i<payload.length;i++) payload[i] ^= mask[i & 3]; }
-    onFrame(b[off] & 0x0f, payload);
+    for(var i=0;i<payload.length;i++) payload[i] ^= mask[i & 3];
     off = p + len;
+
+    if(opcode === 0x8 || opcode === 0x9 || opcode === 0xA){ onFrame(opcode, payload); continue; } // 제어 프레임은 분할 없음
+    if(opcode === 0x0){                            // continuation
+      if(!state.frag){ onFatal('unexpected continuation'); return Buffer.alloc(0); }
+      state.frag.push(payload); state.fragLen += payload.length;
+    } else {                                       // 새 메시지 시작(text/binary)
+      if(state.frag){ onFatal('fragment interleaved'); return Buffer.alloc(0); }
+      if(fin){ onFrame(opcode, payload); continue; }
+      state.frag = [payload]; state.fragLen = payload.length; state.fragOp = opcode;
+    }
+    if(state.fragLen > MAX_MESSAGE){ onFatal('message too large'); return Buffer.alloc(0); }
+    if(fin && state.frag){ onFrame(state.fragOp, Buffer.concat(state.frag)); state.frag = null; state.fragLen = 0; }
   }
   return off > 0 ? b.slice(off) : b;
 }
