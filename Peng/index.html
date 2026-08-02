@@ -237,13 +237,22 @@ function boxFaces(b){ var x0=b.cx-b.hx,x1=b.cx+b.hx,y0=b.cy-b.hy,y1=b.cy+b.hy,z0
     {n:{x:1,y:0,z:0}, sh:0.5, v:[[x1,y1,z0],[x1,y0,z0],[x1,y0,z1],[x1,y1,z1]]},
   ];
 }
-// 카메라: 이동/조준과 동일한 forward(=forwardVec) 사용 → 회전/이동/발사 일관
+// 렌더용 카메라 기저(CAM*)와 플레이어 조준 기저(AIM*)를 분리.
+// 1인칭: 둘이 동일. 3인칭: 카메라는 궤도(피치 제한+플레이어 바라봄), 총은 AIM* 사용.
 var CAMPOS={x:0,y:0,z:0}, CAMF={x:0,y:0,z:1}, CAMR={x:1,y:0,z:0}, CAMU={x:0,y:1,z:0};
-function setCamera(s){ var f=forwardVec(s); CAMF=f;
-  CAMR={x:Math.cos(s.yaw),y:0,z:-Math.sin(s.yaw)};
-  CAMU={x:f.y*CAMR.z-f.z*CAMR.y, y:f.z*CAMR.x-f.x*CAMR.z, z:f.x*CAMR.y-f.y*CAMR.x}; // F×R
+var AIMF={x:0,y:0,z:1}, AIMR={x:1,y:0,z:0}, AIMU={x:0,y:1,z:0};
+function setCamera(s){ var f=forwardVec(s);
+  AIMF=f; AIMR={x:Math.cos(s.yaw),y:0,z:-Math.sin(s.yaw)};
+  AIMU={x:f.y*AIMR.z-f.z*AIMR.y, y:f.z*AIMR.x-f.x*AIMR.z, z:f.x*AIMR.y-f.y*AIMR.x};
   var eye={x:s.p.x,y:s.p.y+EYE,z:s.p.z};
-  CAMPOS = s.tp ? {x:eye.x-f.x*4.5, y:eye.y-f.y*4.5+1.1, z:eye.z-f.z*4.5} : eye;
+  if(s.tp){
+    var cp=Math.max(-0.62, Math.min(0.85, s.pitch));   // 궤도 피치 제한(정수리 톱뷰 방지)
+    var of={x:Math.cos(cp)*Math.sin(s.yaw), y:Math.sin(cp), z:Math.cos(cp)*Math.cos(s.yaw)};
+    var pivot={x:s.p.x, y:s.p.y+1.0, z:s.p.z}, D=4.4;
+    CAMPOS={x:pivot.x-of.x*D, y:pivot.y-of.y*D, z:pivot.z-of.z*D};
+    CAMF=of; CAMR={x:Math.cos(s.yaw),y:0,z:-Math.sin(s.yaw)};
+    CAMU={x:CAMF.y*CAMR.z-CAMF.z*CAMR.y, y:CAMF.z*CAMR.x-CAMF.x*CAMR.z, z:CAMF.x*CAMR.y-CAMF.y*CAMR.x};
+  } else { CAMPOS=eye; CAMF=AIMF; CAMR=AIMR; CAMU=AIMU; }
 }
 function toCam(p){ var dx=p[0]-CAMPOS.x, dy=p[1]-CAMPOS.y, dz=p[2]-CAMPOS.z;
   return {x:dx*CAMR.x+dy*CAMR.y+dz*CAMR.z, y:dx*CAMU.x+dy*CAMU.y+dz*CAMU.z, z:dx*CAMF.x+dy*CAMF.y+dz*CAMF.z}; }
@@ -272,11 +281,12 @@ function render(){
   if(sim.tp){ // 3인칭: 플레이어 캡슐(매끈 — 외곽선 없음)
     emitFaces(capsuleFaces(sim.p.x, sim.p.y+0.9, sim.p.z, 0.35, 0.55), PLAYER_COL, false, faces, true);
   }
-  // 3D 총 — 항상. 플레이어 눈 위치 + 조준 기저(R/U/F)에 부착 → 시점 따라 각도 변함
+  // 3D 총 — 항상. 플레이어 눈 위치 + '조준' 기저(AIM*)에 부착(카메라와 무관) → 1·3인칭 동일 모델
   var eye={x:sim.p.x,y:sim.p.y+EYE,z:sim.p.z}, kick=(sim.recoil||0)*(sim.recoil||0);
+  var gtp=sim.tp?GUN_TP:[0,0,0];
   for(var gi=0;gi<GUN.length;gi++){ var gp=GUN[gi];
-    var lc=[gp.lc[0], gp.lc[1]-0.05*kick, gp.lc[2]-0.16*kick];
-    emitFaces(orientedBox(lc, gp.lh, eye, CAMR, CAMU, CAMF), gp.col, false, faces);
+    var lc=[gp.lc[0]+gtp[0], gp.lc[1]+gtp[1]-0.05*kick, gp.lc[2]+gtp[2]-0.16*kick];
+    emitFaces(orientedBox(lc, gp.lh, eye, AIMR, AIMU, AIMF), gp.col, false, faces);
   }
   faces.sort(function(a,b){return b.z-a.z;});
   for(var d=0;d<faces.length;d++){ var fa=faces[d];
@@ -288,8 +298,9 @@ function render(){
   // 총구 플래시(발사 직후) — 총열 끝 월드 위치
   if((sim.recoil||0)>0.5){ var kk=(sim.recoil-0.5)/0.5;
     var eye2={x:sim.p.x,y:sim.p.y+EYE,z:sim.p.z};
-    var mz=[0.26,-0.20,1.12-0.16*(sim.recoil*sim.recoil)];
-    var mw=[eye2.x+mz[0]*CAMR.x+mz[1]*CAMU.x+mz[2]*CAMF.x, eye2.y+mz[0]*CAMR.y+mz[1]*CAMU.y+mz[2]*CAMF.y, eye2.z+mz[0]*CAMR.z+mz[1]*CAMU.z+mz[2]*CAMF.z];
+    var gtp2=sim.tp?GUN_TP:[0,0,0];
+    var mz=[0.28+gtp2[0],-0.20+gtp2[1],1.12+gtp2[2]-0.16*(sim.recoil*sim.recoil)];
+    var mw=[eye2.x+mz[0]*AIMR.x+mz[1]*AIMU.x+mz[2]*AIMF.x, eye2.y+mz[0]*AIMR.y+mz[1]*AIMU.y+mz[2]*AIMF.y, eye2.z+mz[0]*AIMR.z+mz[1]*AIMU.z+mz[2]*AIMF.z];
     var mc=toCam(mw); if(mc.z>NEAR){ var msp=project(mc); ctx.globalAlpha=kk;
       ctx.fillStyle='#dff4ff'; ctx.beginPath(); ctx.arc(msp.x,msp.y,(0.10+0.22*kk)/mc.z*FOCAL,0,6.28); ctx.fill();
       ctx.fillStyle='rgba(140,220,255,.5)'; ctx.beginPath(); ctx.arc(msp.x,msp.y,(0.22+0.4*kk)/mc.z*FOCAL,0,6.28); ctx.fill(); ctx.globalAlpha=1; } }
@@ -362,13 +373,15 @@ function capsuleFaces(cx,cy,cz,r,h){
 }
 var PLAYER_COL='#ff8a3a';
 // 1인칭 PoofGun 3D 모델(카메라 로컬: x=오른쪽, y=위, z=앞)
+// 1인칭 기본 위치. 3인칭에선 GUN_TP 오프셋으로 몸 오른쪽 옆으로 빼서 카메라에 드러나게.
 var GUN=[
-  {lc:[0.255,-0.34,0.46], lh:[0.05,0.11,0.05],  col:'#242c46'}, // 손잡이
-  {lc:[0.255,-0.22,0.64], lh:[0.062,0.07,0.20], col:'#3a4664'}, // 몸통
-  {lc:[0.255,-0.20,0.90], lh:[0.036,0.046,0.15],col:'#4a597e'}, // 총열
-  {lc:[0.255,-0.20,1.07], lh:[0.056,0.056,0.03],col:'#141a2c'}, // 노즐
-  {lc:[0.20,-0.285,0.62], lh:[0.062,0.062,0.075],col:'#2aa8e0'},// 공기통
+  {lc:[0.28,-0.34,0.46], lh:[0.05,0.11,0.05],  col:'#242c46'}, // 손잡이
+  {lc:[0.28,-0.22,0.64], lh:[0.062,0.07,0.20], col:'#3a4664'}, // 몸통
+  {lc:[0.28,-0.20,0.90], lh:[0.036,0.046,0.15],col:'#4a597e'}, // 총열
+  {lc:[0.28,-0.20,1.07], lh:[0.056,0.056,0.03],col:'#141a2c'}, // 노즐
+  {lc:[0.225,-0.285,0.62],lh:[0.062,0.062,0.075],col:'#2aa8e0'},// 공기통
 ];
+var GUN_TP=[0.42,-0.05,-0.34]; // 3인칭: 오른쪽으로 크게, 살짝 아래, 뒤로(몸 옆에 붙임)
 
 /* ---------- 라이브 입력/루프 ---------- */
 var mode='title', keys={}, locked=false, jumpEdge=false;
