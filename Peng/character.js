@@ -2,7 +2,8 @@
  *
  * 디자인 = { rig:{관절 위치·스윙}, parts:[부품...] }
  * 부품 = { n:이름, bone:붙는 뼈대, type:'box'|'cyl'|'dome'|'sph',
- *          x,y,z: 뼈대 기준 위치, 크기(박스 sx,sy,sz / 원통 r,h / 반구·구 r),
+ *          x,y,z: 뼈대 기준 위치, rx,ry,rz: 부품 자체 회전(도),
+ *          크기(박스 sx,sy,sz / 원통 r,h / 반구·구 r),
  *          col:'#rrggbb', flat:셰이딩 무시, line:외곽선 }
  * 뼈대: body/head 는 몸에 고정, armL/armR/legL/legR 은 관절에서 앞뒤로 흔들린다.
  *       팔다리 부품의 y 는 관절에서 아래로가 음수.
@@ -115,6 +116,16 @@ function boneXform(rig, name, px,py,pz, R,U,F, walk){
   return {o:o, R:bR, U:bU, F:bF};
 }
 function shade(nx,ny,nz){ var d=nx*0.32+ny*0.85-nz*0.42; return 0.55+0.45*(d>0?d:0); }
+// 부품 자체 회전(도) — X → Y → Z 순서
+var D2R=Math.PI/180;
+function rot(p, x,y,z){
+  var rx=(+p.rx||0)*D2R, ry=(+p.ry||0)*D2R, rz=(+p.rz||0)*D2R, c,s,t;
+  if(rx){ c=Math.cos(rx); s=Math.sin(rx); t=y*c-z*s; z=y*s+z*c; y=t; }
+  if(ry){ c=Math.cos(ry); s=Math.sin(ry); t=x*c+z*s; z=-x*s+z*c; x=t; }
+  if(rz){ c=Math.cos(rz); s=Math.sin(rz); t=x*c-y*s; y=x*s+y*c; x=t; }
+  return [x,y,z];
+}
+function hasRot(p){ return (+p.rx||0)||(+p.ry||0)||(+p.rz||0); }
 
 /* ---------- 월드 좌표 면 생성 ----------
  * 반환: [{v:[[x,y,z]x4], col:'#rrggbb', sh:0~1, line:bool}]
@@ -129,16 +140,17 @@ function charFaces(design, px,py,pz, yaw, pitch, walk, tint){
     var bn=p.bone||'body';
     var b=cacheB[bn] || (cacheB[bn]=boneXform(rig, bn, px,py,pz, R,U,F, walk));
     var mesh=partMesh(p), col=(tint && !p.flat) ? tint : (p.col||'#cccccc');
-    var ox=+p.x||0, oy=+p.y||0, oz=+p.z||0;
+    var ox=+p.x||0, oy=+p.y||0, oz=+p.z||0, rr=hasRot(p);
     for(var m=0;m<mesh.length;m++){
       var face=mesh[m], v=face.v, w=[];
       for(var q=0;q<4;q++){
-        var a=ox+v[q][0], bb=oy+v[q][1], c=oz+v[q][2];
+        var lv = rr ? rot(p, v[q][0], v[q][1], v[q][2]) : v[q];
+        var a=ox+lv[0], bb=oy+lv[1], c=oz+lv[2];
         w.push([ b.o.x + b.R.x*a + b.U.x*bb + b.F.x*c,
                  b.o.y + b.R.y*a + b.U.y*bb + b.F.y*c,
                  b.o.z + b.R.z*a + b.U.z*bb + b.F.z*c ]);
       }
-      var n=face.n;
+      var n = rr ? rot(p, face.n[0], face.n[1], face.n[2]) : face.n;
       var wn={ x:b.R.x*n[0]+b.U.x*n[1]+b.F.x*n[2],
                y:b.R.y*n[0]+b.U.y*n[1]+b.F.y*n[2],
                z:b.R.z*n[0]+b.U.z*n[1]+b.F.z*n[2] };
@@ -158,7 +170,7 @@ function load(){
 }
 function save(d){ try{ global.localStorage.setItem(STORE, JSON.stringify(d)); return true; }catch(e){ return false; } }
 // 외부(다른 플레이어·붙여넣기)에서 온 디자인을 안전한 값만 남겨 정리
-var NUM=['x','y','z','sx','sy','sz','r','h'];
+var NUM=['x','y','z','sx','sy','sz','r','h','rx','ry','rz'];
 var RIGNUM=['shoulderX','shoulderY','hipX','hipY','swingArm','swingLeg','armSplay','eyeH'];
 function num(v,dflt,lo,hi){ v=parseFloat(v); if(!isFinite(v)) return dflt; return Math.max(lo,Math.min(hi,v)); }
 function col(v,dflt){ return (typeof v==='string' && /^#[0-9a-fA-F]{6}$/.test(v)) ? v : dflt; }
@@ -176,12 +188,28 @@ function sanitize(d){
     if(q.type==='box'){ q.sx=num(q.sx,0.1,0.005,3); q.sy=num(q.sy,0.1,0.005,3); q.sz=num(q.sz,0.1,0.005,3); }
     else { q.r=num(q.r,0.2,0.01,3); if(q.type==='cyl') q.h=num(q.h,0.2,0.005,3); }
     q.x=num(q.x,0,-5,5); q.y=num(q.y,0,-5,5); q.z=num(q.z,0,-5,5);
+    q.rx=num(p.rx,0,-360,360); q.ry=num(p.ry,0,-360,360); q.rz=num(p.rz,0,-360,360);
     q.col=col(p.col,'#cccccc'); if(p.flat) q.flat=1; if(p.line) q.line=1; if(p.off) q.off=1;
     parts.push(q);
   }
   return {rig:r, parts:parts};
 }
 
+/* 편집기용: 특정 뼈대의 현재 변환(원점 o + 축 R/U/F)을 얻는다.
+   기즈모를 부품의 실제 로컬 축 방향으로 그리기 위해 필요. */
+function boneAt(design, boneName, px,py,pz, yaw, walk){
+  var d=design||DEFAULT, rig=d.rig||DEFAULT.rig;
+  var R={x:Math.cos(yaw),y:0,z:-Math.sin(yaw)}, U={x:0,y:1,z:0}, F={x:Math.sin(yaw),y:0,z:Math.cos(yaw)};
+  return boneXform(rig, boneName||'body', px,py,pz, R,U,F, walk);
+}
+// 부품 하나의 월드 삼각형 목록(클릭 판정용)
+function partTris(design, part, px,py,pz, yaw, walk){
+  var fs=charFaces({rig:(design||DEFAULT).rig, parts:[part]}, px,py,pz, yaw, 0, walk, null), out=[];
+  for(var i=0;i<fs.length;i++){ var v=fs[i].v;
+    out.push([v[0],v[1],v[2]]); out.push([v[0],v[2],v[3]]); }
+  return out;
+}
 global.PengChar={ DEFAULT:DEFAULT, BONES:BONES, BONE_LABEL:BONE_LABEL,
-  faces:charFaces, load:load, save:save, sanitize:sanitize, clone:clone, STORE:STORE };
+  faces:charFaces, load:load, save:save, sanitize:sanitize, clone:clone, STORE:STORE,
+  bone:boneAt, tris:partTris };
 })(typeof window!=='undefined'?window:this);

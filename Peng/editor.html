@@ -68,7 +68,7 @@
 <div id="app">
   <div id="view">
     <canvas id="cv"></canvas>
-    <div id="viewHint">드래그 = 회전 · 휠 = 확대/축소 · 우클릭 드래그 = 상하 이동</div>
+    <div id="viewHint">부품 클릭 = 선택 · 색 축 드래그 = 이동 · 빈 곳 드래그 = 시점 회전 · 휠 = 확대 · 우클릭 = 상하</div>
   </div>
   <div id="side">
     <header>
@@ -194,6 +194,7 @@ function draw(){
   var R={x:Math.cos(camYaw),y:0,z:-Math.sin(camYaw)};
   var U={x:F.y*R.z-F.z*R.y, y:F.z*R.x-F.x*R.z, z:F.x*R.y-F.y*R.x};
   var VP=mul(persp(60*Math.PI/180, w/h, 0.05, 100), view(pos,R,U,F));
+  CAM.pos=pos; CAM.R=R; CAM.U=U; CAM.F=F; CAM.VP=VP; CAM.w=w; CAM.h=h;
 
   TRI.length=0; LINE.length=0; grid();
   // 선택 부품만 하이라이트하기 위해 부품별로 따로 그린다
@@ -208,6 +209,26 @@ function draw(){
   gl.enable(gl.POLYGON_OFFSET_FILL); gl.polygonOffset(1,1);
   arr(BT,TRI,gl.TRIANGLES); gl.disable(gl.POLYGON_OFFSET_FILL);
   arr(BL,LINE,gl.LINES);
+  drawGizmo();
+}
+// 기즈모: 선택 부품의 로컬 축 3개. 항상 보이도록 깊이 판정 없이 마지막에.
+function drawGizmo(){
+  var g=gizmoFrame(); if(!g) return;
+  var C=[[1,0.28,0.28],[0.35,0.95,0.45],[0.35,0.62,1]];   // X 빨강 / Y 초록 / Z 파랑
+  var L=[];
+  for(var i=0;i<3;i++){
+    var a=g.ax[i], c=C[i], on=(gizAxis===i||(gizAxis<0&&hoverAxis===i));
+    var col=on?[1,0.95,0.4]:c;
+    var ex=g.o.x+a.x*GIZ_LEN, ey=g.o.y+a.y*GIZ_LEN, ez=g.o.z+a.z*GIZ_LEN;
+    L.push(g.o.x,g.o.y,g.o.z,col[0],col[1],col[2], ex,ey,ez,col[0],col[1],col[2]);
+    // 끝에 짧은 십자 표시(잡기 쉬운 지점 표시)
+    var s=0.035, p1=g.ax[(i+1)%3], p2=g.ax[(i+2)%3];
+    L.push(ex-p1.x*s,ey-p1.y*s,ez-p1.z*s,col[0],col[1],col[2], ex+p1.x*s,ey+p1.y*s,ez+p1.z*s,col[0],col[1],col[2]);
+    L.push(ex-p2.x*s,ey-p2.y*s,ez-p2.z*s,col[0],col[1],col[2], ex+p2.x*s,ey+p2.y*s,ez+p2.z*s,col[0],col[1],col[2]);
+  }
+  gl.disable(gl.DEPTH_TEST);
+  arr(BL,L,gl.LINES);
+  gl.enable(gl.DEPTH_TEST);
 }
 function arr(buf,a,mode){ if(!a.length)return;
   gl.bindBuffer(gl.ARRAY_BUFFER,buf); gl.bufferData(gl.ARRAY_BUFFER,new Float32Array(a),gl.DYNAMIC_DRAW);
@@ -218,14 +239,112 @@ function loop(t){ var dt=Math.min(0.05,(t-last)/1000)||0; last=t;
   if(walkOn) walk+=dt*5.0;
   draw(); requestAnimationFrame(loop); }
 
-/* ---------- 카메라 조작 ---------- */
-var drag=null;
-cv.addEventListener('mousedown',function(e){ drag={b:e.button,x:e.clientX,y:e.clientY}; e.preventDefault(); });
-window.addEventListener('mouseup',function(){ drag=null; });
-window.addEventListener('mousemove',function(e){ if(!drag)return;
+/* ---------- 카메라 · 클릭 선택 · 기즈모 ---------- */
+var CAM={pos:null,R:null,U:null,F:null,VP:null,w:1,h:1};   // draw() 가 매 프레임 갱신
+// 화면 좌표 → 월드 광선
+function ray(mx,my){
+  var ndcX=(2*mx/CAM.w-1), ndcY=(1-2*my/CAM.h), t=Math.tan(60*Math.PI/180/2), asp=CAM.w/CAM.h;
+  var d={ x:CAM.F.x + CAM.R.x*(ndcX*asp*t) + CAM.U.x*(ndcY*t),
+          y:CAM.F.y + CAM.R.y*(ndcX*asp*t) + CAM.U.y*(ndcY*t),
+          z:CAM.F.z + CAM.R.z*(ndcX*asp*t) + CAM.U.z*(ndcY*t) };
+  var l=Math.hypot(d.x,d.y,d.z)||1; d.x/=l; d.y/=l; d.z/=l;
+  return {o:CAM.pos, d:d};
+}
+function rayTri(o,d,a,b,c){        // Möller–Trumbore
+  var e1=[b[0]-a[0],b[1]-a[1],b[2]-a[2]], e2=[c[0]-a[0],c[1]-a[1],c[2]-a[2]];
+  var p=[d.y*e2[2]-d.z*e2[1], d.z*e2[0]-d.x*e2[2], d.x*e2[1]-d.y*e2[0]];
+  var det=e1[0]*p[0]+e1[1]*p[1]+e1[2]*p[2]; if(Math.abs(det)<1e-9) return -1;
+  var inv=1/det, t0=[o.x-a[0],o.y-a[1],o.z-a[2]];
+  var u=(t0[0]*p[0]+t0[1]*p[1]+t0[2]*p[2])*inv; if(u<0||u>1) return -1;
+  var q=[t0[1]*e1[2]-t0[2]*e1[1], t0[2]*e1[0]-t0[0]*e1[2], t0[0]*e1[1]-t0[1]*e1[0]];
+  var v=(d.x*q[0]+d.y*q[1]+d.z*q[2])*inv; if(v<0||u+v>1) return -1;
+  var t=(e2[0]*q[0]+e2[1]*q[1]+e2[2]*q[2])*inv; return t>1e-4?t:-1;
+}
+function pick(mx,my){
+  var r=ray(mx,my), best=-1, bestT=1e9, w=walkOn?walk:0;
+  for(var i=0;i<design.parts.length;i++){
+    var p=design.parts[i]; if(p.off) continue;
+    var tris=PengChar.tris(design,p,0,0,0,0,w);
+    for(var k=0;k<tris.length;k++){ var t=rayTri(r.o,r.d,tris[k][0],tris[k][1],tris[k][2]);
+      if(t>0&&t<bestT){ bestT=t; best=i; } }
+  }
+  return best;
+}
+// 선택 부품의 월드 원점과 로컬 축(기즈모용)
+function gizmoFrame(){
+  var p=design.parts[sel]; if(!p) return null;
+  var b=PengChar.bone(design, p.bone||'body', 0,0,0, 0, walkOn?walk:0);
+  var ox=+p.x||0, oy=+p.y||0, oz=+p.z||0;
+  return { o:{ x:b.o.x+b.R.x*ox+b.U.x*oy+b.F.x*oz,
+               y:b.o.y+b.R.y*ox+b.U.y*oy+b.F.y*oz,
+               z:b.o.z+b.R.z*ox+b.U.z*oy+b.F.z*oz },
+           ax:[b.R,b.U,b.F] };   // 0=X(좌우) 1=Y(상하) 2=Z(앞뒤)
+}
+function project(v){              // 월드 → 화면 픽셀
+  var V=CAM.VP, x=v.x,y=v.y,z=v.z;
+  var cx=V[0]*x+V[4]*y+V[8]*z+V[12], cy=V[1]*x+V[5]*y+V[9]*z+V[13], cw=V[3]*x+V[7]*y+V[11]*z+V[15];
+  if(cw<=0.0001) return null;
+  return { x:(cx/cw*0.5+0.5)*CAM.w, y:(1-(cy/cw*0.5+0.5))*CAM.h };
+}
+var GIZ_LEN=0.34;
+function gizmoScreen(){
+  var g=gizmoFrame(); if(!g) return null;
+  var o=project(g.o); if(!o) return null;
+  var tips=[];
+  for(var i=0;i<3;i++){ var a=g.ax[i];
+    var e=project({x:g.o.x+a.x*GIZ_LEN, y:g.o.y+a.y*GIZ_LEN, z:g.o.z+a.z*GIZ_LEN});
+    tips.push(e); }
+  return {g:g, o:o, tips:tips};
+}
+function distSeg(px,py,ax,ay,bx,by){
+  var vx=bx-ax, vy=by-ay, wx=px-ax, wy=py-ay;
+  var L=vx*vx+vy*vy; var t=L>0?Math.max(0,Math.min(1,(wx*vx+wy*vy)/L)):0;
+  return Math.hypot(px-(ax+vx*t), py-(ay+vy*t));
+}
+var drag=null, gizAxis=-1, hoverAxis=-1;
+function localXY(e){ var r=cv.getBoundingClientRect(); return {x:e.clientX-r.left, y:e.clientY-r.top}; }
+cv.addEventListener('mousedown',function(e){
+  var m=localXY(e);
+  if(e.button===0){
+    // 기즈모 축을 먼저 판정
+    var gs=gizmoScreen();
+    if(gs){ var best=-1, bd=11;
+      for(var i=0;i<3;i++){ if(!gs.tips[i]) continue;
+        var d=distSeg(m.x,m.y, gs.o.x,gs.o.y, gs.tips[i].x,gs.tips[i].y);
+        if(d<bd){ bd=d; best=i; } }
+      if(best>=0){ gizAxis=best; drag={b:0,x:e.clientX,y:e.clientY,giz:true,
+          ax:gs.g.ax[best], o:gs.o, tip:gs.tips[best]}; e.preventDefault(); return; } }
+    // 부품 클릭 선택
+    var hit=pick(m.x,m.y);
+    if(hit>=0){ sel=hit; refreshList(); refreshProps(); }
+  }
+  drag={b:e.button,x:e.clientX,y:e.clientY}; e.preventDefault();
+});
+window.addEventListener('mouseup',function(){ drag=null; gizAxis=-1; });
+window.addEventListener('mousemove',function(e){
+  if(!drag){ // 호버 하이라이트
+    var m=localXY(e), gs=gizmoScreen(); hoverAxis=-1;
+    if(gs){ var bd=11; for(var i=0;i<3;i++){ if(!gs.tips[i])continue;
+      var d=distSeg(m.x,m.y, gs.o.x,gs.o.y, gs.tips[i].x,gs.tips[i].y); if(d<bd){ bd=d; hoverAxis=i; } } }
+    cv.style.cursor = hoverAxis>=0 ? 'move' : 'default';
+    return; }
   var dx=e.clientX-drag.x, dy=e.clientY-drag.y; drag.x=e.clientX; drag.y=e.clientY;
+  if(drag.giz){
+    // 화면상 축 방향으로 투영해 이동량을 계산
+    var p=design.parts[sel]; if(!p) return;
+    var sx=drag.tip.x-drag.o.x, sy=drag.tip.y-drag.o.y;
+    var L=Math.hypot(sx,sy); if(L<1) return;
+    var along=(dx*sx+dy*sy)/L;                    // 화면 픽셀
+    var world=along/(L/GIZ_LEN);                  // 픽셀 → 월드 단위
+    var k=['x','y','z'][gizAxis];
+    p[k]=Math.max(-5,Math.min(5,(+p[k]||0)+world));
+    refreshProps();
+    return;
+  }
   if(drag.b===2){ camY -= dy*0.005; }
-  else { camYaw -= dx*0.008; camPitch = Math.max(-1.3,Math.min(1.3,camPitch + dy*0.006)); } });
+  else if(drag.b===1){ camY -= dy*0.005; }
+  else { camYaw -= dx*0.008; camPitch = Math.max(-1.3,Math.min(1.3,camPitch + dy*0.006)); }
+});
 cv.addEventListener('contextmenu',function(e){ e.preventDefault(); });
 cv.addEventListener('wheel',function(e){ camDist=Math.max(0.8,Math.min(12,camDist*(1+Math.sign(e.deltaY)*0.1))); e.preventDefault(); },{passive:false});
 
@@ -270,6 +389,11 @@ function refreshProps(){
   props.appendChild(mkRow('좌우 X', slider(p,'x',-1.2,1.2,0.005)));
   props.appendChild(mkRow('높이 Y', slider(p,'y',-1.5,2.4,0.005)));
   props.appendChild(mkRow('앞뒤 Z', slider(p,'z',-1.2,1.2,0.005)));
+  // 회전
+  var sr=document.createElement('div'); sr.className='sec'; sr.textContent='회전 (도)'; props.appendChild(sr);
+  props.appendChild(mkRow('X축', slider(p,'rx',-180,180,1)));
+  props.appendChild(mkRow('Y축', slider(p,'ry',-180,180,1)));
+  props.appendChild(mkRow('Z축', slider(p,'rz',-180,180,1)));
   // 크기
   var ss=document.createElement('div'); ss.className='sec'; ss.textContent='크기'; props.appendChild(ss);
   if(p.type==='box'){
