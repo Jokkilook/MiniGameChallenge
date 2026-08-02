@@ -1157,10 +1157,16 @@ function openChat(){
   if(locked) document.exitPointerLock();             // 타이핑 중엔 마우스 잠금 해제
   setTimeout(function(){ el.focus(); }, 10);
 }
+// 입력칸이 포커스를 잃으면 닫는다 — 열린 줄 모르고 방치되면 게임 조작이 전부 막힌다.
+// chatting 을 먼저 내리고 blur 하므로 아래 closeChat 의 el.blur() 와 재귀하지 않는다.
+document.getElementById('chatInput').addEventListener('blur',function(){
+  if(chatting) closeChat(false);
+});
 function closeChat(doSend){
   if(!chatting) return;
+  chatting=false;                                    // 먼저 내려야 blur 핸들러와 재귀하지 않는다
   var el=document.getElementById('chatInput'), txt=(el.value||'').trim();
-  el.classList.remove('on'); el.blur(); chatting=false;
+  el.classList.remove('on'); el.blur(); el.value='';
   fadeChat();                                        // 닫으면 다시 나이에 따라 흐려지기 시작
   if(doSend && txt){
     if(MP.connected) mpSend({t:'ch', text:txt.slice(0,120)});
@@ -1173,7 +1179,14 @@ function mpStatus(){ var el=document.getElementById('mpV'); if(!el)return;
 
 /* ---------- 메뉴 / 대기방 ---------- */
 // which: 'title' | 'joinScr' | 'lobbyScr' | 'win' | 'play'('play'는 전부 숨김)
-function showScreen(which){ mode=which;
+function showScreen(which){
+  // 채팅이 열린 채로 화면이 바뀌면 chatting 이 true 로 남아 이후 모든 키 입력이 막힌다.
+  // (대기방에서 Enter 로 채팅을 열고 마우스로 '게임 시작' 을 누르면 조작 불능이 됐다)
+  if(chatting){ chatting=false;
+    var _ci=document.getElementById('chatInput');
+    if(_ci){ _ci.classList.remove('on'); _ci.blur(); _ci.value=''; } }
+  keys={}; jumpEdge=false;
+  mode=which;
   ['title','joinScr','lobbyScr','win'].forEach(function(idn){
     document.getElementById(idn).classList.toggle('off', idn!==which); });
 }
@@ -1519,7 +1532,10 @@ showScreen('title');
 fillMapPickers();
 (function initLobbyControls(){
   var col=document.getElementById('colSel');
-  if(col){ col.value=PLAYER_COL; col.addEventListener('input',function(){ setMyColor(col.value); }); }
+  if(col){ col.value=PLAYER_COL;
+    // 색 선택 대화상자는 브라우저마다 input 만, 또는 change 만 보내기도 한다 → 둘 다 듣는다
+    var apply=function(){ setMyColor(col.value); };
+    col.addEventListener('input', apply); col.addEventListener('change', apply); }
   var ms=document.getElementById('modeSel');
   if(ms){ ms.value=GAMEMODE;
     ms.addEventListener('change',function(){
