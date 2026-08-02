@@ -156,7 +156,7 @@
   <p style="color:#b7c3d8;letter-spacing:5px;font-size:12.5px;font-weight:800;text-transform:uppercase;margin:8px 0 16px">공기폭발 협동 질주</p>
   <p><b>PoofGun</b>은 닿는 곳에서 공기를 <b>뻥</b> 터뜨려 사람을 날린다.<br>
      발밑을 쏴 <b>로켓점프</b>로 못 넘는 협곡을 넘어 <b>결승선(초록)</b>까지!</p>
-  <p class="hint"><kbd>WASD</kbd> 이동 · <kbd>마우스</kbd> 시점 · <kbd>좌클릭</kbd> 펑! · <kbd>Space</kbd> 점프 · <kbd>R</kbd> 리스폰 · <kbd>V</kbd> 시점 전환(1·3인칭) · <kbd>Enter</kbd> 채팅<br>화면을 클릭하면 마우스가 잠깁니다. <kbd>ESC</kbd>로 해제.</p>
+  <p class="hint"><kbd>WASD</kbd> 이동 · <kbd>마우스</kbd> 시점 · <kbd>좌클릭</kbd> 펑! · <kbd>Space</kbd> 점프 · <kbd>우클릭 홀드</kbd> 조준(캐릭터가 옆으로 비켜 조준점이 드러남)<br><kbd>R</kbd> 리스폰 · <kbd>V</kbd> 시점 전환(1·3인칭) · <kbd>Enter</kbd> 채팅 · 화면 클릭 시 마우스 잠금, <kbd>ESC</kbd> 해제.</p>
   <label class="pick">맵 <select id="mapSel"></select></label>
   <div class="menu">
     <button class="go" id="soloBtn">혼자 플레이</button>
@@ -294,7 +294,7 @@ var COYOTE=_P.COYOTE, JUMP_BUF=_P.JUMP_BUF, PITCH_LIM=_P.PITCH_LIM, FUSE_R=_P.FU
 function makeSim(){  // practice 를 켜면 기록/승리 없이 자유 연습
   var s=LEVEL.start;
   return { p:{x:s.x,y:s.y,z:s.z}, v:{x:0,y:0,z:0}, yaw:0, pitch:0, onGround:false,
-    ammo:AMMO_MAX, ammoT:0, t:0, cpIdx:0, win:false, blasts:[], particles:[], projectiles:[], shake:0, _fireCd:0, tp:true, recoil:0, kb:0,   // tp:true = 기본 3인칭 (V 로 전환)
+    ammo:AMMO_MAX, ammoT:0, t:0, cpIdx:0, win:false, blasts:[], particles:[], projectiles:[], shake:0, _fireCd:0, tp:true, recoil:0, kb:0, aim:0, aimHold:false,   // tp:true = 기본 3인칭 (V 로 전환)
     coyote:0, jumped:false };
 }
 function aabbHit(px,py,pz, b){ // 플레이어 중심(px,py+PH_HY,pz) vs 박스
@@ -383,6 +383,8 @@ function stepSim(s, dt, inp){
   if(s.shake>0)s.shake=Math.max(0,s.shake-dt*2);
   if(s.recoil>0)s.recoil=Math.max(0,s.recoil-dt*4.5);
   if(s.kb>0)s.kb=Math.max(0,s.kb-dt);
+  // 조준 전환을 부드럽게(끊기면 화면이 튄다)
+  s.aim += ((s.aimHold?1:0)-s.aim)*Math.min(1, dt*11);
   // 탄 재충전
   if(s.ammo<AMMO_MAX){ s.ammoT+=dt; if(s.ammoT>=AMMO_REGEN){ s.ammoT=0; s.ammo++; } }
   // 이동 입력 → 목표 수평속도
@@ -547,8 +549,12 @@ function setCamera(s){ var f=forwardVec(s);
   var eye={x:s.p.x,y:s.p.y+EYE,z:s.p.z};
   if(s.tp){
     // 조준 방향을 그대로 따라가는 표준 궤도(피치 제한 없음). 카메라는 피벗 뒤 D.
-    var pivot={x:s.p.x, y:s.p.y+1.0, z:s.p.z}, D=3.8;
-    CAMPOS={x:pivot.x-AIMF.x*D, y:pivot.y-AIMF.y*D, z:pivot.z-AIMF.z*D};
+    // 조준(우클릭 홀드) 중에는 카메라를 오른쪽으로 밀어 캐릭터가 화면 왼쪽으로 비켜서게 한다
+    // — 그래야 정중앙의 조준점이 몸에 가리지 않는다. a 는 0→1 로 부드럽게 변한다.
+    var a=s.aim||0;
+    var pivot={x:s.p.x, y:s.p.y+1.0+a*0.18, z:s.p.z}, D=3.8-a*1.1;
+    var side=a*0.95;
+    CAMPOS={ x:pivot.x-AIMF.x*D+AIMR.x*side, y:pivot.y-AIMF.y*D+AIMR.y*side, z:pivot.z-AIMF.z*D+AIMR.z*side };
     CAMF=AIMF; CAMR=AIMR; CAMU=AIMU;
   } else { CAMPOS=eye; CAMF=AIMF; CAMR=AIMR; CAMU=AIMU; }
 }
@@ -677,8 +683,10 @@ function orientedBox(lc, lh, O, R, U, F){
 // 캐릭터마다 매 프레임 sin/cos 로 새로 만들면 낭비이므로, 원점 기준 캡슐을 한 번만
 // 만들어 캐시하고 이후에는 평행이동만 한다(모양·반지름·높이는 고정).
 var CAPS_CACHE=null;
+// S=둘레 분할, K=반구 링 수. 값이 낮으면 각져 보이므로 넉넉히 준다
+// (캐시되어 최초 1회만 만들므로 비용은 무시할 수준).
 function buildCapsule(r,h){
-  var S=12,K=4,rings=[],t,phi;
+  var S=24,K=7,rings=[],t,phi;
   for(t=K;t>=0;t--){ phi=(Math.PI/2)*(t/K); rings.push({y: h+r*Math.sin(phi), rr:r*Math.cos(phi)}); }
   for(t=0;t<=K;t++){ phi=(Math.PI/2)*(t/K); rings.push({y:-h-r*Math.sin(phi), rr:r*Math.cos(phi)}); }
   var out=[];
@@ -704,6 +712,30 @@ function capsuleGL(cx,cy,cz,r,h,col){
     var a=v[0],b=v[1],d=v[2],e=v[3];
     var A=[a[0]+cx,a[1]+cy,a[2]+cz], B=[b[0]+cx,b[1]+cy,b[2]+cz],
         C=[d[0]+cx,d[1]+cy,d[2]+cz], D=[e[0]+cx,e[1]+cy,e[2]+cz];
+    triPush(A,c); triPush(B,c); triPush(C,c);
+    triPush(A,c); triPush(C,c); triPush(D,c);
+  }
+}
+/* 구체 — 둥근 눈에 사용. 반지름별로 캐시한다. */
+var SPH_CACHE={};
+function buildSphere(r){
+  var S=18,K=9,rings=[],out=[];
+  for(var t=0;t<=K;t++){ var phi=-Math.PI/2+Math.PI*(t/K); rings.push({y:r*Math.sin(phi), rr:r*Math.cos(phi)}); }
+  for(var i=0;i<rings.length-1;i++){ var A=rings[i],B=rings[i+1];
+    for(var s=0;s<S;s++){ var a0=s/S*6.2831853,a1=(s+1)/S*6.2831853;
+      out.push({v:[
+        [A.rr*Math.cos(a0),A.y,A.rr*Math.sin(a0)], [A.rr*Math.cos(a1),A.y,A.rr*Math.sin(a1)],
+        [B.rr*Math.cos(a1),B.y,B.rr*Math.sin(a1)], [B.rr*Math.cos(a0),B.y,B.rr*Math.sin(a0)]]});
+    } }
+  return out;
+}
+// 눈은 음영 없이 단색으로 그려야 만화처럼 또렷한 원으로 보인다
+function sphereGL(cx,cy,cz,r,col){
+  var key=r.toFixed(3), fl=SPH_CACHE[key]||(SPH_CACHE[key]=buildSphere(r));
+  var c=hexRGB(col);
+  for(var f=0;f<fl.length;f++){ var v=fl[f].v;
+    var A=[v[0][0]+cx,v[0][1]+cy,v[0][2]+cz], B=[v[1][0]+cx,v[1][1]+cy,v[1][2]+cz],
+        C=[v[2][0]+cx,v[2][1]+cy,v[2][2]+cz], D=[v[3][0]+cx,v[3][1]+cy,v[3][2]+cz];
     triPush(A,c); triPush(B,c); triPush(C,c);
     triPush(A,c); triPush(C,c); triPush(D,c);
   }
@@ -748,10 +780,13 @@ function emitCharacter(px,py,pz,yaw,pitch,recoil,col){
   // 눈 — 어느 쪽을 보는지 식별용. 수평(yaw) 기준 + pitch 는 살짝만 반영.
   var HF={x:Math.sin(yaw),y:0,z:Math.cos(yaw)}, HU={x:0,y:1,z:0};
   var hy=py+1.42+Math.max(-0.12,Math.min(0.12,(pitch||0)*0.14));
-  var head={x:px, y:hy, z:pz};
+  // 머리 로컬(좌우 R · 위 HU · 앞 HF) → 월드. 구는 방향이 없으니 위치만 구하면 된다.
+  function headPos(lx,ly,lz){
+    return { x:px+R.x*lx+HU.x*ly+HF.x*lz, y:hy+R.y*lx+HU.y*ly+HF.y*lz, z:pz+R.z*lx+HU.z*ly+HF.z*lz }; }
   for(var s=-1;s<=1;s+=2){
-    meshGL(orientedBox([s*0.15,0,0.315],[0.095,0.115,0.075], head,R,HU,HF), '#ffffff', false); // 흰자
-    meshGL(orientedBox([s*0.15,-0.008,0.385],[0.05,0.062,0.035], head,R,HU,HF), '#101c33', false); // 눈동자
+    var w=headPos(s*0.15, 0, 0.295), p=headPos(s*0.15, -0.005, 0.355);
+    sphereGL(w.x,w.y,w.z, 0.115, '#ffffff');   // 흰자
+    sphereGL(p.x,p.y,p.z, 0.058, '#101c33');   // 눈동자
   }
   var kick=(recoil||0)*(recoil||0);
   for(var gi=0;gi<GUN.length;gi++){ var gp=GUN[gi];
@@ -1011,9 +1046,32 @@ function startGame(levelId){
 document.getElementById('retryBtn').addEventListener('click',function(){ ensureAudio();
   if(MP.connected){ sim=makeSim(); sim.practice=true; enterLobby(); } else startGame(); });
 document.getElementById('menuBtn').addEventListener('click',function(){ mpDisconnect(); showScreen('title'); setWarn(''); });
+/* 조준점을 '실제로 맞는 지점'에 붙인다.
+   3인칭은 카메라가 몸 뒤(조준 시엔 옆)에 있어 화면 정중앙이 탄착점과 어긋난다.
+   doFire 와 같은 광선(지형 + 팀원 퓨즈)을 써서 폭발이 생길 자리에 표시한다. */
+function updateCrosshair(s){
+  var el=document.getElementById('crosshair'); if(!el) return;
+  var o=eyePos(s), d=forwardVec(s), tHit=BLAST_RANGE;
+  for(var i=0;i<LEVEL.boxes.length;i++){ if(LEVEL.boxes[i].deco) continue;
+    var t=rayBox(o,d,LEVEL.boxes[i]); if(t<tHit)tHit=t; }
+  tHit = peerFuse(o, d, tHit);
+  var c=toCam([o.x+d.x*tHit, o.y+d.y*tHit, o.z+d.z*tHit]);
+  if(c.z<=NEAR){ el.style.left='50%'; el.style.top='50%'; return; }   // 뒤쪽이면 중앙 유지
+  var sp=project(c), rect=cv.getBoundingClientRect();
+  if(rect.width<1||rect.height<1) return;                            // 아직 레이아웃 전
+  el.style.left=(rect.left + sp.x/W*rect.width)+'px';
+  el.style.top =(rect.top  + sp.y/H*rect.height)+'px';
+}
 function requestLock(){ try{ cv.requestPointerLock(); }catch(e){} }
 cv.addEventListener('click',function(){ ensureAudio(); if(chatting) return;
   if(mode==='play'||mode==='lobbyScr'){ if(!locked)requestLock(); else doFire(sim); } });
+/* 우클릭 홀드 = 조준 모드(3인칭에서 캐릭터가 왼쪽으로 비켜 조준점이 드러난다).
+   포인터락 중에도 mousedown/up 은 오는데 contextmenu 가 뜨면 락이 풀리므로 막는다. */
+cv.addEventListener('contextmenu',function(e){ e.preventDefault(); });
+window.addEventListener('mousedown',function(e){ if(e.button===2 && sim && !chatting) sim.aimHold=true; });
+window.addEventListener('mouseup',function(e){ if(e.button===2 && sim) sim.aimHold=false; });
+// 창 밖으로 나가면 버튼을 놓친다 → 조준이 걸린 채 남지 않게
+window.addEventListener('blur',function(){ if(sim) sim.aimHold=false; });
 document.addEventListener('pointerlockchange',function(){ locked=(document.pointerLockElement===cv); });
 document.addEventListener('mousemove',function(e){ if(!locked||!sim)return; var sX=0.0022;
   // 시야각 하한이 -1.45rad(83.1°)이면 "발밑"을 쏴도 폭발 중심이 몸보다 7° 앞에 생겨
@@ -1066,6 +1124,7 @@ function loop(now){ if(!last)last=now; var dt=Math.min(0.05,(now-last)/1000); la
     if(mode==='play') showHint(sim); else showHint(null);
   }
   render();
+  if((mode==='play'||mode==='lobbyScr') && sim) updateCrosshair(sim);
   requestAnimationFrame(loop);
 }
 // 탄창 게이지. frac = 다음 한 발의 충전 진행도(0~1) → 그 칸만 아래에서 위로 차오른다.
