@@ -252,28 +252,33 @@ function render(){
   setCamera(sim);
   ctx.save();
   if(sim.shake>0.01){ ctx.translate((Math.random()*2-1)*sim.shake*12,(Math.random()*2-1)*sim.shake*12); }
-  // 면 수집 (3인칭이면 플레이어 박스도)
+  // 면 수집
   var faces=[];
-  var boxes = sim.tp ? LEVEL.boxes.concat([{cx:sim.p.x, cy:sim.p.y+PH_HY, cz:sim.p.z, hx:PH_HX+0.08, hy:PH_HY, hz:PH_HZ+0.08, col:'#ff8a3a'}]) : LEVEL.boxes;
-  for(var i=0;i<boxes.length;i++){ var b=boxes[i]; var fs=boxFaces(b);
-    for(var f=0;f<fs.length;f++){ var face=fs[f];
-      // 백페이스 컬링(월드, 카메라 위치 기준)
-      var fc={x:(face.v[0][0]+face.v[2][0])/2,y:(face.v[0][1]+face.v[2][1])/2,z:(face.v[0][2]+face.v[2][2])/2};
-      var toCamV={x:CAMPOS.x-fc.x, y:CAMPOS.y-fc.y, z:CAMPOS.z-fc.z};
-      if(dot(face.n,toCamV)<=0) continue;
-      var cs=face.v.map(function(p){return toCam(p);});
-      var clipped=clipNear(cs); if(clipped.length<3)continue;
-      var zsum=0; for(var q=0;q<clipped.length;q++)zsum+=clipped[q].z; var zavg=zsum/clipped.length;
-      faces.push({pts:clipped.map(project), z:zavg, col:shadeCol(b.col,face.sh), goal:(b===LEVEL.boxes[5])});
+  for(var i=0;i<LEVEL.boxes.length;i++){ emitFaces(boxFaces(LEVEL.boxes[i]), LEVEL.boxes[i].col, LEVEL.boxes[i]===LEVEL.boxes[5], faces); }
+  if(sim.tp){ // 3인칭: 플레이어 캡슐
+    emitFaces(capsuleFaces(sim.p.x, sim.p.y+0.9, sim.p.z, 0.35, 0.55), '#ff8a3a', false, faces);
+  } else { // 1인칭: 카메라에 붙은 3D 총(월드 공간 → 시점 따라 각도 변함)
+    var eye={x:sim.p.x,y:sim.p.y+EYE,z:sim.p.z}, kick=(sim.recoil||0)*(sim.recoil||0);
+    for(var gi=0;gi<GUN.length;gi++){ var gp=GUN[gi];
+      var lc=[gp.lc[0], gp.lc[1]-0.05*kick, gp.lc[2]-0.16*kick];
+      emitFaces(orientedBox(lc, gp.lh, eye, CAMR, CAMU, CAMF), gp.col, false, faces);
     }
   }
   faces.sort(function(a,b){return b.z-a.z;});
   for(var d=0;d<faces.length;d++){ var fa=faces[d];
     ctx.fillStyle=fa.col; ctx.beginPath(); ctx.moveTo(fa.pts[0].x,fa.pts[0].y);
     for(var p=1;p<fa.pts.length;p++)ctx.lineTo(fa.pts[p].x,fa.pts[p].y); ctx.closePath(); ctx.fill();
-    ctx.strokeStyle='rgba(0,0,0,.18)'; ctx.lineWidth=1; ctx.stroke();
+    if(fa.stroke!==false){ ctx.strokeStyle='rgba(0,0,0,.18)'; ctx.lineWidth=1; ctx.stroke(); }
     if(fa.goal){ ctx.fillStyle='rgba(255,255,255,.12)'; ctx.fill(); }
   }
+  // 총구 플래시(발사 직후) — 총열 끝 월드 위치
+  if(!sim.tp && (sim.recoil||0)>0.5){ var kk=(sim.recoil-0.5)/0.5;
+    var eye2={x:sim.p.x,y:sim.p.y+EYE,z:sim.p.z};
+    var mz=[0.26,-0.20,1.12-0.16*(sim.recoil*sim.recoil)];
+    var mw=[eye2.x+mz[0]*CAMR.x+mz[1]*CAMU.x+mz[2]*CAMF.x, eye2.y+mz[0]*CAMR.y+mz[1]*CAMU.y+mz[2]*CAMF.y, eye2.z+mz[0]*CAMR.z+mz[1]*CAMU.z+mz[2]*CAMF.z];
+    var mc=toCam(mw); if(mc.z>NEAR){ var msp=project(mc); ctx.globalAlpha=kk;
+      ctx.fillStyle='#dff4ff'; ctx.beginPath(); ctx.arc(msp.x,msp.y,(0.10+0.22*kk)/mc.z*FOCAL,0,6.28); ctx.fill();
+      ctx.fillStyle='rgba(140,220,255,.5)'; ctx.beginPath(); ctx.arc(msp.x,msp.y,(0.22+0.4*kk)/mc.z*FOCAL,0,6.28); ctx.fill(); ctx.globalAlpha=1; } }
   // 결승 기둥 빛
   drawBeam(LEVEL.goal.cx, LEVEL.goal.cy, LEVEL.goal.cz);
   // 블래스트(구)
@@ -285,36 +290,60 @@ function render(){
     var s2=project(c2); ctx.globalAlpha=Math.max(0,pt.life); ctx.fillStyle='#dff0ff'; var r=Math.max(1,6/c2.z*FOCAL*0.3);
     ctx.beginPath(); ctx.arc(s2.x,s2.y,r,0,6.28); ctx.fill(); } ctx.globalAlpha=1;
   ctx.restore();
-  // 1인칭 총(뷰모델) — 화면 공간
-  if(!sim.tp) drawGun(sim);
 }
 function drawBeam(x,y,z){ var lo=toCam([x,y+0.5,z]), hi=toCam([x,y+8,z]); if(lo.z<=NEAR||hi.z<=NEAR)return;
   var a=project(lo), b=project(hi); ctx.strokeStyle='rgba(120,255,170,.4)'; ctx.lineWidth=6; ctx.beginPath(); ctx.moveTo(a.x,a.y); ctx.lineTo(b.x,b.y); ctx.stroke(); }
-// 1인칭 뷰모델: 우하단에 PoofGun. 반동(recoil)으로 뒤로 밀렸다 복귀 + 발사 시 총구 플래시
-function drawGun(s){
-  var rc=s.recoil||0; var kick=rc*rc; // 강한 초기 킥
-  var bx=W*0.66, by=H - 8 + kick*46;   // 반동 시 아래로
-  ctx.save(); ctx.translate(bx,by); ctx.rotate(-0.10 + kick*0.16);
-  // 팔뚝
-  ctx.fillStyle='#c9782f'; rr(-30,74,52,80,10);
-  // 총 몸통
-  ctx.fillStyle='#3a4664'; rr(-58,-2,120,54,10);
-  ctx.fillStyle='#2b3350'; rr(-58,30,120,18,6);
-  // 손잡이
-  ctx.fillStyle='#242c46'; ctx.save(); ctx.translate(18,44); ctx.rotate(0.32); rr(-14,0,28,52,8); ctx.restore();
-  // 총열(앞으로, 크로스헤어 쪽=위-왼쪽)
-  ctx.fillStyle='#4a597e'; rr(-104,-16,60,30,8);
-  // 공기통(파랑) + 노즐
-  ctx.fillStyle='#2aa8e0'; ctx.beginPath(); ctx.arc(6,4,20,0,6.28); ctx.fill();
-  ctx.strokeStyle='#8fe0ff'; ctx.lineWidth=3; ctx.beginPath(); ctx.arc(6,4,20,0,6.28); ctx.stroke();
-  ctx.fillStyle='#141a2c'; ctx.beginPath(); ctx.arc(-108,-1,12,0,6.28); ctx.fill();
-  // 총구 플래시(발사 직후)
-  if(rc>0.55){ var a=(rc-0.55)/0.45; ctx.globalAlpha=a;
-    ctx.fillStyle='#cdefff'; ctx.beginPath(); ctx.arc(-118,-1,10+18*a,0,6.28); ctx.fill();
-    ctx.fillStyle='rgba(140,220,255,.6)'; ctx.beginPath(); ctx.arc(-118,-1,18+34*a,0,6.28); ctx.fill(); ctx.globalAlpha=1; }
-  ctx.restore();
+// 한 메시(면 배열)를 컬링·클립·투영해 렌더 목록에 추가
+function emitFaces(fl, baseCol, isGoal, out){
+  for(var f=0;f<fl.length;f++){ var face=fl[f];
+    var fc={x:(face.v[0][0]+face.v[2][0])/2, y:(face.v[0][1]+face.v[2][1])/2, z:(face.v[0][2]+face.v[2][2])/2};
+    if(face.n.x*(CAMPOS.x-fc.x)+face.n.y*(CAMPOS.y-fc.y)+face.n.z*(CAMPOS.z-fc.z)<=0) continue;
+    var cs=face.v.map(function(p){return toCam(p);});
+    var clipped=clipNear(cs); if(clipped.length<3)continue;
+    var z=0; for(var q=0;q<clipped.length;q++)z+=clipped[q].z; z/=clipped.length;
+    out.push({pts:clipped.map(project), z:z, col:shadeCol(baseCol,face.sh), goal:isGoal});
+  }
 }
-function rr(x,y,w,h,r){ ctx.beginPath(); ctx.moveTo(x+r,y); ctx.arcTo(x+w,y,x+w,y+h,r); ctx.arcTo(x+w,y+h,x,y+h,r); ctx.arcTo(x,y+h,x,y,r); ctx.arcTo(x,y,x+w,y,r); ctx.closePath(); ctx.fill(); }
+// 회전된(카메라 기저 R/U/F에 부착된) 박스 → 월드 면. 1인칭 총에 사용.
+function orientedBox(lc, lh, O, R, U, F){
+  var x0=lc[0]-lh[0],x1=lc[0]+lh[0], y0=lc[1]-lh[1],y1=lc[1]+lh[1], z0=lc[2]-lh[2],z1=lc[2]+lh[2];
+  function w(a,b,c){ return [O.x+a*R.x+b*U.x+c*F.x, O.y+a*R.y+b*U.y+c*F.y, O.z+a*R.z+b*U.z+c*F.z]; }
+  function n(a,b,c){ return {x:a*R.x+b*U.x+c*F.x, y:a*R.y+b*U.y+c*F.y, z:a*R.z+b*U.z+c*F.z}; }
+  return [
+    {n:n(0,1,0), sh:1.0, v:[w(x0,y1,z0),w(x1,y1,z0),w(x1,y1,z1),w(x0,y1,z1)]},
+    {n:n(0,-1,0),sh:0.4, v:[w(x0,y0,z1),w(x1,y0,z1),w(x1,y0,z0),w(x0,y0,z0)]},
+    {n:n(0,0,-1),sh:0.72,v:[w(x0,y1,z0),w(x0,y0,z0),w(x1,y0,z0),w(x1,y1,z0)]},
+    {n:n(0,0,1), sh:0.62,v:[w(x1,y1,z1),w(x1,y0,z1),w(x0,y0,z1),w(x0,y1,z1)]},
+    {n:n(-1,0,0),sh:0.55,v:[w(x0,y1,z1),w(x0,y0,z1),w(x0,y0,z0),w(x0,y1,z0)]},
+    {n:n(1,0,0), sh:0.5, v:[w(x1,y1,z0),w(x1,y0,z0),w(x1,y0,z1),w(x1,y1,z1)]},
+  ];
+}
+// 3D 캡슐 메시(세로 원통 + 반구 캡). 3인칭 플레이어에 사용.
+function capsuleFaces(cx,cy,cz,r,h){
+  var S=12,K=4,rings=[],t,phi;
+  for(t=K;t>=0;t--){ phi=(Math.PI/2)*(t/K); rings.push({y:cy+h+r*Math.sin(phi), rr:r*Math.cos(phi)}); }
+  for(t=0;t<=K;t++){ phi=(Math.PI/2)*(t/K); rings.push({y:cy-h-r*Math.sin(phi), rr:r*Math.cos(phi)}); }
+  var out=[];
+  for(var i=0;i<rings.length-1;i++){ var A=rings[i],B=rings[i+1];
+    for(var s=0;s<S;s++){ var a0=s/S*6.2831853,a1=(s+1)/S*6.2831853;
+      var v0=[cx+A.rr*Math.cos(a0),A.y,cz+A.rr*Math.sin(a0)], v1=[cx+A.rr*Math.cos(a1),A.y,cz+A.rr*Math.sin(a1)],
+          v2=[cx+B.rr*Math.cos(a1),B.y,cz+B.rr*Math.sin(a1)], v3=[cx+B.rr*Math.cos(a0),B.y,cz+B.rr*Math.sin(a0)];
+      var mx=(v0[0]+v1[0]+v2[0]+v3[0])/4, my=(v0[1]+v1[1]+v2[1]+v3[1])/4, mz=(v0[2]+v1[2]+v2[2]+v3[2])/4;
+      var ay=Math.max(cy-h,Math.min(cy+h,my)); var nx=mx-cx,ny=my-ay,nz=mz-cz; var nl=Math.hypot(nx,ny,nz)||1; nx/=nl;ny/=nl;nz/=nl;
+      var sh=0.42+0.58*Math.max(0, nx*0.32+ny*0.9+nz*0.28);
+      out.push({v:[v0,v1,v2,v3], n:{x:nx,y:ny,z:nz}, sh:sh});
+    }
+  }
+  return out;
+}
+// 1인칭 PoofGun 3D 모델(카메라 로컬: x=오른쪽, y=위, z=앞)
+var GUN=[
+  {lc:[0.255,-0.34,0.46], lh:[0.05,0.11,0.05],  col:'#242c46'}, // 손잡이
+  {lc:[0.255,-0.22,0.64], lh:[0.062,0.07,0.20], col:'#3a4664'}, // 몸통
+  {lc:[0.255,-0.20,0.90], lh:[0.036,0.046,0.15],col:'#4a597e'}, // 총열
+  {lc:[0.255,-0.20,1.07], lh:[0.056,0.056,0.03],col:'#141a2c'}, // 노즐
+  {lc:[0.20,-0.285,0.62], lh:[0.062,0.062,0.075],col:'#2aa8e0'},// 공기통
+];
 
 /* ---------- 라이브 입력/루프 ---------- */
 var mode='title', keys={}, locked=false, jumpEdge=false;
