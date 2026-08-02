@@ -60,7 +60,9 @@ server.on('upgrade', function(req, socket){
   var client = { id:id, socket:socket, room:room, name:('P'+id) };
   (rooms[room] || (rooms[room] = {}))[id] = client;
   send(socket, JSON.stringify({ t:'welcome', id:id, room:room }));
-  sendRoster(room);
+  // 현재 명단은 접속자 본인에게만. 다른 사람에게는 'join'(이름 확정) 이후에 알린다
+  // — 그래야 입장 알림에 기본값('P5')이 아니라 실제 이름이 뜬다.
+  sendRoster(room, socket);
   log('join', 'room='+room, 'id='+id, 'now='+Object.keys(rooms[room]).length);
 
   var buf = Buffer.alloc(0);
@@ -89,17 +91,26 @@ server.on('upgrade', function(req, socket){
     var m; try{ m = JSON.parse(str); }catch(e){ return; }
     if(m.t === 'join'){ if(typeof m.name === 'string') client.name = m.name.slice(0,24); sendRoster(room); return; }
     if(m.t === 'start'){ broadcast(room, id, JSON.stringify({ t:'start' })); return; } // 호스트가 전원 시작
+    if(m.t === 'ch'){   // 채팅: 길이 제한 후 본인 포함 방 전원에게(모두 같은 순서로 보이도록)
+      var text = String(m.text == null ? '' : m.text).slice(0, 120);
+      if(!text.trim()) return;
+      var out = JSON.stringify({ t:'ch', id:id, name:client.name, text:text });
+      var r = rooms[room]; if(r) Object.keys(r).forEach(function(k){ send(r[k].socket, out); });
+      return;
+    }
     if(m.t === 'st'){  m.id = id; m.name = client.name; broadcast(room, id, JSON.stringify(m)); return; }
     if(m.t === 'bl'){  m.id = id; broadcast(room, id, JSON.stringify(m)); return; }
   }
 });
 
-/* 대기방 명단 브로드캐스트: 방 전원에게 {players, host}. host = 방에서 가장 먼저 들어온(id 최소) 사람 */
-function sendRoster(room){
+/* 대기방 명단: 방 전원에게 {players, host}. host = 방에서 가장 먼저 들어온(id 최소) 사람.
+   onlySocket 을 주면 그 한 명에게만 보낸다. */
+function sendRoster(room, onlySocket){
   var r = rooms[room]; if(!r) return;
   var ids = Object.keys(r).map(Number).sort(function(a,b){ return a-b; });
   var players = ids.map(function(id){ return { id:id, name:r[id].name }; });
   var msg = JSON.stringify({ t:'roster', players:players, host: ids[0] });
+  if(onlySocket){ send(onlySocket, msg); return; }
   ids.forEach(function(id){ send(r[id].socket, msg); });
 }
 

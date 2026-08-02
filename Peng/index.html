@@ -49,11 +49,31 @@
   #playerList li .dot{width:10px;height:10px;border-radius:50%;background:#42d6c8;flex:none}
   #playerList li.me .dot{background:#ff8a3a}
   #playerList li .tag{margin-left:auto;font-size:11.5px;font-weight:800;letter-spacing:1px;color:#7f8bc0}
+  /* --- 채팅 --- */
+  #chat{position:fixed;left:14px;bottom:14px;z-index:30;width:min(400px,62vw);pointer-events:none}
+  #chatLog{display:flex;flex-direction:column;gap:3px;margin-bottom:6px}
+  .cmsg{background:rgba(8,12,24,.55);border-left:3px solid #42d6c8;border-radius:0 8px 8px 0;
+    padding:4px 10px;font-size:13px;line-height:1.45;color:#e8f0ff;transition:opacity .8s;
+    text-shadow:0 1px 3px rgba(0,0,0,.7);word-break:break-word}
+  .cmsg.me{border-left-color:#ff8a3a}
+  .cmsg.sys{border-left-color:#7f8bc0;color:#aab6dd;font-style:italic}
+  .cmsg.old{opacity:.16}
+  .cmsg b{color:#7fd0ff;font-weight:800}
+  .cmsg.me b{color:#ffb27a}
+  #chatInput{display:none;width:100%;pointer-events:auto;font:inherit;font-size:14px;color:#eaf2ff;
+    background:rgba(8,12,24,.88);border:2px solid #7fd0ff;border-radius:9px;padding:8px 11px;outline:none}
+  #chatInput.on{display:block}
   .hint{color:#5a6494;font-size:12.5px;margin-top:16px;line-height:1.8}
 </style>
 </head>
 <body>
 <div id="wrap"><canvas id="cv"></canvas></div>
+
+<!-- 채팅: 로비·인게임 공용 (화면 오버레이보다 위) -->
+<div id="chat">
+  <div id="chatLog"></div>
+  <input id="chatInput" maxlength="120" autocomplete="off" placeholder="메시지 입력 후 Enter · Esc 취소" />
+</div>
 
 <div id="hud">
   <svg id="crosshair" viewBox="0 0 18 18"><circle cx="9" cy="9" r="7" fill="none" stroke="#7fd0ff" stroke-width="1.5"/><circle cx="9" cy="9" r="1.5" fill="#fff"/></svg>
@@ -72,7 +92,7 @@
   <p style="color:#7fd0ff;letter-spacing:2px;margin-top:-2px">공기폭발 협동 질주</p>
   <p><b>PoofGun</b>은 닿는 곳에서 공기를 <b>뻥</b> 터뜨려 사람을 날린다.<br>
      발밑을 쏴 <b>로켓점프</b>로 못 넘는 협곡을 넘어 <b>결승선(초록)</b>까지!</p>
-  <p class="hint"><kbd>WASD</kbd> 이동 · <kbd>마우스</kbd> 시점 · <kbd>좌클릭</kbd> 펑! · <kbd>Space</kbd> 점프 · <kbd>R</kbd> 리스폰 · <kbd>V</kbd> 3인칭<br>화면을 클릭하면 마우스가 잠깁니다(FPS). <kbd>ESC</kbd>로 해제.</p>
+  <p class="hint"><kbd>WASD</kbd> 이동 · <kbd>마우스</kbd> 시점 · <kbd>좌클릭</kbd> 펑! · <kbd>Space</kbd> 점프 · <kbd>R</kbd> 리스폰 · <kbd>V</kbd> 3인칭 · <kbd>Enter</kbd> 채팅<br>화면을 클릭하면 마우스가 잠깁니다(FPS). <kbd>ESC</kbd>로 해제.</p>
   <div class="menu">
     <button class="go" id="soloBtn">혼자 플레이</button>
     <button class="go alt" id="hostBtn">방 만들기 (호스트)</button>
@@ -613,11 +633,18 @@ function mpConnect(room, onOk, onFail, asJoin){
     mpHandle(m); };
 }
 function mpDisconnect(){ if(MP.ws){ try{ MP.ws.onclose=null; MP.ws.close(); }catch(e){} }
-  MP.ws=null; MP.connected=false; MP.peers={}; MP.players=[]; MP.host=null; MP.id=null; MP.room=null; mpStatus(); }
+  MP.ws=null; MP.connected=false; MP.peers={}; MP.players=[]; MP.host=null; MP.id=null; MP.room=null;
+  if(chatting) closeChat(false); CHAT.length=0; renderChat(); mpStatus(); }
 function mpSend(o){ if(MP.ws&&MP.connected){ try{ MP.ws.send(JSON.stringify(o)); }catch(e){} } }
 function mpHandle(m){
   if(m.t==='welcome'){ MP.id=m.id; }
-  else if(m.t==='roster'){ MP.players=m.players||[]; MP.host=m.host; renderLobby(); }
+  else if(m.t==='roster'){
+    var before=MP.players||[], after=m.players||[];
+    if(before.length){   // 첫 명단은 알리지 않음(내가 막 들어온 시점)
+      after.forEach(function(p){ if(p.id!==MP.id && !before.some(function(q){return q.id===p.id;})) pushChat('','▶ '+p.name+' 님이 들어왔습니다',false,true); });
+      before.forEach(function(p){ if(!after.some(function(q){return q.id===p.id;})) pushChat('','◀ '+p.name+' 님이 나갔습니다',false,true); });
+    }
+    MP.players=after; MP.host=m.host; renderLobby(); }
   else if(m.t==='start'){ if(mode==='lobbyScr') startGame(); }   // 호스트가 시작 → 전원 시작
   else if(m.t==='st'){ if(m.id===MP.id)return; var pe=MP.peers[m.id]||(MP.peers[m.id]={buf:[]});
     if(!pe.buf)pe.buf=[];
@@ -626,8 +653,49 @@ function mpHandle(m){
     pe.buf.push({t:pe.seen, x:m.x, y:m.y, z:m.z, yaw:m.yaw||0, pitch:m.pitch||0, rc:m.rc||0});
     if(pe.buf.length>16)pe.buf.shift(); }
   else if(m.t==='bl'){ if(m.id===MP.id)return; if(sim&&!sim.win) spawnRemoteShot(sim,m); }
+  else if(m.t==='ch'){ pushChat(m.name, m.text, m.id===MP.id); }
   else if(m.t==='left'){ delete MP.peers[m.id]; }
   mpStatus();
+}
+
+/* ---------- 채팅 ---------- */
+var CHAT=[], chatting=false;
+// 주의: 상대가 보낸 문자열은 신뢰할 수 없으므로 반드시 textContent 로만 넣는다(XSS 방지).
+function pushChat(name, text, self, sys){
+  CHAT.push({name:String(name||'?'), text:String(text||''), self:!!self, sys:!!sys, t:performance.now()});
+  if(CHAT.length>8) CHAT.shift();
+  renderChat();
+}
+function renderChat(){
+  var log=document.getElementById('chatLog'); if(!log) return;
+  log.innerHTML='';                                  // 지우기만 — 사용자 문자열 아님
+  var now=performance.now();
+  for(var i=0;i<CHAT.length;i++){ var c=CHAT[i];
+    var d=document.createElement('div');
+    d.className='cmsg'+(c.self?' me':'')+(c.sys?' sys':'');
+    if(mode==='play' && now-c.t>12000) d.className+=' old';   // 인게임에선 오래된 건 흐려짐
+    if(!c.sys){ var b=document.createElement('b'); b.textContent=c.name+': '; d.appendChild(b); }
+    var sp=document.createElement('span'); sp.textContent=c.text; d.appendChild(sp);
+    log.appendChild(d);
+  }
+}
+setInterval(function(){ if(CHAT.length) renderChat(); }, 1000);
+function openChat(){
+  if(chatting) return; chatting=true;
+  var el=document.getElementById('chatInput');
+  el.value=''; el.classList.add('on');
+  if(locked) document.exitPointerLock();             // 타이핑 중엔 마우스 잠금 해제
+  setTimeout(function(){ el.focus(); }, 10);
+}
+function closeChat(doSend){
+  if(!chatting) return;
+  var el=document.getElementById('chatInput'), txt=(el.value||'').trim();
+  el.classList.remove('on'); el.blur(); chatting=false;
+  if(doSend && txt){
+    if(MP.connected) mpSend({t:'ch', text:txt.slice(0,120)});
+    else pushChat('나', txt, true);                  // 솔로일 땐 로컬 표시만
+  }
+  if(mode==='play' && !locked) requestLock();
 }
 function mpStatus(){ var el=document.getElementById('mpV'); if(!el)return;
   el.textContent = (MP.connected&&MP.room) ? ('🟢 '+Math.max(1,MP.players.length)+'명 · '+MP.room) : '🎮 솔로'; }
@@ -655,6 +723,7 @@ function renderLobby(){
     hint.textContent= enough ? '모두 준비됐어요! 시작을 누르세요.' : '친구가 코드를 입력해 들어오면 시작할 수 있어요.'; }
   else { btn.disabled=true; btn.textContent='호스트 대기 중…';
     hint.textContent='호스트가 게임을 시작하면 함께 출발합니다.'; }
+  hint.textContent += '  (Enter: 채팅)';
 }
 document.getElementById('soloBtn').addEventListener('click',function(){ ensureAudio(); mpDisconnect(); startGame(); });
 document.getElementById('hostBtn').addEventListener('click',function(){ ensureAudio(); setWarn('서버에 연결 중…');
@@ -700,14 +769,23 @@ document.getElementById('retryBtn').addEventListener('click',function(){ ensureA
   if(MP.connected){ showScreen('lobbyScr'); renderLobby(); } else startGame(); });
 document.getElementById('menuBtn').addEventListener('click',function(){ mpDisconnect(); showScreen('title'); setWarn(''); });
 function requestLock(){ try{ cv.requestPointerLock(); }catch(e){} }
-cv.addEventListener('click',function(){ ensureAudio(); if(mode==='play'){ if(!locked)requestLock(); else doFire(sim); } });
+cv.addEventListener('click',function(){ ensureAudio(); if(chatting) return;
+  if(mode==='play'){ if(!locked)requestLock(); else doFire(sim); } });
 document.addEventListener('pointerlockchange',function(){ locked=(document.pointerLockElement===cv); });
 document.addEventListener('mousemove',function(e){ if(!locked||!sim)return; var sX=0.0022;
   sim.yaw+=e.movementX*sX; sim.pitch-=e.movementY*sX; sim.pitch=Math.max(-1.45,Math.min(1.45,sim.pitch)); });
-window.addEventListener('keydown',function(e){ ensureAudio(); var k=e.key.toLowerCase(); keys[k]=true;
+window.addEventListener('keydown',function(e){
+  // 채팅 입력 중에는 게임 조작이 먹지 않도록 완전히 차단
+  if(chatting){
+    if(e.key==='Enter'){ e.preventDefault(); closeChat(true); }
+    else if(e.key==='Escape'){ closeChat(false); }
+    return;
+  }
+  if(e.key==='Enter' && (mode==='play'||mode==='lobbyScr')){ e.preventDefault(); openChat(); return; }
+  ensureAudio(); var k=e.key.toLowerCase(); keys[k]=true;
   if(k===' '){ jumpEdge=true; e.preventDefault(); } if(k==='r'&&sim)respawn(sim);
   if(k==='v'&&sim)sim.tp=!sim.tp; });
-window.addEventListener('keyup',function(e){ keys[e.key.toLowerCase()]=false; });
+window.addEventListener('keyup',function(e){ if(chatting) return; keys[e.key.toLowerCase()]=false; });
 
 var last=0, acc=0, STEP=1/120;
 function loop(now){ if(!last)last=now; var dt=Math.min(0.05,(now-last)/1000); last=now;
