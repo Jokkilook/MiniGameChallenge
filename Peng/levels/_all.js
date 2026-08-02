@@ -1,0 +1,105 @@
+/* 자동 생성 파일 — 직접 고치지 마세요.
+   levels/ 안의 레벨 파일들을 server.js 가 이어붙인 것입니다.
+   맵을 고치려면 levels/<이름>.js 를 고치거나 editor.html 을 쓰세요. */
+
+/* ---------- levels/Testmap1.js ---------- */
+/* PENG! 레벨 — editor.html 에서 생성. 손으로 고쳐도 된다.
+   <script src="levels/Testmap1.js"></script> 로 index.html 에 추가하면 목록에 뜬다. */
+PENG.defineLevel('Testmap1', {
+  name: '테스트맵1',
+  boxes: [
+    {cx:0, cy:-0.5, cz:3.5, hx:3, hy:0.5, hz:3, col:'#5a7bb0'},
+    {cx:0.5, cy:-0.5, cz:16.5, hx:3.4, hy:0.5, hz:3.4, col:'#3aa860'},
+    {cx:-6, cy:0.5, cz:8.5, hx:0.9, hy:0.5, hz:0.75, col:'#6b7280', deco:true, g:'rock#1'},
+    {cx:-5.48, cy:0.78, cz:8.2, hx:0.5, hy:0.35, hz:0.45, col:'#7c8593', deco:true, g:'rock#1'},
+    {cx:-6.44, cy:0.68, cz:8.84, hx:0.4, hy:0.28, hz:0.35, col:'#5d6470', deco:true, g:'rock#1'},
+    {cx:-2, cy:0.34, cz:2.5, hx:0.06, hy:0.34, hz:0.3, col:'#4e9455', deco:true, g:'grass#2'},
+    {cx:-1.76, cy:0.27, cz:2.62, hx:0.05, hy:0.27, hz:0.24, col:'#5aa862', deco:true, g:'grass#2'},
+    {cx:-2.2, cy:0.3, cz:2.36, hx:0.05, hy:0.3, hz:0.22, col:'#458a4c', deco:true, g:'grass#2'},
+    {cx:2, cy:0.34, cz:2, hx:0.06, hy:0.34, hz:0.3, col:'#4e9455', deco:true, g:'grass#3'},
+    {cx:2.24, cy:0.27, cz:2.12, hx:0.05, hy:0.27, hz:0.24, col:'#5aa862', deco:true, g:'grass#3'},
+    {cx:1.8, cy:0.3, cz:1.86, hx:0.05, hy:0.3, hz:0.22, col:'#458a4c', deco:true, g:'grass#3'},
+    {cx:21.5, cy:0.8, cz:7, hx:0.8, hy:0.8, hz:0.8, col:'#8a6a45'}
+  ],
+  goal: {cx:0.5, cy:0.5, cz:16.5, r:3.2},
+  checkpoints: [
+    {x:0, y:0, z:2}
+  ],
+  killY: -14, start: {x:0, y:0, z:5.5}
+});
+
+
+/* ---------- levels/canyon.js ---------- */
+/* PENG! 레벨 — 협곡 (기본 코스)
+   기존 index.html 에 하드코딩돼 있던 코스를 그대로 옮긴 것. 좌표·색 모두 동일하다.
+
+   코스 구성 — 발판 반경 3m 이므로 두 발판 사이 실제 협곡 = (거리 - 6)m.
+   일반 점프로 넘는 한계가 약 4.85m 라, 4m 는 점프 / 6m 이상 또는 상승은 로켓점프.
+   난이도: 점프 → 로켓점프 입문 → 상승 → 연속 구간 → 마지막 큰 도약
+
+   ※ deco:true 는 에디터의 협곡 분석에서 제외하라는 표시일 뿐이다.
+     게임 물리는 예전과 똑같이 모든 박스와 충돌한다(장식 기둥도 밟힌다). */
+PENG.defineLevel('canyon', {
+  name: '협곡',
+  boxes: [
+    {cx:0, cy:-25, cz:40, hx:60, hy:1, hz:140, col:'#20304a', deco:true},  // 시각용 먼 바닥
+    {cx:0, cy:-0.5, cz:0,  hx:3,   hy:0.5, hz:3,   col:'#5a7bb0'},  // A 시작
+    {cx:0, cy:-0.5, cz:10, hx:3,   hy:0.5, hz:3,   col:'#5a7bb0'},  // B  협곡 4m — 그냥 점프
+    {cx:0, cy:-0.5, cz:24, hx:3,   hy:0.5, hz:3,   col:'#c07b5a'},  // C  협곡 8m — 로켓점프 입문
+    {cx:0, cy:2.5,  cz:36, hx:3,   hy:0.5, hz:3,   col:'#c07b5a'},  // D  협곡 6m + 3m 상승
+    {cx:0, cy:2.5,  cz:46, hx:3,   hy:0.5, hz:3,   col:'#5a7bb0'},  // E  협곡 4m — 숨 고르기(점프)
+    {cx:0, cy:5.5,  cz:57, hx:3,   hy:0.5, hz:3,   col:'#c07b5a'},  // F  협곡 5m + 3m 상승 — 로켓점프
+    {cx:0, cy:5.5,  cz:67, hx:3,   hy:0.5, hz:3,   col:'#5a7bb0'},  // G  협곡 4m — 점프
+    {cx:0, cy:8.5,  cz:79, hx:3.4, hy:0.5, hz:3.4, col:'#3aa860'},  // 결승 — 협곡 5.6m + 3m 상승
+    // 장식(경로 밖 기둥) — 높이감을 주되 이동을 막지 않도록 양옆으로만
+    {cx:-8, cy:-3, cz:18, hx:1, hy:4, hz:1, col:'#46557a', deco:true},
+    {cx:8,  cy:-1, cz:30, hx:1, hy:5, hz:1, col:'#46557a', deco:true},
+    {cx:-9, cy:1,  cz:52, hx:1, hy:5, hz:1, col:'#46557a', deco:true},
+    {cx:9,  cy:3,  cz:63, hx:1, hy:5, hz:1, col:'#46557a', deco:true}
+  ],
+  goal: {cx:0, cy:9.5, cz:79, r:3.2},          // 결승 존(발판 위)
+  checkpoints: [
+    {x:0, y:0, z:0},  {x:0, y:0, z:10}, {x:0, y:0, z:24}, {x:0, y:3, z:36},
+    {x:0, y:3, z:46}, {x:0, y:6, z:57}, {x:0, y:6, z:67}
+  ],
+  killY: -14, start: {x:0, y:0, z:-2},
+  // 체크포인트 번호별 화면 힌트(<b> 강조 가능). 마지막 항목은 이후 구간까지 유지된다.
+  hints: [
+    '앞으로 달려 <b>Space</b>로 협곡을 건너요',
+    '이번 협곡은 넓어요! <b>점프 후 발밑을 좌클릭</b>해 로켓점프!',
+    '위로! <b>점프 + 발밑 펑!</b>으로 높은 발판을 오르세요',
+    '짧은 협곡 — 이건 그냥 점프로',
+    '다시 위로! 로켓점프로 올라가요',
+    '마지막! <b>크게 로켓점프</b>해서 초록 결승대로'
+  ]
+});
+
+
+/* ---------- levels/duo.js ---------- */
+/* PENG! 레벨 — 2인 시험장 (템플릿)
+   완성된 코스가 아니라, "협동 강제 구간"이 실제로 어떤 숫자인지 보여주는 최소 예시다.
+   맵 동기화 테스트용으로도 쓴다(맵이 하나뿐이면 동기화가 깨져도 티가 안 난다).
+
+   가운데 협곡 13m 는 의도적으로 아래 구간에 놓았다:
+       일반 점프  4.85m  ✗
+       로켓점프  10.83m  ✗   ← 혼자서는 어떻게 해도 못 넘는다
+       팀원 보조 15.72m  ✓   ← 팀원이 밀어줘야만 넘어간다
+   editor.html 에서 이 협곡이 'coop' 으로 표시되는지 확인하는 기준점으로 쓰면 된다. */
+PENG.defineLevel('duo', {
+  name: '2인 시험장',
+  boxes: [
+    {cx:0, cy:-25, cz:15, hx:60, hy:1, hz:120, col:'#20304a', deco:true},  // 시각용 먼 바닥
+    {cx:0, cy:-0.5, cz:0,  hx:3,   hy:0.5, hz:3,   col:'#5a7bb0'},  // A 시작
+    {cx:0, cy:-0.5, cz:19, hx:3,   hy:0.5, hz:3,   col:'#c07b5a'},  // B  협곡 13m — 협동 전용
+    {cx:0, cy:-0.5, cz:29, hx:3.4, hy:0.5, hz:3.4, col:'#3aa860'},  // 결승 — 협곡 3.6m(점프)
+    {cx:-8, cy:-4, cz:10, hx:1, hy:4, hz:1, col:'#46557a', deco:true},
+    {cx:8,  cy:-4, cz:24, hx:1, hy:4, hz:1, col:'#46557a', deco:true}
+  ],
+  goal: {cx:0, cy:0.5, cz:29, r:3.2},
+  checkpoints: [ {x:0, y:0, z:0}, {x:0, y:0, z:19} ],
+  killY: -14, start: {x:0, y:0, z:-2},
+  hints: [
+    '이 협곡은 <b>혼자서는 못 넘습니다</b> — 팀원이 내 발밑을 쏴 밀어줘야 해요',
+    '마지막! 짧은 협곡이니 <b>Space</b>로 건너요'
+  ]
+});

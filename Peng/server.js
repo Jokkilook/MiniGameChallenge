@@ -17,11 +17,90 @@ var MIME = { '.html':'text/html; charset=utf-8', '.js':'text/javascript', '.css'
              '.json':'application/json', '.png':'image/png', '.jpg':'image/jpeg', '.svg':'image/svg+xml',
              '.ico':'image/x-icon', '.woff2':'font/woff2', '.map':'application/json' };
 
+/* ---------- 레벨 묶음(levels/_all.js) 자동 생성 ----------
+ * 맵을 추가할 때마다 index.html·editor.html 을 손으로 고치지 않도록,
+ * levels/ 의 모든 레벨 파일을 하나로 이어붙인 _all.js 를 서버가 만든다.
+ * HTML 은 이 파일 하나만 참조하므로 다시 수정할 일이 없다.
+ *
+ * ※ 생성물이지만 커밋해야 한다. 서버를 켜지 않고 index.html 을 더블클릭해서
+ *   여는 오프라인 플레이에서는 이 파일이 이미 있어야 맵이 뜬다.
+ */
+var LEVELS_DIR = path.join(ROOT, 'levels');
+var ALL_FILE   = path.join(LEVELS_DIR, '_all.js');
+function buildAllLevels(){
+  var files;
+  try{ files = fs.readdirSync(LEVELS_DIR); }
+  catch(e){ return; }                                    // levels/ 가 없으면 조용히 넘어간다
+  files = files.filter(function(f){ return /\.js$/i.test(f) && f.charAt(0) !== '_'; }).sort();
+  var out = ['/* 자동 생성 파일 — 직접 고치지 마세요.',
+             '   levels/ 안의 레벨 파일들을 server.js 가 이어붙인 것입니다.',
+             '   맵을 고치려면 levels/<이름>.js 를 고치거나 editor.html 을 쓰세요. */'];
+  for(var i=0;i<files.length;i++){
+    out.push('\n/* ---------- levels/' + files[i] + ' ---------- */');
+    try{ out.push(fs.readFileSync(path.join(LEVELS_DIR, files[i]), 'utf8')); }catch(e){}
+  }
+  var txt = out.join('\n');
+  // 내용이 같으면 쓰지 않는다 — 안 그러면 아래 감시자가 자기 쓰기에 반응해 무한 루프가 된다.
+  try{ if(fs.readFileSync(ALL_FILE, 'utf8') === txt) return; }catch(e){}
+  try{ fs.writeFileSync(ALL_FILE, txt); log('levels', '_all.js 갱신 (' + files.length + '개)'); }
+  catch(e){ log('levels', '_all.js 쓰기 실패: ' + e.message); }
+}
+buildAllLevels();
+try{
+  var rebuildT = null;
+  fs.watch(LEVELS_DIR, function(ev, fn){
+    if(fn && fn.charAt(0) === '_') return;               // 자기 자신의 변경은 무시
+    clearTimeout(rebuildT); rebuildT = setTimeout(buildAllLevels, 120);
+  });
+}catch(e){ log('levels', '폴더 감시 불가(수동 재시작 필요): ' + e.message); }
+
+/* ---------- 에디터 저장 ----------
+ * editor.html 의 [저장] 이 levels/<id>.js 를 직접 쓰게 해준다.
+ * 서버는 0.0.0.0 에 바인딩돼 있으므로(친구 LAN 접속용) 이 엔드포인트를 그냥 열면
+ * 같은 공유기의 누구나 파일을 쓸 수 있다. 그래서 로컬에서 온 요청만 받는다.
+ */
+function isLocal(req){
+  var a = req.socket.remoteAddress || '';
+  return a === '127.0.0.1' || a === '::1' || a === '::ffff:127.0.0.1';
+}
+function handleSave(req, res){
+  function fail(code, msg){ res.writeHead(code, {'Content-Type':'text/plain; charset=utf-8'}); res.end(msg); }
+  if(!isLocal(req)) return fail(403, '이 서버를 돌리는 PC에서만 저장할 수 있습니다.');
+  var body = '', tooBig = false;
+  req.on('data', function(c){
+    if(tooBig) return;
+    body += c;
+    if(body.length > 512 * 1024){ tooBig = true; fail(413, '레벨이 너무 큽니다.'); req.destroy(); }
+  });
+  req.on('end', function(){
+    if(tooBig) return;
+    var m; try{ m = JSON.parse(body); }catch(e){ return fail(400, '잘못된 요청입니다.'); }
+    var id = String(m.id || '');
+    // 파일명은 영문/숫자/-/_ 만. '_' 로 시작하는 이름은 _all.js 자리라 막는다.
+    if(!/^[a-zA-Z0-9][a-zA-Z0-9_-]{0,39}$/.test(id)) return fail(400, '맵 이름은 영문·숫자·-·_ 만 쓸 수 있습니다.');
+    if(typeof m.text !== 'string' || !m.text) return fail(400, '내용이 비었습니다.');
+    var dest = path.join(LEVELS_DIR, id + '.js');
+    if(dest.indexOf(LEVELS_DIR + path.sep) !== 0) return fail(400, '잘못된 경로입니다.');
+    try{ fs.mkdirSync(LEVELS_DIR, {recursive:true}); }catch(e){}
+    fs.writeFile(dest, m.text, function(err){
+      if(err) return fail(500, '저장 실패: ' + err.message);
+      buildAllLevels();
+      log('save', 'levels/' + id + '.js (' + m.text.length + 'B)');
+      res.writeHead(200, {'Content-Type':'application/json'});
+      res.end(JSON.stringify({ ok:true, path:'levels/' + id + '.js' }));
+    });
+  });
+}
+
 /* ---------- 정적 파일 서버 ---------- */
 var server = http.createServer(function(req, res){
   var urlPath = decodeURIComponent(req.url.split('?')[0]);
   // 클라이언트가 "멀티 서버가 맞는지" 확인하는 용도
   if(urlPath === '/__peng'){ res.writeHead(200, {'Content-Type':'application/json'}); res.end('{"peng":1}'); return; }
+  if(urlPath === '/__save'){
+    if(req.method !== 'POST'){ res.writeHead(405); res.end('POST only'); return; }
+    handleSave(req, res); return;
+  }
   if(urlPath === '/' || urlPath === '') urlPath = '/index.html';
   // 경로 탈출 방지: 단순 접두사 비교는 형제 폴더(예: <ROOT>_evil)도 통과하므로
   // ROOT 자신이거나 ROOT + 구분자로 시작하는 경우만 허용한다.
@@ -105,7 +184,10 @@ server.on('upgrade', function(req, socket){
     }
     if(m.t === 'start'){                       // 호스트만 시작시킬 수 있다
       if(id !== hostOf(room)) return;
-      broadcast(room, id, JSON.stringify({ t:'start' })); return;
+      // 호스트가 고른 맵 id 도 함께 전달한다. 빠뜨리면 각자 다른 코스에서 뛰게 되고,
+      // 상대가 허공을 달리는 것처럼 보인다(모르는 id 는 클라이언트가 기본 맵으로 떨군다).
+      var lv = (typeof m.level === 'string') ? m.level.slice(0,40) : null;
+      broadcast(room, id, JSON.stringify({ t:'start', level:lv })); return;
     }
     if(m.t === 'ch'){   // 채팅: 길이 제한 후 본인 포함 방 전원에게(모두 같은 순서로 보이도록)
       var text = String(m.text == null ? '' : m.text).slice(0, 120);
