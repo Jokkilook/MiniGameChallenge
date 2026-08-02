@@ -378,6 +378,40 @@ function peerFuse(o, d, maxT){
   }
   return best;
 }
+/* 경쟁 모드 전용 — 플레이어끼리 서로 통과하지 못하게 막는다.
+   릴레이 넷코드라 상대를 직접 밀 수는 없다(상대 위치는 그쪽 클라가 정한다).
+   그래서 양쪽이 각자 "자기만" 겹친 양의 절반씩 물러난다. 합치면 정확히 떨어지고,
+   한쪽만 튕겨 나가는 비대칭도 안 생긴다.
+   협동에서는 끄는 게 맞다 — 좁은 발판에서 서로를 실수로 떨어뜨리게 된다. */
+var PEER_R=PH_HX;                       // 몸통 반지름(렌더 캡슐과 같은 값)
+function boxBlocked(px,py,pz){
+  for(var i=0;i<LEVEL.boxes.length;i++){ var b=LEVEL.boxes[i];
+    if(b.deco) continue;                // 장식은 통과(보이지 않는 벽 방지)
+    if(aabbHit(px,py,pz,b)) return true; }
+  return false;
+}
+function resolvePeers(s){
+  if(GAMEMODE!=='versus') return;
+  if(typeof MP==='undefined' || !MP || !MP.peers) return;   // 솔로·검증 하네스
+  if(typeof peerSample!=='function') return;
+  var now=(typeof performance!=='undefined')?performance.now():0, minD=PEER_R*2;
+  for(var id in MP.peers){
+    var ps=peerSample(MP.peers[id], now); if(!ps) continue;
+    // 세로로 안 겹치면(머리 위·발밑) 그냥 지나간다 — 안 그러면 위에서 떨어질 때 끼인다
+    if(Math.abs(s.p.y-ps.y) >= PH_HY*2) continue;
+    var dx=s.p.x-ps.x, dz=s.p.z-ps.z, d=Math.hypot(dx,dz);
+    if(d>=minD) continue;
+    if(d<1e-4){ dx=Math.sin(s.yaw); dz=Math.cos(s.yaw); d=1; }  // 완전히 포개짐 → 등 뒤로
+    var nx=dx/d, nz=dz/d, push=(minD-d)*0.5+0.001;
+    // 밀려나다 벽/엄폐물 속으로 들어가면 안 된다 — 파고드는 축은 되돌린다
+    var ox=s.p.x, oz=s.p.z;
+    s.p.x+=nx*push; if(boxBlocked(s.p.x,s.p.y,s.p.z)) s.p.x=ox;
+    s.p.z+=nz*push; if(boxBlocked(s.p.x,s.p.y,s.p.z)) s.p.z=oz;
+    // 파고드는 속도 성분만 지운다(옆으로 미끄러지는 건 남겨야 몸이 붙어도 움직인다)
+    var vn=s.v.x*nx+s.v.z*nz;
+    if(vn<0){ s.v.x-=vn*nx; s.v.z-=vn*nz; }
+  }
+}
 function doFire(s){
   if(s.win || s.ammo<=0 || s._fireCd>0) return false;
   s.ammo--; s._fireCd=0.12;
@@ -469,6 +503,7 @@ function stepSim(s, dt, inp){
   // 이동 + 충돌(축별)
   s.onGround=false;
   moveAxis(s,'x',s.v.x*dt); moveAxis(s,'z',s.v.z*dt); moveAxis(s,'y',s.v.y*dt);
+  resolvePeers(s);                       // 경쟁 모드: 상대와 겹쳤으면 밀려난다
   // 발사체 비행 → 착탄 시 폭발 연출
   for(var pi=s.projectiles.length-1;pi>=0;pi--){ var pr=s.projectiles[pi]; var mv=PROJ_SPD*dt; pr.gone+=mv;
     pr.x+=pr.dx*mv; pr.y+=pr.dy*mv; pr.z+=pr.dz*mv;
@@ -1328,7 +1363,8 @@ var DBG_SPEC=[
   ['왜곡 세기',     0,   0.6, 0.01, function(){return LENS_STRENGTH;}, function(v){LENS_STRENGTH=v;}],
   ['왜곡 반경',     0.02,0.9, 0.02, function(){return LENS_RADIUS;},   function(v){LENS_RADIUS=v;}],
   ['sec','멀티'],
-  ['보간 지연(ms)', 0,   400, 5,    function(){return INTERP_MS;},  function(v){INTERP_MS=v;}]
+  ['보간 지연(ms)', 0,   400, 5,    function(){return INTERP_MS;},  function(v){INTERP_MS=v;}],
+  ['몸통 충돌 반경(경쟁)', 0, 1.2, 0.01, function(){return PEER_R;},  function(v){PEER_R=v;}]
 ];
 var DBG_DEFAULTS=null, dbgRows=[];
 function dbgBuild(){
