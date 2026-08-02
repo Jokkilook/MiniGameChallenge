@@ -327,10 +327,10 @@ var BLAST_R=_P.BLAST_R, BLAST_F=_P.BLAST_F, BLAST_RANGE=_P.BLAST_RANGE;
 var AMMO_MAX=_P.AMMO_MAX, AMMO_REGEN=_P.AMMO_REGEN, PROJ_SPD=_P.PROJ_SPD;
 var KB_TIME=_P.KB_TIME;   // 폭발 후 조작 권한이 약해지는 시간(초)
 /* 3인칭 카메라 · 조준(우클릭) — 디버그 패널에서 실시간 조절 */
-var CAM_DIST=3.8;    // 평소 카메라 거리
-var AIM_SIDE=0.95;   // 조준 시 오른쪽으로 비키는 양(캐릭터가 화면 왼쪽으로)
-var AIM_PULL=1.1;    // 조준 시 당겨지는 거리
-var AIM_RISE=0.18;   // 조준 시 살짝 올라가는 높이
+var CAM_DIST=4;      // 평소 카메라 거리
+var AIM_SIDE=1.25;   // 조준 시 오른쪽으로 비키는 양(캐릭터가 화면 왼쪽으로)
+var AIM_PULL=2.7;    // 조준 시 당겨지는 거리
+var AIM_RISE=0.58;   // 조준 시 올라가는 높이
 var COYOTE=_P.COYOTE, JUMP_BUF=_P.JUMP_BUF, PITCH_LIM=_P.PITCH_LIM, FUSE_R=_P.FUSE_R;
 
 function makeSim(){  // practice 를 켜면 기록/승리 없이 자유 연습
@@ -728,6 +728,16 @@ function orientedBox(lc, lh, O, R, U, F){
 var CAPS_CACHE=null;
 // S=둘레 분할, K=반구 링 수. 값이 낮으면 각져 보이므로 넉넉히 준다
 // (캐시되어 최초 1회만 만들므로 비용은 무시할 수준).
+/* 캡슐 — 정점마다 밝기를 계산한다(Gouraud).
+   면 하나에 밝기 하나를 주면 24분할이어도 띠(계단)가 눈에 띈다.
+   정점색은 셰이더의 varying 으로 보간되므로 면 사이가 매끄럽게 이어진다. */
+function capsuleVertShade(vx,vy,vz,h){
+  var ay=Math.max(-h,Math.min(h,vy));            // 캡슐 축에서 가장 가까운 점
+  var nx=vx, ny=vy-ay, nz=vz, nl=Math.hypot(nx,ny,nz)||1;
+  nx/=nl; ny/=nl; nz/=nl;
+  var dl=nx*0.32+ny*0.85-nz*0.42;                // 광원: 위 + 앞(카메라 쪽)
+  return 0.55+0.45*(dl>0?dl:0);
+}
 function buildCapsule(r,h){
   var S=24,K=7,rings=[],t,phi;
   for(t=K;t>=0;t--){ phi=(Math.PI/2)*(t/K); rings.push({y: h+r*Math.sin(phi), rr:r*Math.cos(phi)}); }
@@ -735,28 +745,27 @@ function buildCapsule(r,h){
   var out=[];
   for(var i=0;i<rings.length-1;i++){ var A=rings[i],B=rings[i+1];
     for(var s=0;s<S;s++){ var a0=s/S*6.2831853,a1=(s+1)/S*6.2831853;
-      var v0=[A.rr*Math.cos(a0),A.y,A.rr*Math.sin(a0)], v1=[A.rr*Math.cos(a1),A.y,A.rr*Math.sin(a1)],
-          v2=[B.rr*Math.cos(a1),B.y,B.rr*Math.sin(a1)], v3=[B.rr*Math.cos(a0),B.y,B.rr*Math.sin(a0)];
-      var mx=(v0[0]+v1[0]+v2[0]+v3[0])/4, my=(v0[1]+v1[1]+v2[1]+v3[1])/4, mz=(v0[2]+v1[2]+v2[2]+v3[2])/4;
-      var ay=Math.max(-h,Math.min(h,my)); var nx=mx,ny=my-ay,nz=mz; var nl=Math.hypot(nx,ny,nz)||1; nx/=nl;ny/=nl;nz/=nl;
-      // 광원: 위+앞(-z, 보통 카메라 쪽). 앰비언트 높여 매끈하고 밝게.
-      var dl=nx*0.32+ny*0.85-nz*0.42; var sh=0.55+0.45*(dl>0?dl:0);
-      out.push({v:[v0,v1,v2,v3], n:{x:nx,y:ny,z:nz}, sh:sh});
+      var v=[[A.rr*Math.cos(a0),A.y,A.rr*Math.sin(a0)], [A.rr*Math.cos(a1),A.y,A.rr*Math.sin(a1)],
+             [B.rr*Math.cos(a1),B.y,B.rr*Math.sin(a1)], [B.rr*Math.cos(a0),B.y,B.rr*Math.sin(a0)]];
+      out.push({ v:v, sh4:[ capsuleVertShade(v[0][0],v[0][1],v[0][2],h),
+                            capsuleVertShade(v[1][0],v[1][1],v[1][2],h),
+                            capsuleVertShade(v[2][0],v[2][1],v[2][2],h),
+                            capsuleVertShade(v[3][0],v[3][1],v[3][2],h) ] });
     }
   }
   return out;
 }
-// 캐시된 캡슐을 (cx,cy,cz) 로 옮겨 GPU 정점에 바로 기록
+// 캐시된 캡슐을 (cx,cy,cz) 로 옮겨 GPU 정점에 기록. 정점별 밝기를 그대로 실어 보낸다.
 function capsuleGL(cx,cy,cz,r,h,col){
   if(!CAPS_CACHE) CAPS_CACHE=buildCapsule(r,h);
   var base=hexRGB(col), fl=CAPS_CACHE;
-  for(var f=0;f<fl.length;f++){ var face=fl[f], sh=face.sh, v=face.v;
-    var c=[base[0]*sh, base[1]*sh, base[2]*sh];
-    var a=v[0],b=v[1],d=v[2],e=v[3];
-    var A=[a[0]+cx,a[1]+cy,a[2]+cz], B=[b[0]+cx,b[1]+cy,b[2]+cz],
-        C=[d[0]+cx,d[1]+cy,d[2]+cz], D=[e[0]+cx,e[1]+cy,e[2]+cz];
-    triPush(A,c); triPush(B,c); triPush(C,c);
-    triPush(A,c); triPush(C,c); triPush(D,c);
+  for(var f=0;f<fl.length;f++){ var face=fl[f], v=face.v, q=face.sh4, w=[], c=[];
+    for(var k=0;k<4;k++){
+      w.push([v[k][0]+cx, v[k][1]+cy, v[k][2]+cz]);
+      c.push([base[0]*q[k], base[1]*q[k], base[2]*q[k]]);
+    }
+    triPush(w[0],c[0]); triPush(w[1],c[1]); triPush(w[2],c[2]);
+    triPush(w[0],c[0]); triPush(w[2],c[2]); triPush(w[3],c[3]);
   }
 }
 /* 구체 — 둥근 눈에 사용. 반지름별로 캐시한다. */
@@ -785,6 +794,7 @@ function sphereGL(cx,cy,cz,r,col){
 }
 /* 눈 배치·굴림 — 디버그 패널에서 조절할 수 있게 변수로 뺀다 */
 var EYE_Y=1.42, EYE_X=0.15, EYE_Z=0.295, EYE_R=0.115, EYE_PUPIL_R=0.058, EYE_ROLL=0.85;
+var EYE_PUPIL_SINK=0.88;   // 눈동자가 흰자 안으로 얼마나 들어가는지(1에 가까울수록 깊이 박힘)
 var PLAYER_COL='#ff8a3a';
 // 1인칭 PoofGun 3D 모델(카메라 로컬: x=오른쪽, y=위, z=앞)
 // 1·3인칭 공통 손 위치(몸에 붙게 자연스럽게). x=오른쪽, y=위, z=앞(조준 기저).
@@ -830,7 +840,7 @@ function emitCharacter(px,py,pz,yaw,pitch,recoil,col){
     return { x:px+R.x*lx+HU.x*ly+HF.x*lz, y:hy+R.y*lx+HU.y*ly+HF.y*lz, z:pz+R.z*lx+HU.z*ly+HF.z*lz }; }
   var lp=Math.max(-1.15, Math.min(1.15, (pitch||0)*EYE_ROLL));   // 눈이 뒤집히지 않게 제한
   var ldy=Math.sin(lp), ldz=Math.cos(lp);                        // 머리 기준 시선 방향
-  var orbit=EYE_R - EYE_PUPIL_R*0.45;                            // 눈동자가 흰자 표면에 얹히는 반경
+  var orbit=EYE_R - EYE_PUPIL_R*EYE_PUPIL_SINK;                  // 눈동자가 흰자에 박히는 깊이
   for(var s=-1;s<=1;s+=2){
     var w=headPos(s*EYE_X, 0, EYE_Z);
     var p=headPos(s*EYE_X, ldy*orbit, EYE_Z + ldz*orbit);
@@ -1095,6 +1105,7 @@ var DBG_SPEC=[
   ['눈 굴림',       0,   2,   0.05, function(){return EYE_ROLL;},   function(v){EYE_ROLL=v;}],
   ['눈 크기',       0.03,0.3, 0.005,function(){return EYE_R;},      function(v){EYE_R=v;}],
   ['눈동자 크기',   0.01,0.2, 0.005,function(){return EYE_PUPIL_R;},function(v){EYE_PUPIL_R=v;}],
+  ['눈동자 깊이',   0,   1.6, 0.02, function(){return EYE_PUPIL_SINK;},function(v){EYE_PUPIL_SINK=v;}],
   ['눈 간격',       0,   0.4, 0.005,function(){return EYE_X;},      function(v){EYE_X=v;}],
   ['눈 높이',       0.8, 2.2, 0.01, function(){return EYE_Y;},      function(v){EYE_Y=v;}],
   ['sec','멀티'],
