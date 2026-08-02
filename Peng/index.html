@@ -254,6 +254,11 @@
      맵을 추가해도 이 파일을 고칠 필요가 없다. -->
 <script src="level.js"></script>
 <script src="levels/_all.js"></script>
+<!-- 총 3D 메시. gunbaked.js 는 Mesh/*.glb 를 미리 구워둔 정점 데이터(190KB)로,
+     tools/bake.html 이 만든다 — 모델을 바꿨을 때만 다시 구우면 된다.
+     둘 다 없으면 기본 박스 총으로 그린다. -->
+<script src="gunmesh.js"></script>
+<script src="gunbaked.js"></script>
 
 <script>
 "use strict";
@@ -768,7 +773,7 @@ function render(){
   gl.depthMask(true); gl.enable(gl.DEPTH_TEST);
   if(!sim){ if(usePost) drawPost(); return; }
 
-  TRI.length=0; LINE.length=0; BB.length=0; OUTL.length=0;
+  TRI.length=0; LINE.length=0; BB.length=0; OUTL.length=0; GUNQ.length=0;
   // 레벨
   for(var i=0;i<LEVEL.boxes.length;i++){ var bx=LEVEL.boxes[i]; meshGL(boxFaces(bx), bx.col, true); }
   // 원격 플레이어 — 보간된 위치
@@ -778,8 +783,7 @@ function render(){
   if(sim.tp){ emitCharacter(sim.p.x, sim.p.y, sim.p.z, sim.yaw, sim.pitch, sim.recoil||0, PLAYER_COL); }
   else { // 1인칭: 총만
     var eye={x:sim.p.x,y:sim.p.y+EYE,z:sim.p.z}, kick=(sim.recoil||0)*(sim.recoil||0);
-    for(var gi=0;gi<GUN.length;gi++){ var gp=GUN[gi];
-      meshGL(orientedBox([gp.lc[0], gp.lc[1]-0.05*kick, gp.lc[2]-0.16*kick], gp.lh, eye, AIMR, AIMU, AIMF), gp.col, true); }
+    emitGun(eye, AIMR, AIMU, AIMF, kick, null);
   }
   // 결승 기둥 빛(수직 빌보드 대용: 얇은 발광 구슬 열)
   var g=LEVEL.goal;
@@ -797,11 +801,13 @@ function render(){
     bbPush(pt.x,pt.y,pt.z, 0.16, 0.87,0.94,1.0, Math.max(0,pt.life)*0.9); }
   // 총구 섬광
   if((sim.recoil||0)>0.5){ var kk=(sim.recoil-0.5)/0.5;
-    var e2={x:sim.p.x,y:sim.p.y+EYE,z:sim.p.z}, g2=sim.tp?GUN_TP:[0,0,0];
-    var mz=[0.28+g2[0],-0.20+g2[1],1.12+g2[2]-0.16*(sim.recoil*sim.recoil)];
-    bbPush(e2.x+mz[0]*AIMR.x+mz[1]*AIMU.x+mz[2]*AIMF.x,
-           e2.y+mz[0]*AIMR.y+mz[1]*AIMU.y+mz[2]*AIMF.y,
-           e2.z+mz[0]*AIMR.z+mz[1]*AIMU.z+mz[2]*AIMF.z, 0.16+0.34*kk, 0.87,0.96,1.0, kk); }
+    var e2={x:sim.p.x,y:sim.p.y+EYE,z:sim.p.z}, g2=sim.tp?GUN_TP:[0,0,0], mw;
+    if(gunMeshOK()) mw=GunMesh.muzzleWorld(e2,AIMR,AIMU,AIMF,(sim.recoil*sim.recoil),g2);
+    else { var mz=[0.28+g2[0],-0.20+g2[1],1.12+g2[2]-0.16*(sim.recoil*sim.recoil)];
+      mw={ x:e2.x+mz[0]*AIMR.x+mz[1]*AIMU.x+mz[2]*AIMF.x,
+           y:e2.y+mz[0]*AIMR.y+mz[1]*AIMU.y+mz[2]*AIMF.y,
+           z:e2.z+mz[0]*AIMR.z+mz[1]*AIMU.z+mz[2]*AIMF.z }; }
+    bbPush(mw.x, mw.y, mw.z, 0.16+0.34*kk, 0.87,0.96,1.0, kk); }
 
   // --- 그리기: 불투명 → 외곽선 → 발광(가산합성) ---
   gl.useProgram(PROG.main); gl.uniformMatrix4fv(PROG.main.uVP,false,VP);
@@ -809,11 +815,16 @@ function render(){
   gl.enable(gl.POLYGON_OFFSET_FILL); gl.polygonOffset(1.0,1.0);  // 외곽선이 면에 묻히지 않게
   drawArr(BUF.tri, TRI, PROG.main, gl.TRIANGLES);
   gl.disable(gl.POLYGON_OFFSET_FILL);
+  // 총 메시 — 정적 VBO 라 매 프레임 옮기지 않고 모델행렬만 바꿔 그린다
+  for(var qi=0;qi<GUNQ.length;qi++){ var Q=GUNQ[qi];
+    GunMesh.drawBody(gl, PROG.main, VP, Q.O,Q.R,Q.U,Q.F, Q.k, Q.e); }
   // 윤곽선 껍질 — 카메라를 등진 면만 남겨야 실루엣 테두리가 된다.
   // 이 메시들은 바깥면이 CW(=GL 기준 뒷면)라 BACK 을 컬링해야 바깥이 지워진다.
-  if(OUTL.length){
+  if(OUTL.length || GUNQ.length){
     gl.enable(gl.CULL_FACE); gl.cullFace(gl.BACK);
-    drawArr(BUF.outl, OUTL, PROG.main, gl.TRIANGLES);
+    if(OUTL.length) drawArr(BUF.outl, OUTL, PROG.main, gl.TRIANGLES);
+    for(var qo=0;qo<GUNQ.length;qo++){ var QO=GUNQ[qo];
+      GunMesh.drawOutline(gl, PROG.main, VP, QO.O,QO.R,QO.U,QO.F, QO.k, QO.e); }
     gl.disable(gl.CULL_FACE);
   }
   if(LINE.length) drawArr(BUF.line, LINE, PROG.main, gl.LINES);
@@ -986,6 +997,24 @@ var GUN=[
   {lc:[0.225,-0.285,0.62],lh:[0.062,0.062,0.075],col:'#2aa8e0'},// 공기통
 ];
 var GUN_TP=[0.15,0,-0.05]; // 3인칭: 오른쪽 가슴 쪽으로 살짝만(몸에 붙은 채 보이게)
+/* 위 박스 5개는 이제 폴백이다. Mesh/ShockWave_Gun.glb 가 읽히면 그 메시로 그린다
+   (gunmesh.js). 못 읽으면(file:// 직접 열기 등) 박스가 그대로 나온다. */
+var GUNMESH_ON=1;
+function gunMeshOK(){ return GUNMESH_ON && window.GunMesh && GunMesh.ready; }
+// 디버그 패널용 — gunmesh.js 가 없어도 슬라이더가 터지지 않게 빈 객체를 준다
+var GM_NULL={scale:0,ox:0,oy:0,oz:0,outlineW:0};
+function GM(){ return window.GunMesh || GM_NULL; }
+/* 총 하나를 그릴 자리를 등록한다. (O,R,U,F)=붙일 기저, extra=3인칭 추가 오프셋.
+   메시는 정적 VBO + 모델행렬로 따로 그려야 해서(1만 삼각형을 매 프레임 CPU 로 옮길 수는 없다)
+   여기서는 '어디에' 만 모아두고, 실제 draw 는 아래 불투명 패스에서 한다. */
+var GUNQ=[];
+function emitGun(O,R,U,F,kick,extra){
+  if(gunMeshOK()){ GUNQ.push({O:O,R:R,U:U,F:F,k:kick,e:extra}); return; }
+  var ex=extra||[0,0,0];
+  for(var gi=0;gi<GUN.length;gi++){ var gp=GUN[gi];
+    meshGL(orientedBox([gp.lc[0]+ex[0], gp.lc[1]+ex[1]-0.05*kick, gp.lc[2]+ex[2]-0.16*kick],
+                       gp.lh, O, R, U, F), gp.col, true); }
+}
 var PEER_COL='#42d6c8'; // 원격 플레이어(팀원) 캡슐 색(자기=주황과 구분)
 /* 엔티티 보간: 수신(≈22Hz)을 화면(60fps)에서 부드럽게.
    일부러 INTERP_MS 만큼 과거를 렌더해, 항상 스냅샷 두 개 사이를 이어 그린다. */
@@ -1029,11 +1058,7 @@ function emitCharacter(px,py,pz,yaw,pitch,recoil,col){
     sphereOutlineGL(w.x,w.y,w.z, EYE_R, OUTLINE_EYE);   // 눈 테두리
     sphereGL(p.x,p.y,p.z, EYE_PUPIL_R, '#101c33');      // 눈동자
   }
-  var kick=(recoil||0)*(recoil||0);
-  for(var gi=0;gi<GUN.length;gi++){ var gp=GUN[gi];
-    var lc=[gp.lc[0]+GUN_TP[0], gp.lc[1]+GUN_TP[1]-0.05*kick, gp.lc[2]+GUN_TP[2]-0.16*kick];
-    meshGL(orientedBox(lc, gp.lh, eye, R, U, f), gp.col, true);
-  }
+  emitGun(eye, R, U, f, (recoil||0)*(recoil||0), GUN_TP);
 }
 
 /* ---------- 멀티플레이(릴레이) ---------- */
@@ -1310,6 +1335,13 @@ var DBG_SPEC=[
   ['눈 굵기',       0,   0.06,0.002,function(){return OUTLINE_EYE;},   function(v){OUTLINE_EYE=v;}],
   ['눈 간격',       0,   0.4, 0.005,function(){return EYE_X;},      function(v){EYE_X=v;}],
   ['눈 높이',       0.8, 2.2, 0.01, function(){return EYE_Y;},      function(v){EYE_Y=v;}],
+  ['sec','총 메시(.glb)'],
+  ['메시 쓰기(0/1)',0, 1,   1,    function(){return GUNMESH_ON;},  function(v){GUNMESH_ON=v?1:0;}],
+  ['크기',          0.05,1.2,0.01, function(){return GM().scale;},   function(v){GM().scale=v;}],
+  ['좌우',          -1,  1,  0.01, function(){return GM().ox;},      function(v){GM().ox=v;}],
+  ['높이',          -1,  1,  0.01, function(){return GM().oy;},      function(v){GM().oy=v;}],
+  ['앞뒤',          -1,  2,  0.01, function(){return GM().oz;},      function(v){GM().oz=v;}],
+  ['윤곽선 두께',   0,   0.05,0.001,function(){return GM().outlineW;},function(v){GM().outlineW=v;}],
   ['sec','중력 렌즈(폭발 왜곡)'],
   ['켜기(0/1)',     0,   1,   1,    function(){return LENS_ON;},       function(v){LENS_ON=v?1:0;}],
   ['왜곡 세기',     0,   0.6, 0.01, function(){return LENS_STRENGTH;}, function(v){LENS_STRENGTH=v;}],
@@ -1554,6 +1586,9 @@ try{
     '<p>이 브라우저에서 <b>WebGL</b>을 사용할 수 없습니다.<br>최신 브라우저에서 열거나 하드웨어 가속을 켜주세요.</p>'+
     '<p class="hint">'+String(e.message||e)+'</p>';
 }
+// 총 3D 메시 — gunbaked.js 가 있으면 즉시, 없으면 원본 .glb 를 받아 그 자리에서 굽는다.
+// 둘 다 안 되면(예: file:// 로 열었고 구운 파일도 없을 때) 박스 총이 그려진다.
+if(window.GunMesh) GunMesh.init('Mesh/ShockWave_Gun.glb');
 layout(); requestAnimationFrame(loop);
 
 /* ---------- 검증 노출 ---------- */

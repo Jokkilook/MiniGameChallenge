@@ -15,7 +15,8 @@ var PORT = process.env.PORT || 8090;
 var ROOT = __dirname;
 var MIME = { '.html':'text/html; charset=utf-8', '.js':'text/javascript', '.css':'text/css',
              '.json':'application/json', '.png':'image/png', '.jpg':'image/jpeg', '.svg':'image/svg+xml',
-             '.ico':'image/x-icon', '.woff2':'font/woff2', '.map':'application/json' };
+             '.ico':'image/x-icon', '.woff2':'font/woff2', '.map':'application/json',
+             '.glb':'model/gltf-binary' };
 
 /* ---------- 레벨 묶음(levels/_all.js) 자동 생성 ----------
  * 맵을 추가할 때마다 index.html·editor.html 을 손으로 고치지 않도록,
@@ -92,6 +93,33 @@ function handleSave(req, res){
   });
 }
 
+/* ---------- 총 메시 굽기 결과 저장 ----------
+ * Node 에는 JPEG 디코더가 없어서 굽는 일은 브라우저(tools/bake.html)가 하고,
+ * 서버는 그 결과를 gunbaked.js 로 받아쓰기만 한다. 저장과 같은 이유로 로컬 전용이고,
+ * 파일명은 클라이언트가 못 정한다(경로가 고정이라 탈출 여지가 없다).
+ */
+var BAKED_FILE = path.join(ROOT, 'gunbaked.js');
+function handleBake(req, res){
+  function fail(code, msg){ res.writeHead(code, {'Content-Type':'text/plain; charset=utf-8'}); res.end(msg); }
+  if(!isLocal(req)) return fail(403, '이 서버를 돌리는 PC에서만 저장할 수 있습니다.');
+  var body = '', tooBig = false;
+  req.on('data', function(c){
+    if(tooBig) return;
+    body += c;
+    if(body.length > 8 * 1024 * 1024){ tooBig = true; fail(413, '구운 데이터가 너무 큽니다.'); req.destroy(); }
+  });
+  req.on('end', function(){
+    if(tooBig) return;
+    if(!body || body.indexOf('window.GUN_BAKED=') < 0) return fail(400, '구운 데이터가 아닙니다.');
+    fs.writeFile(BAKED_FILE, body, function(err){
+      if(err) return fail(500, '저장 실패: ' + err.message);
+      log('bake', 'gunbaked.js (' + Math.round(body.length/1024) + 'KB)');
+      res.writeHead(200, {'Content-Type':'application/json'});
+      res.end(JSON.stringify({ ok:true, path:'gunbaked.js', bytes:body.length }));
+    });
+  });
+}
+
 /* ---------- 정적 파일 서버 ---------- */
 var server = http.createServer(function(req, res){
   var urlPath = decodeURIComponent(req.url.split('?')[0]);
@@ -100,6 +128,10 @@ var server = http.createServer(function(req, res){
   if(urlPath === '/__save'){
     if(req.method !== 'POST'){ res.writeHead(405); res.end('POST only'); return; }
     handleSave(req, res); return;
+  }
+  if(urlPath === '/__bake'){
+    if(req.method !== 'POST'){ res.writeHead(405); res.end('POST only'); return; }
+    handleBake(req, res); return;
   }
   if(urlPath === '/' || urlPath === '') urlPath = '/index.html';
   // 경로 탈출 방지: 단순 접두사 비교는 형제 폴더(예: <ROOT>_evil)도 통과하므로
