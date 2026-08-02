@@ -47,10 +47,18 @@ server.on('upgrade', function(req, socket){
                'Sec-WebSocket-Accept: ' + accept + '\r\n\r\n');
 
   var room = roomOf(req.url);
+  // 참가(join=1) 인데 그런 방이 없으면 거부 — 오타 시 빈 방이 생겨 혼란해지는 것 방지
+  if(/[?&]join=1/.test(req.url || '') && !rooms[room]){
+    send(socket, JSON.stringify({ t:'nosuch', room:room }));
+    log('reject', 'no such room='+room);
+    setTimeout(function(){ try{ socket.destroy(); }catch(e){} }, 50);
+    return;
+  }
   var id = nextId++;
   var client = { id:id, socket:socket, room:room, name:('P'+id) };
   (rooms[room] || (rooms[room] = {}))[id] = client;
   send(socket, JSON.stringify({ t:'welcome', id:id, room:room }));
+  sendRoster(room);
   log('join', 'room='+room, 'id='+id, 'now='+Object.keys(rooms[room]).length);
 
   var buf = Buffer.alloc(0);
@@ -70,18 +78,28 @@ server.on('upgrade', function(req, socket){
     if(closed) return; closed = true;
     var r = rooms[room]; if(r){ delete r[id];
       broadcast(room, id, JSON.stringify({ t:'left', id:id }));
-      if(Object.keys(r).length === 0) delete rooms[room];
+      if(Object.keys(r).length === 0) delete rooms[room]; else sendRoster(room);
     }
     try{ socket.destroy(); }catch(e){}
     log('left', 'room='+room, 'id='+id);
   }
   function onMessage(str){
     var m; try{ m = JSON.parse(str); }catch(e){ return; }
-    if(m.t === 'join'){ if(typeof m.name === 'string') client.name = m.name.slice(0,24); return; }
+    if(m.t === 'join'){ if(typeof m.name === 'string') client.name = m.name.slice(0,24); sendRoster(room); return; }
+    if(m.t === 'start'){ broadcast(room, id, JSON.stringify({ t:'start' })); return; } // 호스트가 전원 시작
     if(m.t === 'st'){  m.id = id; m.name = client.name; broadcast(room, id, JSON.stringify(m)); return; }
     if(m.t === 'bl'){  m.id = id; broadcast(room, id, JSON.stringify(m)); return; }
   }
 });
+
+/* 대기방 명단 브로드캐스트: 방 전원에게 {players, host}. host = 방에서 가장 먼저 들어온(id 최소) 사람 */
+function sendRoster(room){
+  var r = rooms[room]; if(!r) return;
+  var ids = Object.keys(r).map(Number).sort(function(a,b){ return a-b; });
+  var players = ids.map(function(id){ return { id:id, name:r[id].name }; });
+  var msg = JSON.stringify({ t:'roster', players:players, host: ids[0] });
+  ids.forEach(function(id){ send(r[id].socket, msg); });
+}
 
 function broadcast(room, exceptId, str){
   var r = rooms[room]; if(!r) return;

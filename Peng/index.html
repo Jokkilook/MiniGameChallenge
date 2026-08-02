@@ -33,6 +33,22 @@
   button.go{margin-top:22px;cursor:pointer;font:inherit;font-weight:800;font-size:17px;letter-spacing:2px;
     color:#06121e;background:linear-gradient(180deg,#a8e0ff,#3aa8ff);border:0;padding:14px 40px;border-radius:30px;box-shadow:0 10px 30px -8px #2a88d6}
   button.go:active{transform:translateY(1px)}
+  button.go.alt{background:linear-gradient(180deg,#54648c,#2f3a56);color:#dbe6ff;box-shadow:0 8px 24px -10px #1b2540}
+  button.go:disabled{opacity:.4;cursor:not-allowed;filter:grayscale(.6)}
+  .menu{display:flex;flex-direction:column;gap:11px;margin-top:20px;width:min(340px,86vw)}
+  .menu.row{flex-direction:row}
+  .menu.row button{flex:1;padding:13px 10px;font-size:15px}
+  .menu button{width:100%;margin-top:0}
+  #codeInput{margin-top:16px;width:min(320px,80vw);text-align:center;font:900 30px/1.4 "Segoe UI",monospace;letter-spacing:10px;
+    text-transform:uppercase;color:#eaf2ff;background:rgba(255,255,255,.07);border:2px solid rgba(127,208,255,.4);border-radius:14px;padding:12px 8px;outline:none}
+  #codeInput:focus{border-color:#7fd0ff;background:rgba(127,208,255,.12)}
+  #codeBig{margin-top:6px;font:900 clamp(34px,8vw,54px)/1.2 "Segoe UI",monospace;letter-spacing:12px;color:#7fd0ff;text-shadow:0 0 24px rgba(127,208,255,.45)}
+  #playerList{list-style:none;margin:18px 0 0;padding:0;width:min(340px,86vw);display:flex;flex-direction:column;gap:8px}
+  #playerList li{background:rgba(255,255,255,.06);border:1px solid rgba(140,170,240,.25);border-radius:12px;padding:10px 14px;
+    font-size:14.5px;font-weight:700;color:#cfe0ff;display:flex;align-items:center;gap:9px}
+  #playerList li .dot{width:10px;height:10px;border-radius:50%;background:#42d6c8;flex:none}
+  #playerList li.me .dot{background:#ff8a3a}
+  #playerList li .tag{margin-left:auto;font-size:11.5px;font-weight:800;letter-spacing:1px;color:#7f8bc0}
   .hint{color:#5a6494;font-size:12.5px;margin-top:16px;line-height:1.8}
 </style>
 </head>
@@ -57,16 +73,50 @@
   <p><b>PoofGun</b>은 닿는 곳에서 공기를 <b>뻥</b> 터뜨려 사람을 날린다.<br>
      발밑을 쏴 <b>로켓점프</b>로 못 넘는 협곡을 넘어 <b>결승선(초록)</b>까지!</p>
   <p class="hint"><kbd>WASD</kbd> 이동 · <kbd>마우스</kbd> 시점 · <kbd>좌클릭</kbd> 펑! · <kbd>Space</kbd> 점프 · <kbd>R</kbd> 리스폰 · <kbd>V</kbd> 3인칭<br>화면을 클릭하면 마우스가 잠깁니다(FPS). <kbd>ESC</kbd>로 해제.</p>
-  <button class="go" id="startBtn">시작</button>
-  <p class="hint" id="mpNote" style="margin-top:14px">멀티: 같은 <b>방 링크</b>를 친구와 공유하면 함께 플레이 · 팀원을 펑건으로 밀어 협곡을 넘겨주세요!<br>
-    <span id="mpRoomLbl">방: lobby</span> · <a href="#" id="copyLink" style="color:#7fd0ff">방 링크 복사</a></p>
+  <div class="menu">
+    <button class="go" id="soloBtn">혼자 플레이</button>
+    <button class="go alt" id="hostBtn">방 만들기 (호스트)</button>
+    <button class="go alt" id="joinBtn">방 참가하기</button>
+  </div>
+  <p class="hint" id="mpWarn" style="margin-top:16px"></p>
+</div>
+
+<!-- 참가: 세션 코드 입력 -->
+<div class="screen off" id="joinScr">
+  <div class="sub">JOIN</div>
+  <h1>방 참가</h1>
+  <p>친구에게 받은 <b>세션 코드</b>를 입력하세요.</p>
+  <input id="codeInput" maxlength="6" placeholder="ABC123" autocomplete="off" spellcheck="false" />
+  <p class="hint" id="joinErr" style="color:#ff8a8a;min-height:18px"></p>
+  <div class="menu row">
+    <button class="go" id="joinGoBtn">참가</button>
+    <button class="go alt" id="joinBackBtn">뒤로</button>
+  </div>
+</div>
+
+<!-- 대기방 -->
+<div class="screen off" id="lobbyScr">
+  <div class="sub">LOBBY</div>
+  <h1>대기방</h1>
+  <p>세션 코드 — 친구에게 알려주세요</p>
+  <div id="codeBig">------</div>
+  <a href="#" id="copyCode" style="color:#7fd0ff;font-size:13px">코드 복사</a>
+  <ul id="playerList"></ul>
+  <p class="hint" id="lobbyHint">친구가 들어오면 시작할 수 있어요.</p>
+  <div class="menu row">
+    <button class="go" id="lobbyStartBtn" disabled>게임 시작</button>
+    <button class="go alt" id="lobbyLeaveBtn">나가기</button>
+  </div>
 </div>
 
 <div class="screen off" id="win">
   <div class="sub">CLEAR</div>
   <h1>도착! 🎉</h1>
   <p id="winMsg"></p>
-  <button class="go" id="retryBtn">다시</button>
+  <div class="menu row">
+    <button class="go" id="retryBtn">다시</button>
+    <button class="go alt" id="menuBtn">메인 메뉴</button>
+  </div>
 </div>
 
 <script>
@@ -408,47 +458,111 @@ function emitCharacter(px,py,pz,yaw,pitch,recoil,col,faces){
 }
 
 /* ---------- 멀티플레이(릴레이) ---------- */
-var MP={ ws:null, id:null, connected:false, peers:{}, room:'lobby', name:'P'+(100+Math.floor(Math.random()*900)), lastSend:0 };
-function mpRoom(){ var m=location.search.match(/[?&]room=([^&]+)/); return m?decodeURIComponent(m[1]):'lobby'; }
-function mpConnect(){
-  if(MP.ws) return; MP.room=mpRoom();
-  var url; try{
+var mode='title';  // 현재 화면/상태
+var MP={ ws:null, id:null, connected:false, peers:{}, room:null, host:null, players:[],
+  name:'플레이어'+(100+Math.floor(Math.random()*900)), lastSend:0 };
+function mpCode(){ var C='ABCDEFGHJKLMNPQRSTUVWXYZ23456789', s=''; for(var i=0;i<6;i++)s+=C[Math.floor(Math.random()*C.length)]; return s; }
+function mpIsHost(){ return MP.connected && MP.id!=null && MP.host===MP.id; }
+// room 에 접속. asJoin=true 면 기존 방에만 참가(없으면 실패). onFail 은 서버 없음/방 없음.
+function mpConnect(room, onOk, onFail, asJoin){
+  mpDisconnect();
+  MP.room=room;
+  var ws; try{
     var proto=location.protocol==='https:'?'wss:':'ws:';
     var base=location.pathname.replace(/[^/]*$/,'');
-    url=proto+'//'+location.host+base+'ws?room='+encodeURIComponent(MP.room);
-    MP.ws=new WebSocket(url);
-  }catch(e){ MP.ws=null; return; }
-  MP.ws.onopen=function(){ MP.connected=true; mpSend({t:'join',name:MP.name}); mpStatus(); };
-  MP.ws.onclose=function(){ MP.connected=false; MP.ws=null; MP.peers={}; mpStatus(); };
-  MP.ws.onerror=function(){ /* 서버 없으면 조용히 솔로 */ };
-  MP.ws.onmessage=function(ev){ var m; try{m=JSON.parse(ev.data);}catch(e){return;} mpHandle(m); };
+    ws=new WebSocket(proto+'//'+location.host+base+'ws?room='+encodeURIComponent(room)+(asJoin?'&join=1':''));
+  }catch(e){ if(onFail)onFail(); return; }
+  MP.ws=ws;
+  var settled=false;
+  var timer=setTimeout(function(){ if(!settled){ settled=true; try{ws.close();}catch(e){} if(onFail)onFail(); } }, 4000);
+  // 성공 판정은 'welcome' 수신 시(방 없음 거부 'nosuch' 보다 먼저 성공 처리되지 않도록)
+  ws.onopen=function(){ MP.connected=true; mpSend({t:'join',name:MP.name}); mpStatus(); };
+  ws.onclose=function(){ var wasSettled=settled; settled=true; clearTimeout(timer);
+    MP.connected=false; MP.ws=null; MP.peers={}; MP.players=[]; MP.host=null; mpStatus();
+    if(!wasSettled && onFail) onFail();
+    else if(wasSettled && mode==='lobbyScr'){ showScreen('title'); setWarn('연결이 끊겼습니다.'); } };
+  ws.onerror=function(){ /* onclose 에서 처리 */ };
+  ws.onmessage=function(ev){ var m; try{m=JSON.parse(ev.data);}catch(e){return;}
+    if(m.t==='nosuch'){ settled=true; clearTimeout(timer); MP.noSuchRoom=true; try{ws.onclose=null;ws.close();}catch(e){}
+      MP.ws=null; MP.connected=false; MP.room=null; mpStatus(); if(onFail)onFail('nosuch'); return; }
+    if(m.t==='welcome' && !settled){ settled=true; clearTimeout(timer); mpHandle(m); if(onOk)onOk(); return; }
+    mpHandle(m); };
 }
+function mpDisconnect(){ if(MP.ws){ try{ MP.ws.onclose=null; MP.ws.close(); }catch(e){} }
+  MP.ws=null; MP.connected=false; MP.peers={}; MP.players=[]; MP.host=null; MP.id=null; MP.room=null; mpStatus(); }
 function mpSend(o){ if(MP.ws&&MP.connected){ try{ MP.ws.send(JSON.stringify(o)); }catch(e){} } }
 function mpHandle(m){
   if(m.t==='welcome'){ MP.id=m.id; }
-  else if(m.t==='st'){ if(m.id===MP.id)return; var pe=MP.peers[m.id]||(MP.peers[m.id]={}); pe.x=m.x;pe.y=m.y;pe.z=m.z;pe.yaw=m.yaw;pe.pitch=m.pitch;pe.rc=m.rc;pe.name=m.name||pe.name; pe.seen=performance.now(); }
+  else if(m.t==='roster'){ MP.players=m.players||[]; MP.host=m.host; renderLobby(); }
+  else if(m.t==='start'){ if(mode==='lobbyScr') startGame(); }   // 호스트가 시작 → 전원 시작
+  else if(m.t==='st'){ if(m.id===MP.id)return; var pe=MP.peers[m.id]||(MP.peers[m.id]={});
+    pe.x=m.x;pe.y=m.y;pe.z=m.z;pe.yaw=m.yaw;pe.pitch=m.pitch;pe.rc=m.rc;pe.name=m.name||pe.name; pe.seen=performance.now(); }
   else if(m.t==='bl'){ if(m.id===MP.id)return; if(sim&&!sim.win){ applyBlast(sim,m.x,m.y,m.z); blastFx(sim,m.x,m.y,m.z); } }
   else if(m.t==='left'){ delete MP.peers[m.id]; }
   mpStatus();
 }
 function mpStatus(){ var el=document.getElementById('mpV'); if(!el)return;
-  var n=0; for(var k in MP.peers)n++;
-  el.textContent = MP.connected ? ('🟢 '+ (n+1) +'명 · '+MP.room) : '🎮 솔로';
+  el.textContent = (MP.connected&&MP.room) ? ('🟢 '+Math.max(1,MP.players.length)+'명 · '+MP.room) : '🎮 솔로'; }
+
+/* ---------- 메뉴 / 대기방 ---------- */
+// which: 'title' | 'joinScr' | 'lobbyScr' | 'win' | 'play'('play'는 전부 숨김)
+function showScreen(which){ mode=which;
+  ['title','joinScr','lobbyScr','win'].forEach(function(idn){
+    document.getElementById(idn).classList.toggle('off', idn!==which); });
 }
-document.getElementById('mpRoomLbl').textContent='방: '+mpRoom();
-document.getElementById('copyLink').addEventListener('click',function(e){ e.preventDefault();
-  var u=location.origin+location.pathname+'?room='+encodeURIComponent(mpRoom());
-  if(navigator.clipboard&&navigator.clipboard.writeText){ navigator.clipboard.writeText(u).then(function(){ e.target.textContent='복사됨!'; },function(){ prompt('링크:',u); }); }
-  else prompt('링크:',u);
-});
+function setWarn(t){ document.getElementById('mpWarn').innerHTML=t||''; }
+function renderLobby(){
+  var codeEl=document.getElementById('codeBig'); if(codeEl&&MP.room)codeEl.textContent=MP.room;
+  var ul=document.getElementById('playerList'); if(!ul)return; ul.innerHTML='';
+  MP.players.forEach(function(p){
+    var li=document.createElement('li'); if(p.id===MP.id)li.className='me';
+    var d=document.createElement('span'); d.className='dot'; li.appendChild(d);
+    var nm=document.createElement('span'); nm.textContent=p.name+(p.id===MP.id?' (나)':''); li.appendChild(nm);
+    if(p.id===MP.host){ var tg=document.createElement('span'); tg.className='tag'; tg.textContent='HOST'; li.appendChild(tg); }
+    ul.appendChild(li);
+  });
+  var btn=document.getElementById('lobbyStartBtn'), hint=document.getElementById('lobbyHint');
+  var enough=MP.players.length>=2;
+  if(mpIsHost()){ btn.disabled=!enough; btn.textContent='게임 시작';
+    hint.textContent= enough ? '모두 준비됐어요! 시작을 누르세요.' : '친구가 코드를 입력해 들어오면 시작할 수 있어요.'; }
+  else { btn.disabled=true; btn.textContent='호스트 대기 중…';
+    hint.textContent='호스트가 게임을 시작하면 함께 출발합니다.'; }
+}
+document.getElementById('soloBtn').addEventListener('click',function(){ ensureAudio(); mpDisconnect(); startGame(); });
+document.getElementById('hostBtn').addEventListener('click',function(){ ensureAudio(); setWarn('서버에 연결 중…');
+  mpConnect(mpCode(), function(){ setWarn(''); showScreen('lobbyScr'); renderLobby(); },
+    function(){ setWarn('⚠️ 멀티 서버에 연결할 수 없습니다. <b>node server.js</b> 로 서버를 켠 뒤 그 주소로 접속하세요.'); }); });
+document.getElementById('joinBtn').addEventListener('click',function(){ ensureAudio(); setWarn('');
+  document.getElementById('joinErr').textContent=''; document.getElementById('codeInput').value='';
+  showScreen('joinScr'); setTimeout(function(){ document.getElementById('codeInput').focus(); },50); });
+document.getElementById('joinBackBtn').addEventListener('click',function(){ showScreen('title'); });
+document.getElementById('joinGoBtn').addEventListener('click', doJoin);
+document.getElementById('codeInput').addEventListener('keydown',function(e){ if(e.key==='Enter')doJoin(); });
+function doJoin(){ ensureAudio();
+  var code=(document.getElementById('codeInput').value||'').trim().toUpperCase();
+  var err=document.getElementById('joinErr');
+  if(code.length<4){ err.textContent='세션 코드를 입력하세요.'; return; }
+  err.textContent='접속 중…';
+  mpConnect(code, function(){ err.textContent=''; showScreen('lobbyScr'); renderLobby(); },
+    function(why){ err.textContent = (why==='nosuch')
+      ? ('“'+code+'” 방을 찾을 수 없어요. 코드를 다시 확인하세요.')
+      : '서버에 연결할 수 없습니다. 호스트가 서버를 켰는지 확인하세요.'; }, true);
+}
+document.getElementById('lobbyStartBtn').addEventListener('click',function(){
+  if(!mpIsHost()||MP.players.length<2)return; mpSend({t:'start'}); startGame(); });
+document.getElementById('lobbyLeaveBtn').addEventListener('click',function(){ mpDisconnect(); showScreen('title'); });
+document.getElementById('copyCode').addEventListener('click',function(e){ e.preventDefault(); var c=MP.room||'';
+  if(navigator.clipboard&&navigator.clipboard.writeText){ navigator.clipboard.writeText(c).then(function(){ e.target.textContent='복사됨!';
+    setTimeout(function(){ e.target.textContent='코드 복사'; },1200); },function(){ prompt('세션 코드:',c); }); }
+  else prompt('세션 코드:',c); });
 
 /* ---------- 라이브 입력/루프 ---------- */
-var mode='title', keys={}, locked=false, jumpEdge=false;
-function toggleScreens(){ document.getElementById('title').classList.toggle('off', mode!=='title');
-  document.getElementById('win').classList.toggle('off', mode!=='win'); }
-function start(){ sim=makeSim(); mode='play'; toggleScreens(); acc=0; last=0; requestLock(); mpConnect(); }
-document.getElementById('startBtn').addEventListener('click',function(){ ensureAudio(); start(); });
-document.getElementById('retryBtn').addEventListener('click',function(){ ensureAudio(); start(); });
+var keys={}, locked=false, jumpEdge=false;
+function startGame(){ sim=makeSim(); MP.peers={}; showScreen('play'); acc=0; last=0; requestLock(); }
+// 다시하기: 멀티면 대기방으로, 솔로면 바로 재시작
+document.getElementById('retryBtn').addEventListener('click',function(){ ensureAudio();
+  if(MP.connected){ showScreen('lobbyScr'); renderLobby(); } else startGame(); });
+document.getElementById('menuBtn').addEventListener('click',function(){ mpDisconnect(); showScreen('title'); setWarn(''); });
 function requestLock(){ try{ cv.requestPointerLock(); }catch(e){} }
 cv.addEventListener('click',function(){ ensureAudio(); if(mode==='play'){ if(!locked)requestLock(); else doFire(sim); } });
 document.addEventListener('pointerlockchange',function(){ locked=(document.pointerLockElement===cv); });
@@ -474,7 +588,7 @@ function loop(now){ if(!last)last=now; var dt=Math.min(0.05,(now-last)/1000); la
     document.getElementById('timeV').textContent=sim.t.toFixed(1);
     document.getElementById('cpV').textContent='체크포인트 '+sim.cpIdx;
     renderAmmo(sim.ammo);
-    if(sim.win){ mode='win'; document.getElementById('winMsg').textContent='기록 '+sim.t.toFixed(1)+'초!'; toggleScreens(); sndWin(); if(locked)document.exitPointerLock(); }
+    if(sim.win){ document.getElementById('winMsg').textContent='기록 '+sim.t.toFixed(1)+'초!'; showScreen('win'); sndWin(); if(locked)document.exitPointerLock(); }
     showHint(sim);
   }
   render();
@@ -489,7 +603,7 @@ function showHint(s){ var m=document.getElementById('msg'); var h='';
   else if(s.cpIdx>=2) h='위로! <b>점프 + 발밑 펑!</b>으로 발판을 오르세요';
   if(h!==lastHint){ lastHint=h; m.innerHTML=h; m.classList.toggle('on', !!h); }
 }
-document.getElementById('title').classList.remove('off');
+showScreen('title');
 layout(); requestAnimationFrame(loop);
 
 /* ---------- 검증 노출 ---------- */
