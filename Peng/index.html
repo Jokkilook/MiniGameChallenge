@@ -126,14 +126,16 @@
    PENG! — 공기폭발(PoofGun) 넉백 이동 FPS 프로토타입 (순수 Canvas 소프트웨어 3D)
    외부 라이브러리 없음. 블록형 로우폴리.
    ========================================================================= */
-var cv=document.getElementById('cv'), ctx=cv.getContext('2d');
-var W=960, H=560, DPR=1, SC=1;
+var cv=document.getElementById('cv');
+var gl=cv.getContext('webgl',{antialias:true, alpha:false, depth:true})
+      || cv.getContext('experimental-webgl',{antialias:true, alpha:false, depth:true});
+var W=960, H=560, DPR=1, SC=1;   // W/H = 논리 해상도(종횡비 기준)
 function layout(){
   DPR=Math.min(2,window.devicePixelRatio||1);
   var vw=window.innerWidth, vh=window.innerHeight; SC=Math.min(vw/W, vh/H);
   var w=Math.round(W*SC), h=Math.round(H*SC);
   cv.style.width=w+'px'; cv.style.height=h+'px'; cv.width=Math.round(w*DPR); cv.height=Math.round(h*DPR);
-  ctx.setTransform(DPR*SC,0,0,DPR*SC,0,0);
+  if(gl) gl.viewport(0,0,cv.width,cv.height);
 }
 window.addEventListener('resize',layout);
 
@@ -290,12 +292,12 @@ function updateCheckpoint(s){ if(!s.onGround)return;
     if(Math.hypot(s.p.x-c.x,s.p.z-c.z)<3.6 && Math.abs(s.p.y-c.y)<1.2){ if(i>s.cpIdx)s.cpIdx=i; break; } }
 }
 
-/* ---------- 렌더러(소프트웨어 3D) ---------- */
-var NEAR=0.12, FOV=78*Math.PI/180, FOCAL;
-function computeFocal(){ FOCAL=(H/2)/Math.tan(FOV/2); }
-computeFocal();
+/* ---------- 렌더러(WebGL) ----------
+   z버퍼가 있으므로 정렬(painter)·근평면 클리핑·타일 분할이 전부 불필요.
+   메시 생성부(boxFaces/capsuleFaces/orientedBox)는 그대로 쓰고 정점만 GPU로 넘긴다. */
+var NEAR=0.05, FAR=400, FOV=78*Math.PI/180;
 function boxFaces(b){ var x0=b.cx-b.hx,x1=b.cx+b.hx,y0=b.cy-b.hy,y1=b.cy+b.hy,z0=b.cz-b.hz,z1=b.cz+b.hz;
-  var raw=[
+  return [
     {n:{x:0,y:1,z:0}, sh:1.0, v:[[x0,y1,z0],[x1,y1,z0],[x1,y1,z1],[x0,y1,z1]]},
     {n:{x:0,y:-1,z:0},sh:0.35,v:[[x0,y0,z1],[x1,y0,z1],[x1,y0,z0],[x0,y0,z0]]},
     {n:{x:0,y:0,z:-1},sh:0.72,v:[[x0,y1,z0],[x0,y0,z0],[x1,y0,z0],[x1,y1,z0]]},
@@ -303,26 +305,75 @@ function boxFaces(b){ var x0=b.cx-b.hx,x1=b.cx+b.hx,y0=b.cy-b.hy,y1=b.cy+b.hy,z0
     {n:{x:-1,y:0,z:0},sh:0.55,v:[[x0,y1,z1],[x0,y0,z1],[x0,y0,z0],[x0,y1,z0]]},
     {n:{x:1,y:0,z:0}, sh:0.5, v:[[x1,y1,z0],[x1,y0,z0],[x1,y0,z1],[x1,y1,z1]]},
   ];
-  var out=[]; for(var i=0;i<raw.length;i++) subdivideQuad(raw[i], out);
-  return out;
 }
-// 큰 면을 타일로 분할 — painter 정렬은 면 하나를 한 깊이로 취급하므로, 큰 바닥이
-// 카메라 쪽으로 뻗으면 평균 깊이가 앞서서 캐릭터를 덮어버린다. 잘게 쪼개면 해소.
-var TILE=2.5, MAXDIV=6;
-function subdivideQuad(face, out){
-  var v=face.v, a=v[0], b=v[1], d=v[3];
-  var eu=[b[0]-a[0], b[1]-a[1], b[2]-a[2]], ev=[d[0]-a[0], d[1]-a[1], d[2]-a[2]];
-  var lu=Math.hypot(eu[0],eu[1],eu[2]), lv=Math.hypot(ev[0],ev[1],ev[2]);
-  var nu=Math.max(1,Math.min(MAXDIV,Math.ceil(lu/TILE))), nv=Math.max(1,Math.min(MAXDIV,Math.ceil(lv/TILE)));
-  if(nu===1&&nv===1){ out.push(face); return; }
-  function P(u,w){ return [a[0]+eu[0]*u+ev[0]*w, a[1]+eu[1]*u+ev[1]*w, a[2]+eu[2]*u+ev[2]*w]; }
-  for(var i=0;i<nu;i++)for(var j=0;j<nv;j++){
-    var u0=i/nu,u1=(i+1)/nu,w0=j/nv,w1=(j+1)/nv;
-    // edges: 원래 면의 바깥 모서리만 true → 그 변만 검은 외곽선(내부 이음새는 자기 색으로 메움)
-    out.push({ n:face.n, sh:face.sh, v:[P(u0,w0),P(u1,w0),P(u1,w1),P(u0,w1)],
-      tile:true, edges:[ j===0, i===nu-1, j===nv-1, i===0 ] });
-  }
+/* --- 셰이더 --- */
+var VS_MAIN='attribute vec3 aPos;attribute vec3 aCol;uniform mat4 uVP;varying vec3 vCol;'+
+  'void main(){vCol=aCol;gl_Position=uVP*vec4(aPos,1.0);}';
+var FS_MAIN='precision mediump float;varying vec3 vCol;void main(){gl_FragColor=vec4(vCol,1.0);}';
+// 빌보드(발사체·파티클·폭발·총구섬광): 뷰공간에서 카메라를 향해 펼치고, 중심에서 멀수록 감쇠
+var VS_BB='attribute vec3 aCenter;attribute vec2 aOff;attribute vec4 aCol;attribute float aSize;'+
+  'uniform mat4 uVP;uniform vec3 uRight;uniform vec3 uUp;varying vec4 vCol;varying vec2 vOff;'+
+  'void main(){vCol=aCol;vOff=aOff;vec3 p=aCenter+(uRight*aOff.x+uUp*aOff.y)*aSize;gl_Position=uVP*vec4(p,1.0);}';
+var FS_BB='precision mediump float;varying vec4 vCol;varying vec2 vOff;'+
+  'void main(){float d=length(vOff);float a=vCol.a*(1.0-smoothstep(0.25,1.0,d));'+
+  'if(a<=0.003)discard;gl_FragColor=vec4(vCol.rgb*a,a);}';
+// 하늘: 화면 전체 그라디언트
+var VS_SKY='attribute vec2 aP;varying float vY;void main(){vY=aP.y*0.5+0.5;gl_Position=vec4(aP,0.0,1.0);}';
+var FS_SKY='precision mediump float;varying float vY;void main(){'+
+  'vec3 top=vec3(0.227,0.353,0.541),mid=vec3(0.498,0.659,0.847),bot=vec3(0.812,0.878,0.941);'+
+  'vec3 c = vY>0.45 ? mix(mid,top,(vY-0.45)/0.55) : mix(bot,mid,vY/0.45);gl_FragColor=vec4(c,1.0);}';
+
+function glProgram(vs,fs){
+  function sh(t,src){ var s=gl.createShader(t); gl.shaderSource(s,src); gl.compileShader(s);
+    if(!gl.getShaderParameter(s,gl.COMPILE_STATUS)) throw new Error('shader: '+gl.getShaderInfoLog(s));
+    return s; }
+  var p=gl.createProgram(); gl.attachShader(p,sh(gl.VERTEX_SHADER,vs)); gl.attachShader(p,sh(gl.FRAGMENT_SHADER,fs));
+  gl.linkProgram(p);
+  if(!gl.getProgramParameter(p,gl.LINK_STATUS)) throw new Error('link: '+gl.getProgramInfoLog(p));
+  return p;
 }
+var PROG={}, BUF={}, GLREADY=false;
+function glInit(){
+  if(!gl) return false;
+  PROG.main=glProgram(VS_MAIN,FS_MAIN);
+  PROG.main.aPos=gl.getAttribLocation(PROG.main,'aPos');
+  PROG.main.aCol=gl.getAttribLocation(PROG.main,'aCol');
+  PROG.main.uVP =gl.getUniformLocation(PROG.main,'uVP');
+  PROG.bb=glProgram(VS_BB,FS_BB);
+  PROG.bb.aCenter=gl.getAttribLocation(PROG.bb,'aCenter');
+  PROG.bb.aOff   =gl.getAttribLocation(PROG.bb,'aOff');
+  PROG.bb.aCol   =gl.getAttribLocation(PROG.bb,'aCol');
+  PROG.bb.aSize  =gl.getAttribLocation(PROG.bb,'aSize');
+  PROG.bb.uVP    =gl.getUniformLocation(PROG.bb,'uVP');
+  PROG.bb.uRight =gl.getUniformLocation(PROG.bb,'uRight');
+  PROG.bb.uUp    =gl.getUniformLocation(PROG.bb,'uUp');
+  PROG.sky=glProgram(VS_SKY,FS_SKY);
+  PROG.sky.aP=gl.getAttribLocation(PROG.sky,'aP');
+  BUF.tri=gl.createBuffer(); BUF.line=gl.createBuffer(); BUF.bb=gl.createBuffer(); BUF.sky=gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER,BUF.sky);
+  gl.bufferData(gl.ARRAY_BUFFER,new Float32Array([-1,-1, 3,-1, -1,3]),gl.STATIC_DRAW);
+  gl.enable(gl.DEPTH_TEST); gl.depthFunc(gl.LEQUAL);
+  // 백페이스 컬링은 끈다: boxFaces 와 capsuleFaces 의 winding 이 서로 반대라
+  // 한 설정으로 둘 다 맞출 수 없고, z버퍼가 있으면 컬링은 성능 최적화일 뿐이라 불필요.
+  gl.disable(gl.CULL_FACE);
+  GLREADY=true; return true;
+}
+/* --- 행렬 --- */
+function mat4Perspective(fovy,aspect,near,far){
+  var f=1/Math.tan(fovy/2), nf=1/(near-far);
+  return [ f/aspect,0,0,0,  0,f,0,0,  0,0,(far+near)*nf,-1,  0,0,2*far*near*nf,0 ];
+}
+// 카메라 기저(R/U/F)와 위치로 뷰행렬. GL은 -Z를 앞으로 보므로 3행에 -F를 넣는다.
+function mat4View(pos,R,U,F){
+  return [ R.x,U.x,-F.x,0,  R.y,U.y,-F.y,0,  R.z,U.z,-F.z,0,
+    -(R.x*pos.x+R.y*pos.y+R.z*pos.z), -(U.x*pos.x+U.y*pos.y+U.z*pos.z), (F.x*pos.x+F.y*pos.y+F.z*pos.z), 1 ];
+}
+function mat4Mul(a,b){ var o=new Float32Array(16);
+  for(var c=0;c<4;c++)for(var r=0;r<4;r++){ var s=0;
+    for(var k=0;k<4;k++) s+=a[k*4+r]*b[c*4+k]; o[c*4+r]=s; }
+  return o; }
+function hexRGB(hex){ return [parseInt(hex.substr(1,2),16)/255, parseInt(hex.substr(3,2),16)/255, parseInt(hex.substr(5,2),16)/255]; }
+
 // 렌더용 카메라 기저(CAM*)와 플레이어 조준 기저(AIM*)를 분리.
 // 1인칭: 둘이 동일. 3인칭: 카메라는 궤도(피치 제한+플레이어 바라봄), 총은 AIM* 사용.
 var CAMPOS={x:0,y:0,z:0}, CAMF={x:0,y:0,z:1}, CAMR={x:1,y:0,z:0}, CAMU={x:0,y:1,z:0};
@@ -338,102 +389,111 @@ function setCamera(s){ var f=forwardVec(s);
     CAMF=AIMF; CAMR=AIMR; CAMU=AIMU;
   } else { CAMPOS=eye; CAMF=AIMF; CAMR=AIMR; CAMU=AIMU; }
 }
-function toCam(p){ var dx=p[0]-CAMPOS.x, dy=p[1]-CAMPOS.y, dz=p[2]-CAMPOS.z;
-  return {x:dx*CAMR.x+dy*CAMR.y+dz*CAMR.z, y:dx*CAMU.x+dy*CAMU.y+dz*CAMU.z, z:dx*CAMF.x+dy*CAMF.y+dz*CAMF.z}; }
-function clipNear(verts){ var out=[]; for(var i=0;i<verts.length;i++){ var a=verts[i], b=verts[(i+1)%verts.length];
-  var ain=a.z>=NEAR, bin=b.z>=NEAR;
-  if(ain)out.push(a);
-  if(ain!==bin){ var t=(NEAR-a.z)/(b.z-a.z); out.push({x:a.x+(b.x-a.x)*t, y:a.y+(b.y-a.y)*t, z:NEAR}); }
-} return out; }
-function project(c){ return {x:W/2 + (c.x/c.z)*FOCAL, y:H/2 - (c.y/c.z)*FOCAL}; }
-function shadeCol(hex, sh){ var r=parseInt(hex.substr(1,2),16),g=parseInt(hex.substr(3,2),16),b=parseInt(hex.substr(5,2),16);
-  return 'rgb('+Math.round(r*sh)+','+Math.round(g*sh)+','+Math.round(b*sh)+')'; }
+/* --- 프레임 기하 누적 버퍼 --- */
+var TRI=[], LINE=[], BB=[];      // 삼각형(pos+col), 외곽선(pos+col), 빌보드
+function triPush(p,c){ TRI.push(p[0],p[1],p[2],c[0],c[1],c[2]); }
+// 사각형 하나 → 삼각형 2개(+옵션 외곽선). CCW 유지(백페이스 컬링용)
+function quadGL(v,c,outline){
+  triPush(v[0],c); triPush(v[1],c); triPush(v[2],c);
+  triPush(v[0],c); triPush(v[2],c); triPush(v[3],c);
+  if(outline){ var e=[0.0,0.0,0.0];
+    for(var i=0;i<4;i++){ var a=v[i], b=v[(i+1)%4];
+      LINE.push(a[0],a[1],a[2],e[0],e[1],e[2], b[0],b[1],b[2],e[0],e[1],e[2]); } }
+}
+// 빌보드 1개: 중심/반지름/색+알파
+function bbPush(x,y,z,size,r,g,b,a){
+  var q=[[-1,-1],[1,-1],[1,1],[-1,-1],[1,1],[-1,1]];
+  for(var i=0;i<6;i++) BB.push(x,y,z, q[i][0],q[i][1], r,g,b,a, size);
+}
 
 var sim=null;
 function render(){
-  ctx.clearRect(0,0,W,H);
-  // 하늘
-  var sky=ctx.createLinearGradient(0,0,0,H); sky.addColorStop(0,'#3a5a8a'); sky.addColorStop(0.55,'#7fa8d8'); sky.addColorStop(1,'#cfe0f0');
-  ctx.fillStyle=sky; ctx.fillRect(0,0,W,H);
-  if(!sim){ return; }
+  if(!GLREADY) return;
+  gl.clearColor(0.55,0.70,0.86,1); gl.clear(gl.COLOR_BUFFER_BIT|gl.DEPTH_BUFFER_BIT);
+  // 하늘(깊이 기록 안 함)
+  gl.useProgram(PROG.sky); gl.disable(gl.DEPTH_TEST); gl.depthMask(false);
+  gl.bindBuffer(gl.ARRAY_BUFFER,BUF.sky); gl.enableVertexAttribArray(PROG.sky.aP);
+  gl.vertexAttribPointer(PROG.sky.aP,2,gl.FLOAT,false,0,0); gl.drawArrays(gl.TRIANGLES,0,3);
+  gl.depthMask(true); gl.enable(gl.DEPTH_TEST);
+  if(!sim) return;
   setCamera(sim);
-  ctx.save();
-  if(sim.shake>0.01){ ctx.translate((Math.random()*2-1)*sim.shake*12,(Math.random()*2-1)*sim.shake*12); }
-  // 면 수집
-  var faces=[];
-  for(var i=0;i<LEVEL.boxes.length;i++){ emitFaces(boxFaces(LEVEL.boxes[i]), LEVEL.boxes[i].col, LEVEL.boxes[i]===LEVEL.boxes[5], faces); }
-  // 원격 플레이어(멀티) — 캡슐+눈+총. 보간된 위치로 렌더.
+  // 화면 흔들림: 카메라를 미세하게 흔든다
+  var cpos=CAMPOS;
+  if(sim.shake>0.01){ var k=sim.shake*0.06;
+    cpos={ x:CAMPOS.x+(Math.random()*2-1)*k, y:CAMPOS.y+(Math.random()*2-1)*k, z:CAMPOS.z+(Math.random()*2-1)*k }; }
+  var VP=mat4Mul(mat4Perspective(FOV, W/H, NEAR, FAR), mat4View(cpos,CAMR,CAMU,CAMF));
+
+  TRI.length=0; LINE.length=0; BB.length=0;
+  // 레벨
+  for(var i=0;i<LEVEL.boxes.length;i++){ var bx=LEVEL.boxes[i]; meshGL(boxFaces(bx), bx.col, true); }
+  // 원격 플레이어 — 보간된 위치
   var pnow=performance.now();
   for(var pid in MP.peers){ var ps=peerSample(MP.peers[pid], pnow); if(!ps)continue;
-    emitCharacter(ps.x, ps.y, ps.z, ps.yaw, ps.pitch, ps.rc, PEER_COL, faces); }
-  if(sim.tp){ // 3인칭: 자기 캐릭터(캡슐+눈+총) — 원격과 동일 렌더 경로
-    emitCharacter(sim.p.x, sim.p.y, sim.p.z, sim.yaw, sim.pitch, sim.recoil||0, PLAYER_COL, faces);
-  } else { // 1인칭: 눈 위치에 총만
+    emitCharacter(ps.x, ps.y, ps.z, ps.yaw, ps.pitch, ps.rc, PEER_COL); }
+  if(sim.tp){ emitCharacter(sim.p.x, sim.p.y, sim.p.z, sim.yaw, sim.pitch, sim.recoil||0, PLAYER_COL); }
+  else { // 1인칭: 총만
     var eye={x:sim.p.x,y:sim.p.y+EYE,z:sim.p.z}, kick=(sim.recoil||0)*(sim.recoil||0);
     for(var gi=0;gi<GUN.length;gi++){ var gp=GUN[gi];
-      emitFaces(orientedBox([gp.lc[0], gp.lc[1]-0.05*kick, gp.lc[2]-0.16*kick], gp.lh, eye, AIMR, AIMU, AIMF), gp.col, false, faces);
-    }
+      meshGL(orientedBox([gp.lc[0], gp.lc[1]-0.05*kick, gp.lc[2]-0.16*kick], gp.lh, eye, AIMR, AIMU, AIMF), gp.col, true); }
   }
-  // 발사체(공기 탄환)를 깊이 정렬용 스프라이트로 추가 → 캡슐/벽에 가려지게(관통 방지)
-  for(var pj=0;pj<sim.projectiles.length;pj++){ var pr=sim.projectiles[pj]; var pc=toCam([pr.x,pr.y,pr.z]); if(pc.z<=NEAR)continue;
-    var psp=project(pc); var pr2=Math.max(2,0.16/pc.z*FOCAL);
-    var tb=toCam([pr.x-pr.dx*1.1, pr.y-pr.dy*1.1, pr.z-pr.dz*1.1]); var tsp=(tb.z>NEAR)?project(tb):psp;
-    faces.push({spr:1, sx:psp.x, sy:psp.y, r:pr2, tx:tsp.x, ty:tsp.y, z:pc.z}); }
-  faces.sort(function(a,b){return b.z-a.z;});
-  for(var d=0;d<faces.length;d++){ var fa=faces[d];
-    if(fa.spr){ // 빛나는 오브 + 트레일
-      if(fa.tx!==fa.sx||fa.ty!==fa.sy){ ctx.strokeStyle='rgba(150,220,255,.45)'; ctx.lineWidth=Math.max(1,fa.r*0.8); ctx.beginPath(); ctx.moveTo(fa.tx,fa.ty); ctx.lineTo(fa.sx,fa.sy); ctx.stroke(); }
-      var grd=ctx.createRadialGradient(fa.sx,fa.sy,0,fa.sx,fa.sy,fa.r*2.2);
-      grd.addColorStop(0,'#f2ffff'); grd.addColorStop(0.45,'#7fd0ff'); grd.addColorStop(1,'rgba(120,200,255,0)');
-      ctx.fillStyle=grd; ctx.beginPath(); ctx.arc(fa.sx,fa.sy,fa.r*2.2,0,6.28); ctx.fill();
-      ctx.fillStyle='#fff'; ctx.beginPath(); ctx.arc(fa.sx,fa.sy,fa.r*0.75,0,6.28); ctx.fill(); continue;
-    }
-    ctx.fillStyle=fa.col; ctx.beginPath(); ctx.moveTo(fa.pts[0].x,fa.pts[0].y);
-    for(var p=1;p<fa.pts.length;p++)ctx.lineTo(fa.pts[p].x,fa.pts[p].y); ctx.closePath(); ctx.fill();
-    if(fa.tile){ ctx.strokeStyle=fa.col; ctx.lineWidth=1; ctx.stroke(); }  // 타일 이음새(AA 틈) 메움
-    if(fa.goal){ ctx.fillStyle='rgba(255,255,255,.12)'; ctx.fill(); }
-    if(fa.stroke!==false){
-      ctx.strokeStyle='rgba(0,0,0,.18)'; ctx.lineWidth=1;
-      if(!fa.tile){ ctx.stroke(); }
-      else if(fa.edges){ // 원래 면의 바깥 모서리만
-        for(var e=0;e<4;e++){ if(!fa.edges[e])continue; var A=fa.pts[e], B=fa.pts[(e+1)%4];
-          ctx.beginPath(); ctx.moveTo(A.x,A.y); ctx.lineTo(B.x,B.y); ctx.stroke(); }
-      }
-    }
-  }
-  // 총구 플래시(발사 직후) — 총열 끝 월드 위치
+  // 결승 기둥 빛(수직 빌보드 대용: 얇은 발광 구슬 열)
+  var g=LEVEL.goal;
+  for(var bi=0;bi<8;bi++) bbPush(g.cx, g.cy+0.6+bi*0.9, g.cz, 0.55, 0.42,1.0,0.62, 0.30);
+  // 발사체: 밝은 코어 + 뒤로 늘어지는 트레일
+  for(var pj=0;pj<sim.projectiles.length;pj++){ var pr=sim.projectiles[pj];
+    bbPush(pr.x,pr.y,pr.z, 0.30, 0.95,1.0,1.0, 0.95);
+    for(var tt=1;tt<=4;tt++){ var f2=tt/4;
+      bbPush(pr.x-pr.dx*f2*1.1, pr.y-pr.dy*f2*1.1, pr.z-pr.dz*f2*1.1, 0.24*(1-f2*0.5), 0.55,0.82,1.0, 0.45*(1-f2)); } }
+  // 폭발 구
+  for(var b2=0;b2<sim.blasts.length;b2++){ var bl=sim.blasts[b2];
+    bbPush(bl.x,bl.y,bl.z, BLAST_R*bl.t*1.1, 0.63,0.86,1.0, 0.55*(1-bl.t)); }
+  // 파편
+  for(var pp=0;pp<sim.particles.length;pp++){ var pt=sim.particles[pp];
+    bbPush(pt.x,pt.y,pt.z, 0.16, 0.87,0.94,1.0, Math.max(0,pt.life)*0.9); }
+  // 총구 섬광
   if((sim.recoil||0)>0.5){ var kk=(sim.recoil-0.5)/0.5;
-    var eye2={x:sim.p.x,y:sim.p.y+EYE,z:sim.p.z};
-    var g2=sim.tp?GUN_TP:[0,0,0];
+    var e2={x:sim.p.x,y:sim.p.y+EYE,z:sim.p.z}, g2=sim.tp?GUN_TP:[0,0,0];
     var mz=[0.28+g2[0],-0.20+g2[1],1.12+g2[2]-0.16*(sim.recoil*sim.recoil)];
-    var mw=[eye2.x+mz[0]*AIMR.x+mz[1]*AIMU.x+mz[2]*AIMF.x, eye2.y+mz[0]*AIMR.y+mz[1]*AIMU.y+mz[2]*AIMF.y, eye2.z+mz[0]*AIMR.z+mz[1]*AIMU.z+mz[2]*AIMF.z];
-    var mc=toCam(mw); if(mc.z>NEAR){ var msp=project(mc); ctx.globalAlpha=kk;
-      ctx.fillStyle='#dff4ff'; ctx.beginPath(); ctx.arc(msp.x,msp.y,(0.10+0.22*kk)/mc.z*FOCAL,0,6.28); ctx.fill();
-      ctx.fillStyle='rgba(140,220,255,.5)'; ctx.beginPath(); ctx.arc(msp.x,msp.y,(0.22+0.4*kk)/mc.z*FOCAL,0,6.28); ctx.fill(); ctx.globalAlpha=1; } }
-  // 결승 기둥 빛
-  drawBeam(LEVEL.goal.cx, LEVEL.goal.cy, LEVEL.goal.cz);
-  // 블래스트(구)
-  for(var b2=0;b2<sim.blasts.length;b2++){ var bl=sim.blasts[b2]; var c=toCam([bl.x,bl.y,bl.z]); if(c.z<=NEAR)continue;
-    var sp=project(c); var rad=(BLAST_R*bl.t)/c.z*FOCAL; ctx.strokeStyle='rgba(160,220,255,'+(1-bl.t)+')'; ctx.lineWidth=3;
-    ctx.beginPath(); ctx.arc(sp.x,sp.y,Math.max(1,rad),0,6.28); ctx.stroke(); }
-  // 파티클
-  for(var pp=0;pp<sim.particles.length;pp++){ var pt=sim.particles[pp]; var c2=toCam([pt.x,pt.y,pt.z]); if(c2.z<=NEAR)continue;
-    var s2=project(c2); ctx.globalAlpha=Math.max(0,pt.life); ctx.fillStyle='#dff0ff'; var r=Math.max(1,6/c2.z*FOCAL*0.3);
-    ctx.beginPath(); ctx.arc(s2.x,s2.y,r,0,6.28); ctx.fill(); } ctx.globalAlpha=1;
-  ctx.restore();
+    bbPush(e2.x+mz[0]*AIMR.x+mz[1]*AIMU.x+mz[2]*AIMF.x,
+           e2.y+mz[0]*AIMR.y+mz[1]*AIMU.y+mz[2]*AIMF.y,
+           e2.z+mz[0]*AIMR.z+mz[1]*AIMU.z+mz[2]*AIMF.z, 0.16+0.34*kk, 0.87,0.96,1.0, kk); }
+
+  // --- 그리기: 불투명 → 외곽선 → 발광(가산합성) ---
+  gl.useProgram(PROG.main); gl.uniformMatrix4fv(PROG.main.uVP,false,VP);
+  gl.disable(gl.BLEND);
+  gl.enable(gl.POLYGON_OFFSET_FILL); gl.polygonOffset(1.0,1.0);  // 외곽선이 면에 묻히지 않게
+  drawArr(BUF.tri, TRI, PROG.main, gl.TRIANGLES);
+  gl.disable(gl.POLYGON_OFFSET_FILL);
+  if(LINE.length) drawArr(BUF.line, LINE, PROG.main, gl.LINES);
+  if(BB.length){
+    gl.useProgram(PROG.bb); gl.uniformMatrix4fv(PROG.bb.uVP,false,VP);
+    gl.uniform3f(PROG.bb.uRight,CAMR.x,CAMR.y,CAMR.z); gl.uniform3f(PROG.bb.uUp,CAMU.x,CAMU.y,CAMU.z);
+    gl.enable(gl.BLEND); gl.blendFunc(gl.ONE,gl.ONE_MINUS_SRC_ALPHA);  // premultiplied
+    gl.depthMask(false);
+    gl.bindBuffer(gl.ARRAY_BUFFER,BUF.bb);
+    gl.bufferData(gl.ARRAY_BUFFER,new Float32Array(BB),gl.DYNAMIC_DRAW);
+    var S=10*4;
+    gl.enableVertexAttribArray(PROG.bb.aCenter); gl.vertexAttribPointer(PROG.bb.aCenter,3,gl.FLOAT,false,S,0);
+    gl.enableVertexAttribArray(PROG.bb.aOff);    gl.vertexAttribPointer(PROG.bb.aOff,2,gl.FLOAT,false,S,12);
+    gl.enableVertexAttribArray(PROG.bb.aCol);    gl.vertexAttribPointer(PROG.bb.aCol,4,gl.FLOAT,false,S,20);
+    gl.enableVertexAttribArray(PROG.bb.aSize);   gl.vertexAttribPointer(PROG.bb.aSize,1,gl.FLOAT,false,S,36);
+    gl.drawArrays(gl.TRIANGLES,0,BB.length/10);
+    gl.depthMask(true); gl.disable(gl.BLEND);
+  }
 }
-function drawBeam(x,y,z){ var lo=toCam([x,y+0.5,z]), hi=toCam([x,y+8,z]); if(lo.z<=NEAR||hi.z<=NEAR)return;
-  var a=project(lo), b=project(hi); ctx.strokeStyle='rgba(120,255,170,.4)'; ctx.lineWidth=6; ctx.beginPath(); ctx.moveTo(a.x,a.y); ctx.lineTo(b.x,b.y); ctx.stroke(); }
-// 한 메시(면 배열)를 컬링·클립·투영해 렌더 목록에 추가
-function emitFaces(fl, baseCol, isGoal, out, noStroke){
-  for(var f=0;f<fl.length;f++){ var face=fl[f];
-    var fc={x:(face.v[0][0]+face.v[2][0])/2, y:(face.v[0][1]+face.v[2][1])/2, z:(face.v[0][2]+face.v[2][2])/2};
-    if(face.n.x*(CAMPOS.x-fc.x)+face.n.y*(CAMPOS.y-fc.y)+face.n.z*(CAMPOS.z-fc.z)<=0) continue;
-    var cs=face.v.map(function(p){return toCam(p);});
-    var clipped=clipNear(cs); if(clipped.length<3)continue;
-    var z=0; for(var q=0;q<clipped.length;q++)z+=clipped[q].z; z/=clipped.length;
-    out.push({pts:clipped.map(project), z:z, col:shadeCol(baseCol,face.sh), goal:isGoal, stroke:!noStroke,
-      tile:face.tile, edges:(face.edges&&clipped.length===4)?face.edges:null});
+function drawArr(buf, arr, prog, mode){
+  if(!arr.length) return;
+  gl.bindBuffer(gl.ARRAY_BUFFER,buf);
+  gl.bufferData(gl.ARRAY_BUFFER,new Float32Array(arr),gl.DYNAMIC_DRAW);
+  gl.enableVertexAttribArray(prog.aPos); gl.vertexAttribPointer(prog.aPos,3,gl.FLOAT,false,24,0);
+  gl.enableVertexAttribArray(prog.aCol); gl.vertexAttribPointer(prog.aCol,3,gl.FLOAT,false,24,12);
+  gl.drawArrays(mode,0,arr.length/6);
+}
+// 메시(면 배열) → GPU 정점. 면 셰이딩을 정점색에 굽는다.
+function meshGL(fl, baseCol, outline){
+  var base=hexRGB(baseCol);
+  for(var f=0;f<fl.length;f++){ var face=fl[f], sh=face.sh;
+    quadGL(face.v, [base[0]*sh, base[1]*sh, base[2]*sh], outline);
   }
 }
 // 회전된(카메라 기저 R/U/F에 부착된) 박스 → 월드 면. 1인칭 총에 사용.
@@ -500,24 +560,24 @@ function peerSample(pe, now){
   return b[b.length-1];                             // 패킷이 늦음 → 마지막 위치 유지
 }
 // 한 플레이어(캡슐+총)를 임의 위치/시점으로 렌더 — 3인칭 자기·원격 팀원 공용
-function emitCharacter(px,py,pz,yaw,pitch,recoil,col,faces){
+function emitCharacter(px,py,pz,yaw,pitch,recoil,col){
   var f={x:Math.cos(pitch)*Math.sin(yaw), y:Math.sin(pitch), z:Math.cos(pitch)*Math.cos(yaw)};
   var R={x:Math.cos(yaw),y:0,z:-Math.sin(yaw)};
   var U={x:f.y*R.z-f.z*R.y, y:f.z*R.x-f.x*R.z, z:f.x*R.y-f.y*R.x};
   var eye={x:px,y:py+EYE,z:pz};
-  emitFaces(capsuleFaces(px,py+0.9,pz,0.35,0.55), col, false, faces, true);
+  meshGL(capsuleFaces(px,py+0.9,pz,0.35,0.55), col, false);   // 캡슐은 외곽선 없이 매끈하게
   // 눈 — 어느 쪽을 보는지 식별용. 수평(yaw) 기준 + pitch 는 살짝만 반영.
   var HF={x:Math.sin(yaw),y:0,z:Math.cos(yaw)}, HU={x:0,y:1,z:0};
   var hy=py+1.42+Math.max(-0.12,Math.min(0.12,(pitch||0)*0.14));
   var head={x:px, y:hy, z:pz};
   for(var s=-1;s<=1;s+=2){
-    emitFaces(orientedBox([s*0.15,0,0.315],[0.095,0.115,0.075], head,R,HU,HF), '#ffffff', false, faces, true); // 흰자
-    emitFaces(orientedBox([s*0.15,-0.008,0.385],[0.05,0.062,0.035], head,R,HU,HF), '#101c33', false, faces, true); // 눈동자
+    meshGL(orientedBox([s*0.15,0,0.315],[0.095,0.115,0.075], head,R,HU,HF), '#ffffff', false); // 흰자
+    meshGL(orientedBox([s*0.15,-0.008,0.385],[0.05,0.062,0.035], head,R,HU,HF), '#101c33', false); // 눈동자
   }
   var kick=(recoil||0)*(recoil||0);
   for(var gi=0;gi<GUN.length;gi++){ var gp=GUN[gi];
     var lc=[gp.lc[0]+GUN_TP[0], gp.lc[1]+GUN_TP[1]-0.05*kick, gp.lc[2]+GUN_TP[2]-0.16*kick];
-    emitFaces(orientedBox(lc, gp.lh, eye, R, U, f), gp.col, false, faces);
+    meshGL(orientedBox(lc, gp.lh, eye, R, U, f), gp.col, true);
   }
 }
 
@@ -691,6 +751,15 @@ showScreen('title');
       .catch(function(){ if(!done){ done=true; clearTimeout(to); setWarn(noServerMsg()); } });
   }catch(e){ if(!done){ done=true; clearTimeout(to); setWarn(noServerMsg()); } }
 })();
+// WebGL 초기화(브라우저 내장 API — 외부 라이브러리 없음)
+try{
+  if(!glInit()) throw new Error('WebGL 컨텍스트를 만들 수 없습니다');
+}catch(e){
+  document.getElementById('title').innerHTML =
+    '<div class="sub">ERROR</div><h1>PENG!</h1>'+
+    '<p>이 브라우저에서 <b>WebGL</b>을 사용할 수 없습니다.<br>최신 브라우저에서 열거나 하드웨어 가속을 켜주세요.</p>'+
+    '<p class="hint">'+String(e.message||e)+'</p>';
+}
 layout(); requestAnimationFrame(loop);
 
 /* ---------- 검증 노출 ---------- */
