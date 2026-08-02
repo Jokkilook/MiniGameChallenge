@@ -49,6 +49,12 @@
   #playerList li .dot{width:10px;height:10px;border-radius:50%;background:#42d6c8;flex:none}
   #playerList li.me .dot{background:#ff8a3a}
   #playerList li .tag{margin-left:auto;font-size:11.5px;font-weight:800;letter-spacing:1px;color:#7f8bc0}
+  /* --- 맵 선택 --- */
+  .pick{margin-top:18px;display:flex;align-items:center;gap:9px;color:#7f8bc0;font-size:12px;font-weight:800;letter-spacing:2px}
+  .pick select{font:inherit;font-size:14px;font-weight:700;letter-spacing:0;color:#eaf2ff;cursor:pointer;
+    background:rgba(255,255,255,.08);border:1px solid rgba(127,208,255,.4);border-radius:9px;padding:7px 11px;outline:none}
+  .pick select:focus{border-color:#7fd0ff}
+  .pick select:disabled{opacity:.45;cursor:not-allowed}
   /* --- 채팅 --- */
   #chat{position:fixed;left:14px;bottom:14px;z-index:30;width:min(400px,62vw);pointer-events:none}
   #chatLog{display:flex;flex-direction:column;gap:3px;margin-bottom:6px}
@@ -93,6 +99,7 @@
   <p><b>PoofGun</b>은 닿는 곳에서 공기를 <b>뻥</b> 터뜨려 사람을 날린다.<br>
      발밑을 쏴 <b>로켓점프</b>로 못 넘는 협곡을 넘어 <b>결승선(초록)</b>까지!</p>
   <p class="hint"><kbd>WASD</kbd> 이동 · <kbd>마우스</kbd> 시점 · <kbd>좌클릭</kbd> 펑! · <kbd>Space</kbd> 점프 · <kbd>R</kbd> 리스폰 · <kbd>V</kbd> 3인칭 · <kbd>Enter</kbd> 채팅<br>화면을 클릭하면 마우스가 잠깁니다(FPS). <kbd>ESC</kbd>로 해제.</p>
+  <label class="pick">맵 <select id="mapSel"></select></label>
   <div class="menu">
     <button class="go" id="soloBtn">혼자 플레이</button>
     <button class="go alt" id="hostBtn">방 만들기 (호스트)</button>
@@ -122,6 +129,7 @@
   <div id="codeBig">------</div>
   <a href="#" id="copyCode" style="color:#7fd0ff;font-size:13px">코드 복사</a>
   <ul id="playerList"></ul>
+  <label class="pick"><span id="mapPickLabel">맵</span> <select id="mapSelLobby"></select></label>
   <p class="hint" id="lobbyHint">친구가 들어오면 시작할 수 있어요.</p>
   <div class="menu row">
     <button class="go" id="lobbyStartBtn" disabled>게임 시작</button>
@@ -139,6 +147,12 @@
   </div>
 </div>
 
+<!-- 공용 모듈 + 코스 데이터. 고전 <script src> 라 file:// 더블클릭에서도 로드된다.
+     levels/_all.js 는 server.js 가 levels/ 폴더를 훑어 자동으로 만든다 —
+     맵을 추가해도 이 파일을 고칠 필요가 없다. -->
+<script src="level.js"></script>
+<script src="levels/_all.js"></script>
+
 <script>
 "use strict";
 (function(){
@@ -146,6 +160,14 @@
    PENG! — 공기폭발(PoofGun) 넉백 이동 FPS 프로토타입 (WebGL, 외부 라이브러리 없음)
    외부 라이브러리 없음. 블록형 로우폴리.
    ========================================================================= */
+// 레벨 파일이 하나도 안 실렸으면 게임을 켤 수 없다 — 조용히 깨지지 않게 먼저 알린다.
+if(!window.PENG || !PENG.PHYS || !PENG.defaultLevel()){
+  document.getElementById('title').innerHTML =
+    '<div class="sub">ERROR</div><h1>PENG!</h1>'+
+    '<p>코스 데이터를 불러오지 못했습니다.<br>'+
+    '<b>level.js</b> 와 <b>levels/</b> 폴더가 index.html 옆에 있는지 확인하세요.</p>';
+  return;
+}
 var cv=document.getElementById('cv');
 var gl=cv.getContext('webgl',{antialias:true, alpha:false, depth:true})
       || cv.getContext('experimental-webgl',{antialias:true, alpha:false, depth:true});
@@ -178,40 +200,40 @@ function len(a){return Math.hypot(a.x,a.y,a.z);}
 function dot(a,b){return a.x*b.x+a.y*b.y+a.z*b.z;}
 
 /* ---------- 레벨 ---------- */
-function box(cx,cy,cz,hx,hy,hz,col){ return {cx:cx,cy:cy,cz:cz,hx:hx,hy:hy,hz:hz,col:col}; }
-/* 코스 구성 — 발판 반경 3m 이므로 두 발판 사이 실제 협곡 = (거리 - 6)m.
-   일반 점프로 넘는 한계가 약 4.8m 라, 4m 는 점프 / 6m 이상 또는 상승은 로켓점프.
-   난이도: 점프 → 로켓점프 입문 → 상승 → 연속 구간 → 마지막 큰 도약 */
-var LEVEL={
-  boxes:[
-    box(0,-25,40,60,1,140,'#20304a'),          // 시각용 먼 바닥
-    box(0,-0.5, 0,3,0.5,3,'#5a7bb0'),          // A 시작
-    box(0,-0.5,10,3,0.5,3,'#5a7bb0'),          // B  협곡 4m — 그냥 점프
-    box(0,-0.5,24,3,0.5,3,'#c07b5a'),          // C  협곡 8m — 로켓점프 입문
-    box(0, 2.5,36,3,0.5,3,'#c07b5a'),          // D  협곡 6m + 3m 상승
-    box(0, 2.5,46,3,0.5,3,'#5a7bb0'),          // E  협곡 4m — 숨 고르기(점프)
-    box(0, 5.5,57,3,0.5,3,'#c07b5a'),          // F  협곡 5m + 3m 상승 — 로켓점프
-    box(0, 5.5,67,3,0.5,3,'#5a7bb0'),          // G  협곡 4m — 점프
-    box(0, 8.5,79,3.4,0.5,3.4,'#3aa860'),      // 결승 — 협곡 5.6m + 3m 상승
-    // 장식(경로 밖 기둥) — 높이감을 주되 이동을 막지 않도록 양옆으로만
-    box(-8,-3,18,1,4,1,'#46557a'), box(8,-1,30,1,5,1,'#46557a'),
-    box(-9, 1,52,1,5,1,'#46557a'), box(9, 3,63,1,5,1,'#46557a'),
-  ],
-  goal:{cx:0,cy:9.5,cz:79,r:3.2},              // 결승 존(발판 위)
-  checkpoints:[ {x:0,y:0,z:0},{x:0,y:0,z:10},{x:0,y:0,z:24},{x:0,y:3,z:36},
-                {x:0,y:3,z:46},{x:0,y:6,z:57},{x:0,y:6,z:67} ],
-  killY:-14, start:{x:0,y:0,z:-2}
-};
+// 코스 데이터는 levels/*.js 로 분리돼 있다 — editor.html 이 같은 형식을 읽고 쓴다.
+// LEVEL 은 "지금 켜져 있는 맵"을 가리키는 변수. 맵을 바꿀 때는 setLevel() 을 쓴다.
+var LEVEL=null, CURLEVEL=null;
+function setLevel(id){
+  var d=PENG.getLevel(id);
+  if(!d){ id=PENG.defaultLevel(); d=PENG.getLevel(id); }   // 모르는 맵이면 기본 맵으로
+  if(!d) return false;
+  LEVEL=d; CURLEVEL=id; return true;
+}
+// editor.html 의 [시험 플레이] — 아직 파일로 저장하지 않은 편집본을 localStorage 로 받아
+// 임시 맵으로 등록한다. 에디터에서 배치 → 바로 실제 게임으로 확인하는 왕복을 없애기 위한 것.
+try{
+  if(/[?&]playtest=1/.test(location.search)){
+    var _pt=localStorage.getItem('peng.playtest');
+    if(_pt){ var _d=JSON.parse(_pt); _d.name='시험 플레이: '+(_d.name||''); PENG.defineLevel('__playtest', _d); }
+  }
+}catch(e){}
+setLevel(PENG.getLevel('__playtest') ? '__playtest' : PENG.defaultLevel());
 
 /* ---------- 물리 상수 ---------- */
-var RUN=6.2, JUMPV=8.6, GRAV=22, EYE=1.6, PH_HX=0.35, PH_HY=0.9, PH_HZ=0.35;
-var BLAST_R=4.2, BLAST_F=13.5, BLAST_RANGE=40, AMMO_MAX=3, AMMO_REGEN=1.1, PROJ_SPD=62;
-var KB_TIME=0.45;   // 폭발 후 조작 권한이 약해지는 시간(초)
+// 상수의 단일 출처는 level.js 의 PENG.PHYS 다. 에디터가 도달 거리를 게임과 똑같은
+// 숫자로 계산해야 하므로, 값을 고칠 일이 있으면 level.js 에서만 고친다.
+var _P=PENG.PHYS;
+var RUN=_P.RUN, JUMPV=_P.JUMPV, GRAV=_P.GRAV, EYE=_P.EYE, PH_HX=_P.PH_HX, PH_HY=_P.PH_HY, PH_HZ=_P.PH_HZ;
+var BLAST_R=_P.BLAST_R, BLAST_F=_P.BLAST_F, BLAST_RANGE=_P.BLAST_RANGE;
+var AMMO_MAX=_P.AMMO_MAX, AMMO_REGEN=_P.AMMO_REGEN, PROJ_SPD=_P.PROJ_SPD;
+var KB_TIME=_P.KB_TIME;   // 폭발 후 조작 권한이 약해지는 시간(초)
+var COYOTE=_P.COYOTE, JUMP_BUF=_P.JUMP_BUF, PITCH_LIM=_P.PITCH_LIM, FUSE_R=_P.FUSE_R;
 
 function makeSim(){
   var s=LEVEL.start;
   return { p:{x:s.x,y:s.y,z:s.z}, v:{x:0,y:0,z:0}, yaw:0, pitch:0, onGround:false,
-    ammo:AMMO_MAX, ammoT:0, t:0, cpIdx:0, win:false, blasts:[], particles:[], projectiles:[], shake:0, _fireCd:0, tp:false, recoil:0, kb:0 };
+    ammo:AMMO_MAX, ammoT:0, t:0, cpIdx:0, win:false, blasts:[], particles:[], projectiles:[], shake:0, _fireCd:0, tp:false, recoil:0, kb:0,
+    coyote:0, jumped:false };
 }
 function aabbHit(px,py,pz, b){ // 플레이어 중심(px,py+PH_HY,pz) vs 박스
   return Math.abs(px-b.cx)<PH_HX+b.hx && Math.abs((py+PH_HY)-b.cy)<PH_HY+b.hy && Math.abs(pz-b.cz)<PH_HZ+b.hz;
@@ -226,12 +248,34 @@ function rayBox(o,d,b){ // o+d*t, 반환 t (없으면 Infinity)
 function forwardVec(s){ return {x:Math.cos(s.pitch)*Math.sin(s.yaw), y:Math.sin(s.pitch), z:Math.cos(s.pitch)*Math.cos(s.yaw)}; }
 function eyePos(s){ return {x:s.p.x, y:s.p.y+EYE, z:s.p.z}; }
 
+/* 근접 신관: 광선이 팀원 몸 근처를 지나가면 지형까지 가지 않고 거기서 터뜨린다.
+   이게 없으면 협곡 위의 팀원은 절대 밀어줄 수 없다 — 광선이 팀원을 통과해
+   30~40m 뒤 지형에서 터지고, 팀원이 받는 힘은 0 이 된다(게임의 핵심 협동이 죽는다).
+   기준은 "내 화면에 보이는 팀원 위치"(보간된 위치) — 조준한 대로 맞는 게 맞다. */
+function peerFuse(o, d, maxT){
+  if(typeof MP==='undefined' || !MP || !MP.peers) return maxT;   // 솔로·검증 하네스에선 그대로
+  var now = (typeof performance!=='undefined') ? performance.now() : 0;
+  var best = maxT;
+  for(var id in MP.peers){
+    var ps = (typeof peerSample==='function') ? peerSample(MP.peers[id], now) : null;
+    if(!ps) continue;
+    var cx=ps.x, cy=ps.y+PH_HY, cz=ps.z;                          // 팀원 몸 중심
+    var t = (cx-o.x)*d.x + (cy-o.y)*d.y + (cz-o.z)*d.z;           // 광선 위 최근접 지점
+    if(t < 0.6 || t >= best) continue;                            // 코앞이거나 이미 더 가까운 게 있으면 무시
+    var px=o.x+d.x*t, py=o.y+d.y*t, pz=o.z+d.z*t;
+    if(Math.hypot(px-cx, py-cy, pz-cz) < FUSE_R) best = t;
+  }
+  return best;
+}
 function doFire(s){
   if(s.win || s.ammo<=0 || s._fireCd>0) return false;
   s.ammo--; s._fireCd=0.12;
   var o=eyePos(s), d=forwardVec(s);
   var tHit=BLAST_RANGE;
-  for(var i=0;i<LEVEL.boxes.length;i++){ var t=rayBox(o,d,LEVEL.boxes[i]); if(t<tHit)tHit=t; }
+  // deco 는 시각 전용(나무·풀 등) — 탄이 통과한다. 안 그러면 나뭇잎에 폭발이 막힌다.
+  for(var i=0;i<LEVEL.boxes.length;i++){ if(LEVEL.boxes[i].deco) continue;
+    var t=rayBox(o,d,LEVEL.boxes[i]); if(t<tHit)tHit=t; }
+  tHit = peerFuse(o, d, tHit);                     // 지형보다 팀원이 가까우면 팀원에게서 폭발
   var center={x:o.x+d.x*tHit, y:o.y+d.y*tHit, z:o.z+d.z*tHit};
   applyBlast(s, center.x, center.y, center.z);   // 자기 넉백
   // 즉시: 총 반동/작은 흔들림. 폭발 연출은 발사체가 착탄할 때.
@@ -260,7 +304,7 @@ function applyBlast(s, cx, cy, cz){
   var pc={x:s.p.x, y:s.p.y+PH_HY, z:s.p.z};
   var diff={x:pc.x-cx, y:pc.y-cy, z:pc.z-cz}, dist=Math.hypot(diff.x,diff.y,diff.z);
   if(dist<BLAST_R){ var f=BLAST_F*(1-dist/BLAST_R); if(dist<0.001){diff={x:0,y:1,z:0};dist=1;}
-    s.v.x+=diff.x/dist*f; s.v.y+=diff.y/dist*f; s.v.z+=diff.z/dist*f; s.onGround=false;
+    s.v.x+=diff.x/dist*f; s.v.y+=diff.y/dist*f; s.v.z+=diff.z/dist*f; s.onGround=false; s.coyote=0;
     s.kb=KB_TIME; }   // 잠깐 조작 권한을 낮춰 넉백이 살아있게
 }
 function blastFx(s,x,y,z){ // 착탄 폭발 연출(구+파편+흔들림+소리)
@@ -292,8 +336,15 @@ function stepSim(s, dt, inp){
   blend=Math.min(1,blend);
   s.v.x += (desx - s.v.x)*blend;
   s.v.z += (desz - s.v.z)*blend;
-  // 점프
-  if(inp.jump && s.onGround){ s.v.y=JUMPV; s.onGround=false; sndJump(); }
+  // 점프 — 발판을 막 벗어난 직후에도 잠깐은 받아준다(코요테 타임).
+  // 없으면 발판 끝에서 점프가 씹힌다: onGround 는 AABB 가 겹치는 동안만 true 라
+  // 실측 유예가 55ms 뿐이었다(보통 게임은 80~150ms).
+  s.jumped=false;
+  if(s.onGround) s.coyote=COYOTE;
+  else if(s.coyote>0) s.coyote=Math.max(0, s.coyote-dt);
+  if(inp.jump && (s.onGround || s.coyote>0)){
+    s.v.y=JUMPV; s.onGround=false; s.coyote=0; s.jumped=true; sndJump();
+  }
   // 중력
   s.v.y-=GRAV*dt; if(s.v.y<-40)s.v.y=-40;
   // 이동 + 충돌(축별)
@@ -319,6 +370,7 @@ function moveAxis(s, axis, delta){
   s.p[axis]+=delta;
   var hit=false, best=null;
   for(var i=0;i<LEVEL.boxes.length;i++){ var b=LEVEL.boxes[i];
+    if(b.deco) continue;                       // 장식은 통과한다(보이지 않는 벽 방지)
     if(!aabbHit(s.p.x,s.p.y,s.p.z,b)) continue;
     hit=true;
     if(axis==='y'){
@@ -690,7 +742,9 @@ function mpHandle(m){
     MP.players=after; MP.host=m.host; renderLobby(); }
   // 호스트가 시작 → 전원 시작. 대기방뿐 아니라 승리 화면·플레이 중에서도 받아야
   // 재시작 때 일부만 새 판으로 넘어가는 동기화 깨짐이 없다.
-  else if(m.t==='start'){ startGame(); }
+  // 맵 id 를 함께 받는다. 맵이 여러 개가 된 뒤로는 이게 없으면 둘이 서로 다른
+  // 코스에서 뛰게 된다(상대는 허공을 달리는 것처럼 보인다).
+  else if(m.t==='start'){ startGame(m.level); }
   else if(m.t==='st'){ if(m.id===MP.id)return; var pe=MP.peers[m.id]||(MP.peers[m.id]={buf:[]});
     if(!pe.buf)pe.buf=[];
     pe.name=m.name||pe.name; pe.seen=performance.now();
@@ -729,7 +783,7 @@ function openChat(){
   if(chatting) return; chatting=true;
   // 채팅 중에는 keyup 을 무시하므로, 누른 채로 들어오면 그 키가 계속 눌린 상태로
   // 남아 채팅을 닫은 뒤 저절로 움직인다 → 열 때 입력 상태를 비운다.
-  keys={}; jumpEdge=false;
+  keys={}; jumpEdge=false; jumpBuf=0;
   var el=document.getElementById('chatInput');
   el.value=''; el.classList.add('on');
   if(locked) document.exitPointerLock();             // 타이핑 중엔 마우스 잠금 해제
@@ -755,6 +809,30 @@ function showScreen(which){ mode=which;
     document.getElementById(idn).classList.toggle('off', idn!==which); });
 }
 function setWarn(t){ document.getElementById('mpWarn').innerHTML=t||''; }
+/* 맵 선택 — 목록은 levels/*.js 가 등록한 순서 그대로 나온다.
+   멀티에서 실제로 적용되는 건 호스트가 고른 맵뿐이므로 게스트 쪽 선택은 잠근다. */
+function fillMapPickers(){
+  ['mapSel','mapSelLobby'].forEach(function(idn){
+    var sel=document.getElementById(idn); if(!sel)return;
+    sel.innerHTML='';
+    PENG.order.forEach(function(id){
+      var o=document.createElement('option'); o.value=id;
+      o.textContent=PENG.getLevel(id).name||id;
+      sel.appendChild(o);
+    });
+    sel.value=CURLEVEL;
+    sel.addEventListener('change',function(){ setLevel(sel.value); syncMapPickers(); });
+  });
+  syncMapPickers();
+}
+function syncMapPickers(){
+  ['mapSel','mapSelLobby'].forEach(function(idn){
+    var sel=document.getElementById(idn); if(sel && sel.value!==CURLEVEL) sel.value=CURLEVEL; });
+  var ls=document.getElementById('mapSelLobby'), lb=document.getElementById('mapPickLabel');
+  var guest=MP.connected && !mpIsHost();
+  if(ls) ls.disabled=guest;
+  if(lb) lb.textContent=guest?'맵 (호스트가 결정)':'맵';
+}
 function renderLobby(){
   var codeEl=document.getElementById('codeBig'); if(codeEl&&MP.room)codeEl.textContent=MP.room;
   var ul=document.getElementById('playerList'); if(!ul)return; ul.innerHTML='';
@@ -772,6 +850,7 @@ function renderLobby(){
   else { btn.disabled=true; btn.textContent='호스트 대기 중…';
     hint.textContent='호스트가 게임을 시작하면 함께 출발합니다.'; }
   hint.textContent += '  (Enter: 채팅)';
+  syncMapPickers();
 }
 document.getElementById('soloBtn').addEventListener('click',function(){ ensureAudio(); mpDisconnect(); startGame(); });
 document.getElementById('hostBtn').addEventListener('click',function(){ ensureAudio(); setWarn('서버에 연결 중…');
@@ -802,7 +881,7 @@ function doJoin(){ ensureAudio();
       else err.innerHTML=noServerMsg(); }, true);
 }
 document.getElementById('lobbyStartBtn').addEventListener('click',function(){
-  if(!mpIsHost()||MP.players.length<2)return; mpSend({t:'start'}); startGame(); });
+  if(!mpIsHost()||MP.players.length<2)return; mpSend({t:'start', level:CURLEVEL}); startGame(CURLEVEL); });
 document.getElementById('lobbyLeaveBtn').addEventListener('click',function(){ mpDisconnect(); showScreen('title'); });
 document.getElementById('copyCode').addEventListener('click',function(e){ e.preventDefault(); var c=MP.room||'';
   if(navigator.clipboard&&navigator.clipboard.writeText){ navigator.clipboard.writeText(c).then(function(){ e.target.textContent='복사됨!';
@@ -811,7 +890,11 @@ document.getElementById('copyCode').addEventListener('click',function(e){ e.prev
 
 /* ---------- 라이브 입력/루프 ---------- */
 var keys={}, locked=false, jumpEdge=false;
-function startGame(){ sim=makeSim(); MP.peers={}; showScreen('play'); acc=0; last=0; requestLock(); }
+// levelId 를 주면 그 맵으로 바꿔서 시작한다(멀티: 호스트가 고른 맵). 없으면 현재 맵 유지.
+function startGame(levelId){
+  if(levelId) setLevel(levelId);
+  sim=makeSim(); MP.peers={}; showScreen('play'); acc=0; last=0; requestLock();
+}
 // 다시하기: 멀티면 대기방으로, 솔로면 바로 재시작
 document.getElementById('retryBtn').addEventListener('click',function(){ ensureAudio();
   if(MP.connected){ showScreen('lobbyScr'); renderLobby(); } else startGame(); });
@@ -821,7 +904,11 @@ cv.addEventListener('click',function(){ ensureAudio(); if(chatting) return;
   if(mode==='play'){ if(!locked)requestLock(); else doFire(sim); } });
 document.addEventListener('pointerlockchange',function(){ locked=(document.pointerLockElement===cv); });
 document.addEventListener('mousemove',function(e){ if(!locked||!sim)return; var sX=0.0022;
-  sim.yaw+=e.movementX*sX; sim.pitch-=e.movementY*sX; sim.pitch=Math.max(-1.45,Math.min(1.45,sim.pitch)); });
+  // 시야각 하한이 -1.45rad(83.1°)이면 "발밑"을 쏴도 폭발 중심이 몸보다 7° 앞에 생겨
+  // 방사형 밀어내기가 오히려 전진 속도를 2.1m/s 깎았다. 거의 수직까지 내려가게 해
+  // 고전적인 로켓점프(수직 추진 + 전진 속도 유지)가 성립하도록 한다.
+  sim.yaw+=e.movementX*sX; sim.pitch-=e.movementY*sX;
+  sim.pitch=Math.max(-PITCH_LIM,Math.min(PITCH_LIM,sim.pitch)); });
 window.addEventListener('keydown',function(e){
   // 채팅 입력 중에는 게임 조작이 먹지 않도록 완전히 차단
   if(chatting){
@@ -835,12 +922,23 @@ window.addEventListener('keydown',function(e){
   if(k==='v'&&sim)sim.tp=!sim.tp; });
 window.addEventListener('keyup',function(e){ if(chatting) return; keys[e.key.toLowerCase()]=false; });
 
-var last=0, acc=0, STEP=1/120;
+var last=0, acc=0, STEP=1/120, jumpBuf=0;
 function loop(now){ if(!last)last=now; var dt=Math.min(0.05,(now-last)/1000); last=now;
   if(mode==='play' && sim){
-    var inp={ mf:keys['w'], mb:keys['s'], ml:keys['a'], mr:keys['d'], jump:jumpEdge };
-    acc+=dt; var guard=0; while(acc>=STEP && guard<12){ stepSim(sim,STEP, inp); inp.jump=false; acc-=STEP; guard++; }
-    jumpEdge=false;
+    // 점프 입력을 프레임이 아니라 시간으로 들고 있는다.
+    // 예전엔 서브스텝이 한 번도 안 돈 프레임에서도 jumpEdge 를 지워버려서,
+    // 화면 주사율이 시뮬(120Hz)보다 높으면 그 비율만큼 점프가 통째로 씹혔다
+    // (144Hz 17% · 165Hz 27% · 240Hz 50%).
+    if(jumpEdge){ jumpBuf=JUMP_BUF; jumpEdge=false; }
+    var inp={ mf:keys['w'], mb:keys['s'], ml:keys['a'], mr:keys['d'], jump:false };
+    acc+=dt; var guard=0;
+    while(acc>=STEP && guard<12){
+      inp.jump = jumpBuf>0;
+      stepSim(sim,STEP, inp);
+      if(sim.jumped) jumpBuf=0;             // 실제로 소비됐을 때만 비운다
+      acc-=STEP; guard++;
+    }
+    if(jumpBuf>0) jumpBuf=Math.max(0, jumpBuf-dt);
     // 멀티: 내 상태 ~22Hz 전송 + 끊긴 피어 정리
     if(MP.connected && now-MP.lastSend>45){ MP.lastSend=now;
       mpSend({t:'st', name:MP.name, x:Math.round(sim.p.x*1000)/1000, y:Math.round(sim.p.y*1000)/1000, z:Math.round(sim.p.z*1000)/1000,
@@ -859,16 +957,14 @@ function loop(now){ if(!last)last=now; var dt=Math.min(0.05,(now-last)/1000); la
 function renderAmmo(n){ var el=document.getElementById('ammo'); if(el.children.length!==AMMO_MAX){ el.innerHTML=''; for(var i=0;i<AMMO_MAX;i++){var d=document.createElement('div');d.className='p';el.appendChild(d);} }
   for(var i=0;i<AMMO_MAX;i++)el.children[i].classList.toggle('on', i<n); }
 var lastHint='';
-function showHint(s){ var m=document.getElementById('msg'); var h='';
-  if(s.cpIdx===0 && s.p.z<8) h='앞으로 달려 <b>Space</b>로 협곡을 건너요';
-  else if(s.cpIdx===1) h='이번 협곡은 넓어요! <b>점프 후 발밑을 좌클릭</b>해 로켓점프!';
-  else if(s.cpIdx===2) h='위로! <b>점프 + 발밑 펑!</b>으로 높은 발판을 오르세요';
-  else if(s.cpIdx===3) h='짧은 협곡 — 이건 그냥 점프로';
-  else if(s.cpIdx===4) h='다시 위로! 로켓점프로 올라가요';
-  else if(s.cpIdx>=5) h='마지막! <b>크게 로켓점프</b>해서 초록 결승대로';
+// 힌트는 코스마다 다르므로 레벨 데이터(LEVEL.hints)에 들어 있다. 체크포인트 번호로 고르고,
+// 마지막 힌트는 그 뒤 구간까지 유지한다. 힌트가 없는 맵은 아무것도 띄우지 않는다.
+function showHint(s){ var m=document.getElementById('msg');
+  var hs=LEVEL.hints||[], h = hs.length ? (hs[Math.min(s.cpIdx, hs.length-1)]||'') : '';
   if(h!==lastHint){ lastHint=h; m.innerHTML=h; m.classList.toggle('on', !!h); }
 }
 showScreen('title');
+fillMapPickers();
 // 시작 시 멀티 서버 유무를 미리 확인해 안내(버튼을 눌러보기 전에 알 수 있게)
 (function probeServer(){
   if(location.protocol==='file:'){ setWarn(noServerMsg()); return; }
@@ -892,7 +988,11 @@ try{
 layout(); requestAnimationFrame(loop);
 
 /* ---------- 검증 노출 ---------- */
-window.__peng={ makeSim:makeSim, stepSim:stepSim, doFire:doFire, LEVEL:LEVEL,
+window.__peng={ makeSim:makeSim, stepSim:stepSim, doFire:doFire,
+  // LEVEL 은 맵을 바꾸면 교체되므로 값이 아니라 게터로 낸다(예전처럼 고정해두면 낡은 맵을 가리킨다).
+  get LEVEL(){ return LEVEL; },
+  setLevel:setLevel, get level(){ return CURLEVEL; }, levels:function(){ return PENG.order.slice(); },
+  get sim(){ return sim; }, get MP(){ return MP; },   // 실시간 검증용(멀티 상호작용 확인)
   hasNaN:function(s){ return !isFinite(s.p.x)||!isFinite(s.p.y)||!isFinite(s.p.z); },
   // 시나리오 실행: inputs=배열 of {dt,steps,inp,yaw,pitch,fire}
   run:function(script){ var s=makeSim();
