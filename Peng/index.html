@@ -59,11 +59,10 @@
   #chat{position:fixed;left:14px;bottom:14px;z-index:30;width:min(400px,62vw);pointer-events:none}
   #chatLog{display:flex;flex-direction:column;gap:3px;margin-bottom:6px}
   .cmsg{background:rgba(8,12,24,.55);border-left:3px solid #42d6c8;border-radius:0 8px 8px 0;
-    padding:4px 10px;font-size:13px;line-height:1.45;color:#e8f0ff;transition:opacity .8s;
+    padding:4px 10px;font-size:13px;line-height:1.45;color:#e8f0ff;transition:opacity .45s linear;
     text-shadow:0 1px 3px rgba(0,0,0,.7);word-break:break-word}
   .cmsg.me{border-left-color:#ff8a3a}
   .cmsg.sys{border-left-color:#7f8bc0;color:#aab6dd;font-style:italic}
-  .cmsg.old{opacity:.16}
   .cmsg b{color:#7fd0ff;font-weight:800}
   .cmsg.me b{color:#ffb27a}
   #chatInput{display:none;width:100%;pointer-events:auto;font:inherit;font-size:14px;color:#eaf2ff;
@@ -768,17 +767,33 @@ function pushChat(name, text, self, sys){
 function renderChat(){
   var log=document.getElementById('chatLog'); if(!log) return;
   log.innerHTML='';                                  // 지우기만 — 사용자 문자열 아님
-  var now=performance.now();
   for(var i=0;i<CHAT.length;i++){ var c=CHAT[i];
     var d=document.createElement('div');
     d.className='cmsg'+(c.self?' me':'')+(c.sys?' sys':'');
-    if(mode==='play' && now-c.t>12000) d.className+=' old';   // 인게임에선 오래된 건 흐려짐
     if(!c.sys){ var b=document.createElement('b'); b.textContent=c.name+': '; d.appendChild(b); }
     var sp=document.createElement('span'); sp.textContent=c.text; d.appendChild(sp);
-    log.appendChild(d);
+    c.el=d; log.appendChild(d);
   }
+  fadeChat();
 }
-setInterval(function(){ if(CHAT.length) renderChat(); }, 1000);
+/* 지난 채팅 흐리기 — 예전엔 12초 뒤 갑자기 0.16 으로 떨어져 사실상 안 보였다.
+   이제 채팅을 열면 전부 또렷해지고, 닫으면 CHAT_FULL 동안 선명하게 유지한 뒤
+   CHAT_FADE 에 걸쳐 서서히 CHAT_MIN(읽을 수는 있는 밝기)까지만 흐려진다. */
+var CHAT_FULL=8000, CHAT_FADE=6000, CHAT_MIN=0.34;
+function chatOpacity(c, now){
+  if(chatting) return 1;              // 채팅 입력 중 = 전부 또렷하게
+  if(mode!=='play') return 1;         // 메뉴·대기방에선 항상 잘 보이게
+  var age=now-c.t;
+  if(age<CHAT_FULL) return 1;
+  var f=(age-CHAT_FULL)/CHAT_FADE;
+  return f>=1 ? CHAT_MIN : 1-(1-CHAT_MIN)*f;
+}
+function fadeChat(){
+  var now=performance.now();
+  for(var i=0;i<CHAT.length;i++){ var c=CHAT[i];
+    if(c.el) c.el.style.opacity=chatOpacity(c,now).toFixed(3); }
+}
+setInterval(function(){ if(CHAT.length) fadeChat(); }, 300);
 function openChat(){
   if(chatting) return; chatting=true;
   // 채팅 중에는 keyup 을 무시하므로, 누른 채로 들어오면 그 키가 계속 눌린 상태로
@@ -786,6 +801,7 @@ function openChat(){
   keys={}; jumpEdge=false; jumpBuf=0;
   var el=document.getElementById('chatInput');
   el.value=''; el.classList.add('on');
+  fadeChat();                                        // 열자마자 지난 대화가 또렷해지게
   if(locked) document.exitPointerLock();             // 타이핑 중엔 마우스 잠금 해제
   setTimeout(function(){ el.focus(); }, 10);
 }
@@ -793,6 +809,7 @@ function closeChat(doSend){
   if(!chatting) return;
   var el=document.getElementById('chatInput'), txt=(el.value||'').trim();
   el.classList.remove('on'); el.blur(); chatting=false;
+  fadeChat();                                        // 닫으면 다시 나이에 따라 흐려지기 시작
   if(doSend && txt){
     if(MP.connected) mpSend({t:'ch', text:txt.slice(0,120)});
     else pushChat('나', txt, true);                  // 솔로일 땐 로컬 표시만
