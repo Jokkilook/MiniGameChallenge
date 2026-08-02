@@ -143,6 +143,7 @@
   <div id="topbar">
     <span class="pill">⏱ <b id="timeV">0.0</b>s</span>
     <span class="pill" id="cpV">체크포인트 0</span>
+    <span class="pill" id="mapV">맵</span>
     <span class="pill" id="mpV">🎮 솔로</span>
   </div>
   <div id="ammo"></div>
@@ -264,7 +265,11 @@ function setLevel(id){
   var d=PENG.getLevel(id);
   if(!d){ id=PENG.defaultLevel(); d=PENG.getLevel(id); }   // 모르는 맵이면 기본 맵으로
   if(!d) return false;
-  LEVEL=d; CURLEVEL=id; return true;
+  LEVEL=d; CURLEVEL=id;
+  // HUD 표시를 즉시 갱신 — 프레임을 기다리지 않아야 "지금 어느 맵인지"가 항상 맞다.
+  // 두 사람이 서로 다른 코스를 보고 있으면 이 칩만 비교해도 바로 드러난다.
+  var mv=document.getElementById('mapV'); if(mv) mv.textContent='🗺 '+(d.name||id);
+  return true;
 }
 // editor.html 의 [시험 플레이] — 아직 파일로 저장하지 않은 편집본을 localStorage 로 받아
 // 임시 맵으로 등록한다. 에디터에서 배치 → 바로 실제 게임으로 확인하는 왕복을 없애기 위한 것.
@@ -1055,6 +1060,7 @@ function loop(now){ if(!last)last=now; var dt=Math.min(0.05,(now-last)/1000); la
     // HUD
     document.getElementById('timeV').textContent = sim.practice ? '연습' : sim.t.toFixed(1);
     document.getElementById('cpV').textContent = sim.practice ? '자유 연습' : ('체크포인트 '+sim.cpIdx);
+    document.getElementById('mapV').textContent = '🗺 '+(LEVEL.name||CURLEVEL);
     renderAmmo(sim.ammo, sim.ammo<AMMO_MAX ? sim.ammoT/AMMO_REGEN : 0);
     if(sim.win){ document.getElementById('winMsg').textContent='기록 '+sim.t.toFixed(1)+'초!'; showScreen('win'); sndWin(); if(locked)document.exitPointerLock(); }
     if(mode==='play') showHint(sim); else showHint(null);
