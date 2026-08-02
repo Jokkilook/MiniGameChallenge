@@ -90,18 +90,6 @@
   .screen.asPanel .menu{width:100%;margin-top:12px}
   .screen.asPanel .menu.row button{padding:10px 6px;font-size:12px}
   .screen.asPanel .hint{font-size:11px;margin-top:8px}
-  /* 캐릭터 편집기 */
-  #editScr{width:min(330px,90vw);max-height:100vh;overflow-y:auto}
-  #edControls{margin-top:8px}
-  .edRow{display:flex;align-items:center;gap:8px;margin:5px 0}
-  .edRow label{flex:0 0 92px;font-size:10.5px;font-weight:800;letter-spacing:.6px;color:#9dabc4;text-transform:uppercase}
-  .edRow input[type=range]{flex:1;-webkit-appearance:none;appearance:none;height:2px;background:var(--line2);outline:none;margin:0}
-  .edRow input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:12px;height:16px;background:var(--acc);cursor:pointer;border:0}
-  .edRow input[type=range]::-moz-range-thumb{width:12px;height:16px;background:var(--acc);cursor:pointer;border:0;border-radius:0}
-  .edRow .val{flex:0 0 40px;text-align:right;font-family:var(--mono);font-size:11px;font-weight:700;color:#fff}
-  .edRow input[type=color]{flex:1;height:22px;padding:0;border:1px solid var(--line2);background:transparent;cursor:pointer}
-  .edSec{margin-top:12px;padding-top:8px;border-top:1px solid var(--line);
-    font-size:9.5px;font-weight:900;letter-spacing:2.4px;color:var(--acc);text-transform:uppercase}
   /* 채팅: 각진 좌측 액센트 */
   #chat{position:fixed;left:0;bottom:0;z-index:30;width:min(400px,62vw);padding:0 0 12px 12px;pointer-events:none}
   #chatLog{display:flex;flex-direction:column;gap:1px;margin-bottom:5px}
@@ -158,22 +146,9 @@
     <button class="go" id="soloBtn">혼자 플레이</button>
     <button class="go alt" id="hostBtn">방 만들기 (호스트)</button>
     <button class="go alt" id="joinBtn">방 참가하기</button>
-    <button class="go alt" id="editBtn">캐릭터 편집</button>
+    <button class="go alt" id="editBtn">캐릭터 편집기 열기</button>
   </div>
   <p class="hint" id="mpWarn" style="margin-top:16px"></p>
-</div>
-
-<!-- 캐릭터 편집기 -->
-<div class="screen off asPanel" id="editScr">
-  <div class="sub">CHARACTER</div>
-  <h1>캐릭터 편집</h1>
-  <div id="edControls"></div>
-  <div class="menu row" style="margin-top:14px">
-    <button class="go" id="edSaveBtn">저장</button>
-    <button class="go alt" id="edResetBtn">기본값</button>
-    <button class="go alt" id="edBackBtn">뒤로</button>
-  </div>
-  <p class="hint" id="edHint">드래그해서 조절 · 미리보기는 자동으로 걷고 회전합니다</p>
 </div>
 
 <!-- 참가: 세션 코드 입력 -->
@@ -214,6 +189,7 @@
   </div>
 </div>
 
+<script src="character.js"></script>
 <script>
 "use strict";
 (function(){
@@ -545,7 +521,6 @@ function render(){
   gl.bindBuffer(gl.ARRAY_BUFFER,BUF.sky); gl.enableVertexAttribArray(PROG.sky.aP);
   gl.vertexAttribPointer(PROG.sky.aP,2,gl.FLOAT,false,0,0); gl.drawArrays(gl.TRIANGLES,0,3);
   gl.depthMask(true); gl.enable(gl.DEPTH_TEST);
-  if(mode==='editScr'){ renderEditor(Math.min(0.05,(performance.now()-(edPrev||performance.now()))/1000)); edPrev=performance.now(); return; }
   if(!sim) return;
   setCamera(sim);
   // 화면 흔들림: 카메라를 미세하게 흔든다
@@ -722,87 +697,22 @@ function peerSample(pe, now){
   }
   return b[b.length-1];                             // 패킷이 늦음 → 마지막 위치 유지
 }
-/* 캐릭터 설정 (발바닥 py 기준). 머리=반구, 몸통=원통.
-   편집기에서 바꾸고 localStorage 에 저장하며, 멀티에선 팀원에게도 전송된다. */
-var CH_DEFAULT={
-  bodyR:0.38, bodyTop:1.42, bodyBot:0.58,   // 원통 몸통(반지름/윗면/아랫면 높이)
-  headR:0.42,                                // 반구 머리
-  legW:0.058, legD:0.062, legX:0.135,        // 다리 굵기/좌우 간격 (길이는 hipY 로 결정)
-  armLen:0.24, armW:0.058, armD:0.065, armX:0.44, armSplay:0.12,
-  eyeY:1.60, eyeX:0.16, eyeW:0.125, eyeH:0.15,
-  swingLeg:0.55, swingArm:0.45,              // 걷기 스윙 폭(라디안)
-  col:'#ff8a3a', limbCol:'#2b3550', eyeCol:'#ffffff', pupCol:'#0d1626'
-};
-var CH=null;                                  // 현재 설정(로드 후 채워짐)
-function chClone(o){ var r={}; for(var k in o) r[k]=o[k]; return r; }
-function chLoad(){
-  CH=chClone(CH_DEFAULT);
-  try{ var raw=localStorage.getItem('peng.char');
-    if(raw){ var o=JSON.parse(raw); for(var k in CH_DEFAULT) if(o[k]!=null) CH[k]=o[k]; } }catch(e){}
-}
-function chSave(){ try{ localStorage.setItem('peng.char', JSON.stringify(CH)); }catch(e){} }
-chLoad();
-// 설정에서 파생되는 값들(매 프레임 계산해도 저렴)
-function chDerive(c){
-  return { hipY:c.bodyBot, legHalf:[c.legW, c.bodyBot/2, c.legD],
-    shoulderY:c.bodyTop-0.08, armHalf:[c.armW, c.armLen, c.armD],
-    eyeZ:c.headR*0.78, eyeHalf:[c.eyeW, c.eyeH, 0.085],
-    pupZ:c.headR*0.95, pupHalf:[c.eyeW*0.44, c.eyeH*0.5, 0.03] };
-}
-// 관절(pivot)을 축으로 앞뒤로 흔들리는 팔다리 하나
-function limbGL(pivot, HR,HU,HF, half, ang, splay, col){
-  var c=Math.cos(ang), s=Math.sin(ang);
-  var U={x:HU.x*c+HF.x*s, y:HU.y*c+HF.y*s, z:HU.z*c+HF.z*s};   // 팔다리가 뻗은 '위' 방향
-  var F={x:HF.x*c-HU.x*s, y:HF.y*c-HU.y*s, z:HF.z*c-HU.z*s};
-  if(splay){ var c2=Math.cos(splay), s2=Math.sin(splay);        // 바깥으로 살짝 벌림
-    var R2={x:HR.x*c2+U.x*s2, y:HR.y*c2+U.y*s2, z:HR.z*c2+U.z*s2};
-    U={x:-HR.x*s2+U.x*c2, y:-HR.y*s2+U.y*c2, z:-HR.z*s2+U.z*c2}; HR=R2; }
-  // 중심 = 관절에서 팔다리 길이의 절반만큼 아래로
-  var O={x:pivot.x-U.x*half[1], y:pivot.y-U.y*half[1], z:pivot.z-U.z*half[1]};
-  meshGL(orientedBox([0,0,0], half, O, HR,U,F), col, true);
-}
-// cfg 를 주면 그 설정으로(원격 팀원이 자기 디자인을 쓸 때), 없으면 내 설정으로 그린다.
-// tint 를 주면 몸 색을 그것으로 덮어쓴다(팀원 구분용).
-function emitCharacter(px,py,pz,yaw,pitch,recoil,tint,walk,cfg){
-  var c=cfg||CH, d=chDerive(c);
-  var bodyCol = tint || c.col;
-  // 조준 기저(총용) — pitch 포함
-  var f={x:Math.cos(pitch)*Math.sin(yaw), y:Math.sin(pitch), z:Math.cos(pitch)*Math.cos(yaw)};
+/* 캐릭터 — 정의와 메시 생성은 character.js(PengChar) 가 담당하고,
+   여기서는 받은 월드 좌표 면을 GPU 정점으로 옮기기만 한다.
+   덕분에 편집기(editor.html)와 게임이 항상 같은 모습을 그린다. */
+var MY_DESIGN = PengChar.load();
+function emitCharacter(px,py,pz,yaw,pitch,recoil,tint,walk,design){
+  var fs=PengChar.faces(design||MY_DESIGN, px,py,pz, yaw, pitch, walk||0, tint);
+  for(var i=0;i<fs.length;i++){ var f=fs[i], c=hexRGB(f.col);
+    quadGL(f.v, [c[0]*f.sh, c[1]*f.sh, c[2]*f.sh], f.line); }
+  // 손에 든 총 — 조준(pitch 포함) 기저에 부착
+  var ff={x:Math.cos(pitch)*Math.sin(yaw), y:Math.sin(pitch), z:Math.cos(pitch)*Math.cos(yaw)};
   var R={x:Math.cos(yaw),y:0,z:-Math.sin(yaw)};
-  var U={x:f.y*R.z-f.z*R.y, y:f.z*R.x-f.x*R.z, z:f.x*R.y-f.y*R.x};
-  // 몸 기저 — 수평(yaw)만
-  var HF={x:Math.sin(yaw),y:0,z:Math.cos(yaw)}, HU={x:0,y:1,z:0};
-  var O={x:px,y:py,z:pz}, eye={x:px,y:py+EYE,z:pz};
-  var sw=Math.sin(walk||0);
-
-  // 다리 — 좌우가 서로 반대로 흔들림
-  for(var s=-1;s<=1;s+=2){
-    var hip={ x:px+R.x*(s*c.legX), y:py+d.hipY, z:pz+R.z*(s*c.legX) };
-    limbGL(hip, R,HU,HF, d.legHalf, sw*c.swingLeg*s, 0, c.limbCol);
-  }
-  // 팔 — 총을 든 오른팔은 고정, 왼팔만 다리와 반대로 흔들림
-  for(var s2=-1;s2<=1;s2+=2){
-    var sh={ x:px+R.x*(s2*c.armX), y:py+d.shoulderY, z:pz+R.z*(s2*c.armX) };
-    var ang = (s2>0) ? 0.10 : sw*c.swingArm;
-    limbGL(sh, R,HU,HF, d.armHalf, ang, -s2*c.armSplay, c.limbCol);
-  }
-  // 몸통(원통) + 머리(반구)
-  var cylH=Math.max(0.05,(c.bodyTop-c.bodyBot)/2);
-  meshAtGL(cached('cyl'+c.bodyR.toFixed(3)+'_'+cylH.toFixed(3), function(){ return buildCylinder(c.bodyR,cylH); }),
-    px, py+c.bodyBot+cylH, pz, bodyCol);
-  meshAtGL(cached('dome'+c.headR.toFixed(3), function(){ return buildDome(c.headR); }),
-    px, py+c.bodyTop, pz, bodyCol);
-  // 큰 눈 — 반구 머리 앞면에. 시선(pitch)은 살짝만 반영
-  var ey=c.eyeY + Math.max(-0.09,Math.min(0.09,(pitch||0)*0.11));
-  for(var s3=-1;s3<=1;s3+=2){
-    meshGL(orientedBox([s3*c.eyeX, ey, d.eyeZ], d.eyeHalf, O, R,HU,HF), c.eyeCol, false, true);
-    meshGL(orientedBox([s3*c.eyeX, ey-0.008, d.pupZ], d.pupHalf, O, R,HU,HF), c.pupCol, false, true);
-  }
-  // 손에 든 총
-  var kick=(recoil||0)*(recoil||0);
+  var U={x:ff.y*R.z-ff.z*R.y, y:ff.z*R.x-ff.x*R.z, z:ff.x*R.y-ff.y*R.x};
+  var eye={x:px,y:py+EYE,z:pz}, kick=(recoil||0)*(recoil||0);
   for(var gi=0;gi<GUN.length;gi++){ var gp=GUN[gi];
-    var lc=[gp.lc[0]+GUN_TP[0], gp.lc[1]+GUN_TP[1]-0.05*kick, gp.lc[2]+GUN_TP[2]-0.16*kick];
-    meshGL(orientedBox(lc, gp.lh, eye, R, U, f), gp.col, true);
+    meshGL(orientedBox([gp.lc[0]+GUN_TP[0], gp.lc[1]+GUN_TP[1]-0.05*kick, gp.lc[2]+GUN_TP[2]-0.16*kick],
+      gp.lh, eye, R, U, ff), gp.col, true);
   }
 }
 
@@ -842,7 +752,7 @@ function mpDisconnect(){ if(MP.ws){ try{ MP.ws.onclose=null; MP.ws.close(); }cat
   if(chatting) closeChat(false); CHAT.length=0; renderChat(); mpStatus(); }
 function mpSend(o){ if(MP.ws&&MP.connected){ try{ MP.ws.send(JSON.stringify(o)); }catch(e){} } }
 // 내 캐릭터 외형을 팀원에게 알림(접속 직후 · 편집 저장 시)
-function mpSendCfg(){ if(MP.connected) mpSend({t:'cfg', c:CH}); }
+function mpSendCfg(){ if(MP.connected) mpSend({t:'cfg', c:MY_DESIGN}); }
 function mpHandle(m){
   if(m.t==='welcome'){ MP.id=m.id; }
   else if(m.t==='roster'){
@@ -868,15 +778,10 @@ function mpHandle(m){
     if(pe.buf.length>16)pe.buf.shift(); }
   else if(m.t==='bl'){ if(m.id===MP.id)return; if(sim&&!sim.win) spawnRemoteShot(sim,m); }
   else if(m.t==='ch'){ pushChat(m.name, m.text, m.id===MP.id); }
-  // 팀원 외형: 받은 값 중 기본 설정에 있는 키만, 숫자는 안전 범위로 제한해 적용
+  // 팀원 외형 — 남이 보낸 데이터이므로 PengChar.sanitize 로 안전한 값만 남긴다
   else if(m.t==='cfg'){ if(m.id===MP.id)return;
     var pe2=MP.peers[m.id]||(MP.peers[m.id]={buf:[]});
-    var c=chClone(CH_DEFAULT), src=m.c||{};
-    for(var k in CH_DEFAULT){ var v=src[k];
-      if(typeof CH_DEFAULT[k]==='number'){ if(typeof v==='number'&&isFinite(v)) c[k]=Math.max(-5,Math.min(5,v)); }
-      else if(typeof v==='string' && /^#[0-9a-fA-F]{6}$/.test(v)) c[k]=v; }
-    if(c.bodyTop<c.bodyBot+0.2) c.bodyTop=c.bodyBot+0.2;
-    pe2.cfg=c; }
+    try{ pe2.cfg=PengChar.sanitize(m.c||{}); }catch(e){} }
   else if(m.t==='left'){ delete MP.peers[m.id]; }
   mpStatus();
 }
@@ -929,7 +834,7 @@ function mpStatus(){ var el=document.getElementById('mpV'); if(!el)return;
 /* ---------- 메뉴 / 대기방 ---------- */
 // which: 'title' | 'joinScr' | 'lobbyScr' | 'win' | 'play'('play'는 전부 숨김)
 function showScreen(which){ mode=which;
-  ['title','joinScr','lobbyScr','win','editScr'].forEach(function(idn){
+  ['title','joinScr','lobbyScr','win'].forEach(function(idn){
     document.getElementById(idn).classList.toggle('off', idn!==which); });
 }
 function setWarn(t){ document.getElementById('mpWarn').innerHTML=t||''; }
@@ -953,6 +858,7 @@ function renderLobby(){
   hint.innerHTML += '<br>기다리는 동안 <b>자유롭게 연습</b>하세요 — 화면 클릭 후 이동·펑!<br>'+
     '<b>Esc</b> 로 마우스를 풀면 버튼을 누를 수 있어요 · <b>Enter</b> 채팅 · <b>R</b> 리스폰';
 }
+document.getElementById('editBtn').addEventListener('click',function(){ location.href='editor.html'; });
 document.getElementById('soloBtn').addEventListener('click',function(){ ensureAudio(); mpDisconnect(); startGame(); });
 document.getElementById('hostBtn').addEventListener('click',function(){ ensureAudio(); setWarn('서버에 연결 중…');
   mpConnect(mpCode(), function(){ setWarn(''); enterLobby(); },
@@ -988,80 +894,6 @@ document.getElementById('copyCode').addEventListener('click',function(e){ e.prev
   if(navigator.clipboard&&navigator.clipboard.writeText){ navigator.clipboard.writeText(c).then(function(){ e.target.textContent='복사됨!';
     setTimeout(function(){ e.target.textContent='코드 복사'; },1200); },function(){ prompt('세션 코드:',c); }); }
   else prompt('세션 코드:',c); });
-
-/* ---------- 캐릭터 편집기 ---------- */
-// [키, 라벨, 최소, 최대, 단계] / 'sec' 는 구분 제목, 'col' 은 색상
-var ED_SPEC=[
-  ['sec','몸통'],
-  ['bodyR','굵기',0.20,0.60,0.01], ['bodyBot','허리 높이',0.30,1.00,0.01], ['bodyTop','어깨 높이',0.80,1.70,0.01],
-  ['sec','머리'],
-  ['headR','크기',0.22,0.60,0.01],
-  ['sec','눈'],
-  ['eyeY','높이',1.10,2.00,0.01], ['eyeX','간격',0.05,0.30,0.005],
-  ['eyeW','너비',0.05,0.22,0.005], ['eyeH','세로',0.05,0.26,0.005],
-  ['sec','팔'],
-  ['armLen','길이',0.12,0.45,0.01], ['armW','굵기',0.03,0.14,0.005],
-  ['armX','간격',0.30,0.65,0.01], ['armSplay','벌어짐',0,0.5,0.01],
-  ['sec','다리'],
-  ['legW','굵기',0.03,0.14,0.005], ['legX','간격',0.05,0.30,0.005],
-  ['sec','걷기'],
-  ['swingLeg','다리 스윙',0,1.2,0.02], ['swingArm','팔 스윙',0,1.2,0.02],
-  ['sec','색'],
-  ['col','몸','col'], ['limbCol','팔다리','col'], ['eyeCol','흰자','col'], ['pupCol','눈동자','col']
-];
-var edYaw=0, edWalk=0, edPrev=0;
-function buildEditor(){
-  var host=document.getElementById('edControls'); host.innerHTML='';
-  ED_SPEC.forEach(function(sp){
-    if(sp[0]==='sec'){ var h=document.createElement('div'); h.className='edSec'; h.textContent=sp[1]; host.appendChild(h); return; }
-    var row=document.createElement('div'); row.className='edRow';
-    var lab=document.createElement('label'); lab.textContent=sp[1]; row.appendChild(lab);
-    if(sp[2]==='col'){
-      var ci=document.createElement('input'); ci.type='color'; ci.value=CH[sp[0]];
-      ci.addEventListener('input',function(){ CH[sp[0]]=ci.value; });
-      row.appendChild(ci);
-    } else {
-      var r=document.createElement('input'); r.type='range';
-      r.min=sp[2]; r.max=sp[3]; r.step=sp[4]; r.value=CH[sp[0]];
-      var v=document.createElement('span'); v.className='val'; v.textContent=(+CH[sp[0]]).toFixed(2);
-      r.addEventListener('input',function(){
-        var num=parseFloat(r.value); CH[sp[0]]=num; v.textContent=num.toFixed(2);
-        // 몸통 위/아래가 뒤집히지 않도록
-        if(CH.bodyTop<CH.bodyBot+0.2) CH.bodyTop=CH.bodyBot+0.2;
-      });
-      row.appendChild(r); row.appendChild(v);
-    }
-    host.appendChild(row);
-  });
-}
-function openEditor(){ buildEditor(); edYaw=0; edWalk=0; edPrev=0; showScreen('editScr'); }
-// 편집기 미리보기: 캐릭터를 원점에 세우고 카메라가 천천히 돈다
-function renderEditor(dt){
-  edYaw += dt*0.7; edWalk += dt*5.0;
-  var pivot={x:0,y:0.95,z:0}, D=3.4, ang=0.5, h=0.55;
-  CAMPOS={x:Math.sin(ang)*D, y:pivot.y+h, z:-Math.cos(ang)*D};
-  var fx=pivot.x-CAMPOS.x, fy=pivot.y-CAMPOS.y, fz=pivot.z-CAMPOS.z;
-  var fl=Math.hypot(fx,fy,fz)||1; CAMF={x:fx/fl,y:fy/fl,z:fz/fl};
-  var rl=Math.hypot(CAMF.z,-CAMF.x)||1; CAMR={x:CAMF.z/rl,y:0,z:-CAMF.x/rl};
-  CAMU={x:CAMF.y*CAMR.z-CAMF.z*CAMR.y, y:CAMF.z*CAMR.x-CAMF.x*CAMR.z, z:CAMF.x*CAMR.y-CAMF.y*CAMR.x};
-  var VP=mat4Mul(mat4Perspective(FOV, W/H, NEAR, FAR), mat4View(CAMPOS,CAMR,CAMU,CAMF));
-  TRI.length=0; LINE.length=0; BB.length=0;
-  meshGL(boxFaces(box(0,-0.35,0,1.6,0.35,1.6,'#2a3550')), '#2a3550', true);   // 받침대
-  emitCharacter(0,0,0, edYaw, 0, 0, null, edWalk);
-  gl.useProgram(PROG.main); gl.uniformMatrix4fv(PROG.main.uVP,false,VP);
-  gl.disable(gl.BLEND);
-  gl.enable(gl.POLYGON_OFFSET_FILL); gl.polygonOffset(1.0,1.0);
-  drawArr(BUF.tri, TRI, PROG.main, gl.TRIANGLES);
-  gl.disable(gl.POLYGON_OFFSET_FILL);
-  if(LINE.length) drawArr(BUF.line, LINE, PROG.main, gl.LINES);
-}
-document.getElementById('editBtn').addEventListener('click',function(){ ensureAudio(); openEditor(); });
-document.getElementById('edSaveBtn').addEventListener('click',function(){
-  chSave(); mpSendCfg();
-  var h=document.getElementById('edHint'); h.textContent='저장했습니다.';
-  setTimeout(function(){ h.textContent='드래그해서 조절 · 미리보기는 자동으로 걷고 회전합니다'; },1200); });
-document.getElementById('edResetBtn').addEventListener('click',function(){ CH=chClone(CH_DEFAULT); buildEditor(); });
-document.getElementById('edBackBtn').addEventListener('click',function(){ chSave(); mpSendCfg(); showScreen('title'); });
 
 /* ---------- 라이브 입력/루프 ---------- */
 var keys={}, locked=false, jumpEdge=false;

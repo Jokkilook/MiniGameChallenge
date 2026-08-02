@@ -1,0 +1,374 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>PENG! 캐릭터 편집기</title>
+<style>
+  :root{ --ink:#e8eef8; --dim:#8492ad; --line:#243044; --line2:#33425e;
+    --bg:#080b11; --panel:#0d1219; --acc:#4db3ff; --acc2:#2ee6b6; --warn:#ff6b5a;
+    --mono:ui-monospace,"Cascadia Mono","Consolas",monospace; }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%;overflow:hidden;background:var(--bg);color:var(--ink);
+    font-family:"Pretendard","Inter","Segoe UI","Malgun Gothic",sans-serif;font-weight:600;
+    -webkit-font-smoothing:antialiased}
+  #app{display:flex;height:100%}
+  #view{flex:1;position:relative;min-width:0;background:#04060a}
+  #cv{display:block;width:100%;height:100%}
+  #viewHint{position:absolute;left:12px;bottom:12px;font-size:11px;color:var(--dim);
+    background:rgba(8,11,17,.7);border-left:2px solid var(--acc);padding:6px 10px;pointer-events:none}
+  #side{width:340px;flex:none;border-left:1px solid var(--line);background:var(--panel);
+    display:flex;flex-direction:column;overflow:hidden}
+  header{padding:12px 14px;border-bottom:1px solid var(--line)}
+  header h1{margin:0;font-size:17px;font-weight:900;letter-spacing:-.5px}
+  header .sub{font-size:9px;letter-spacing:3px;color:var(--acc);font-weight:900;text-transform:uppercase}
+  .tabs{display:flex;border-bottom:1px solid var(--line)}
+  .tabs button{flex:1;background:transparent;border:0;border-bottom:2px solid transparent;color:var(--dim);
+    font:inherit;font-size:11.5px;font-weight:800;letter-spacing:1px;padding:9px 4px;cursor:pointer;text-transform:uppercase}
+  .tabs button.on{color:var(--acc);border-bottom-color:var(--acc)}
+  .pane{flex:1;overflow-y:auto;padding:10px 14px 16px;display:none}
+  .pane.on{display:block}
+  .plist{display:flex;flex-direction:column;gap:1px;margin-bottom:10px}
+  .pitem{display:flex;align-items:center;gap:7px;padding:7px 9px;background:rgba(255,255,255,.03);
+    border-left:3px solid transparent;cursor:pointer;font-size:12.5px;font-weight:700}
+  .pitem:hover{background:rgba(255,255,255,.06)}
+  .pitem.sel{border-left-color:var(--acc);background:rgba(77,179,255,.12)}
+  .pitem .sw{width:11px;height:11px;flex:none;border:1px solid rgba(255,255,255,.35)}
+  .pitem .bn{margin-left:auto;font-size:9.5px;font-weight:800;letter-spacing:1px;color:var(--dim)}
+  .pitem.hidden{opacity:.4}
+  .row{display:flex;align-items:center;gap:8px;margin:5px 0}
+  .row label{flex:0 0 74px;font-size:10.5px;font-weight:800;letter-spacing:.6px;color:#9dabc4;text-transform:uppercase}
+  .row input[type=range]{flex:1;-webkit-appearance:none;appearance:none;height:2px;background:var(--line2);outline:none;margin:0}
+  .row input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:11px;height:15px;background:var(--acc);cursor:pointer;border:0}
+  .row .val{flex:0 0 44px;text-align:right;font-family:var(--mono);font-size:11px;font-weight:700}
+  .row input[type=color]{flex:1;height:22px;padding:0;border:1px solid var(--line2);background:transparent;cursor:pointer}
+  .row input[type=text],.row select{flex:1;background:transparent;border:1px solid var(--line2);color:var(--ink);
+    font:inherit;font-size:12px;padding:5px 7px;outline:none;border-radius:0}
+  .row input[type=text]:focus,.row select:focus{border-color:var(--acc)}
+  .sec{margin-top:12px;padding-top:8px;border-top:1px solid var(--line);
+    font-size:9.5px;font-weight:900;letter-spacing:2.4px;color:var(--acc);text-transform:uppercase}
+  .btns{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}
+  button.b{cursor:pointer;font:inherit;font-size:11.5px;font-weight:800;letter-spacing:1px;text-transform:uppercase;
+    color:var(--ink);background:transparent;border:1px solid var(--line2);padding:8px 11px;border-radius:0;
+    transition:border-color .12s,color .12s,background .12s}
+  button.b:hover{border-color:var(--acc);color:var(--acc)}
+  button.b.pri{background:var(--acc);border-color:var(--acc);color:#03080f}
+  button.b.pri:hover{background:#7cc8ff;border-color:#7cc8ff;color:#03080f}
+  button.b.danger:hover{border-color:var(--warn);color:var(--warn)}
+  footer{border-top:1px solid var(--line);padding:10px 14px}
+  #status{font-size:11px;color:var(--dim);min-height:16px;margin-top:6px}
+  textarea{width:100%;height:150px;background:#05070c;border:1px solid var(--line2);color:var(--ink);
+    font-family:var(--mono);font-size:11px;padding:8px;outline:none;resize:vertical;border-radius:0}
+  textarea:focus{border-color:var(--acc)}
+  .note{font-size:11px;color:var(--dim);line-height:1.6;margin:6px 0}
+  .note b{color:var(--ink)}
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="view">
+    <canvas id="cv"></canvas>
+    <div id="viewHint">드래그 = 회전 · 휠 = 확대/축소 · 우클릭 드래그 = 상하 이동</div>
+  </div>
+  <div id="side">
+    <header>
+      <div class="sub">PENG! Character</div>
+      <h1>캐릭터 편집기</h1>
+    </header>
+    <div class="tabs">
+      <button id="tabParts" class="on">부품</button>
+      <button id="tabRig">관절·걷기</button>
+      <button id="tabIO">저장</button>
+    </div>
+
+    <div class="pane on" id="paneParts">
+      <div class="plist" id="plist"></div>
+      <div class="btns">
+        <button class="b" data-add="box">+ 박스</button>
+        <button class="b" data-add="cyl">+ 원통</button>
+        <button class="b" data-add="dome">+ 반구</button>
+        <button class="b" data-add="sph">+ 구</button>
+      </div>
+      <div class="btns">
+        <button class="b" id="dupBtn">복제</button>
+        <button class="b" id="hideBtn">숨김</button>
+        <button class="b danger" id="delBtn">삭제</button>
+      </div>
+      <div id="props"></div>
+    </div>
+
+    <div class="pane" id="paneRig"></div>
+
+    <div class="pane" id="paneIO">
+      <p class="note">저장하면 같은 브라우저의 <b>게임에 바로 적용</b>됩니다.
+        다른 PC로 옮기려면 아래 JSON을 복사해 붙여넣으세요.</p>
+      <div class="btns">
+        <button class="b pri" id="saveBtn">게임에 저장</button>
+        <button class="b" id="reloadBtn">저장본 불러오기</button>
+        <button class="b danger" id="resetBtn">기본값</button>
+      </div>
+      <div class="sec">JSON</div>
+      <textarea id="json" spellcheck="false"></textarea>
+      <div class="btns">
+        <button class="b" id="copyBtn">복사</button>
+        <button class="b" id="applyBtn">붙여넣은 것 적용</button>
+        <button class="b" id="fileBtn">파일로 내보내기</button>
+      </div>
+    </div>
+
+    <footer>
+      <div class="btns">
+        <button class="b pri" id="saveBtn2">저장</button>
+        <button class="b" id="playBtn">게임으로</button>
+        <label class="b" style="display:flex;align-items:center;gap:6px;cursor:pointer">
+          <input type="checkbox" id="walkChk" checked style="accent-color:#4db3ff"> 걷기
+        </label>
+      </div>
+      <div id="status"></div>
+    </footer>
+  </div>
+</div>
+
+<script src="character.js"></script>
+<script>
+"use strict";
+(function(){
+var cv=document.getElementById('cv');
+var gl=cv.getContext('webgl',{antialias:true,alpha:false,depth:true})||cv.getContext('experimental-webgl');
+if(!gl){ document.body.innerHTML='<p style="padding:24px">이 브라우저에서 WebGL을 쓸 수 없습니다.</p>'; return; }
+
+/* ---------- 셰이더 ---------- */
+function prog(vs,fs){
+  function sh(t,s){ var o=gl.createShader(t); gl.shaderSource(o,s); gl.compileShader(o);
+    if(!gl.getShaderParameter(o,gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(o)); return o; }
+  var p=gl.createProgram(); gl.attachShader(p,sh(gl.VERTEX_SHADER,vs)); gl.attachShader(p,sh(gl.FRAGMENT_SHADER,fs));
+  gl.linkProgram(p); if(!gl.getProgramParameter(p,gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(p));
+  return p;
+}
+var P=prog('attribute vec3 aPos;attribute vec3 aCol;uniform mat4 uVP;varying vec3 vCol;'+
+           'void main(){vCol=aCol;gl_Position=uVP*vec4(aPos,1.0);}',
+           'precision mediump float;varying vec3 vCol;void main(){gl_FragColor=vec4(vCol,1.0);}');
+P.aPos=gl.getAttribLocation(P,'aPos'); P.aCol=gl.getAttribLocation(P,'aCol'); P.uVP=gl.getUniformLocation(P,'uVP');
+var BT=gl.createBuffer(), BL=gl.createBuffer();
+gl.enable(gl.DEPTH_TEST); gl.depthFunc(gl.LEQUAL); gl.disable(gl.CULL_FACE);
+
+function persp(fovy,asp,n,fr){ var f=1/Math.tan(fovy/2), nf=1/(n-fr);
+  return [f/asp,0,0,0, 0,f,0,0, 0,0,(fr+n)*nf,-1, 0,0,2*fr*n*nf,0]; }
+function view(pos,R,U,F){ return [R.x,U.x,-F.x,0, R.y,U.y,-F.y,0, R.z,U.z,-F.z,0,
+  -(R.x*pos.x+R.y*pos.y+R.z*pos.z), -(U.x*pos.x+U.y*pos.y+U.z*pos.z), (F.x*pos.x+F.y*pos.y+F.z*pos.z), 1]; }
+function mul(a,b){ var o=new Float32Array(16);
+  for(var c=0;c<4;c++)for(var r=0;r<4;r++){ var s=0; for(var k=0;k<4;k++)s+=a[k*4+r]*b[c*4+k]; o[c*4+r]=s; } return o; }
+function rgb(h){ return [parseInt(h.substr(1,2),16)/255,parseInt(h.substr(3,2),16)/255,parseInt(h.substr(5,2),16)/255]; }
+
+/* ---------- 상태 ---------- */
+var design=PengChar.load();
+var sel=0, walkOn=true, walk=0, camYaw=0.6, camPitch=0.18, camDist=3.6, camY=1.0, last=0;
+
+/* ---------- 렌더 ---------- */
+var TRI=[], LINE=[];
+function tri(p,c){ TRI.push(p[0],p[1],p[2],c[0],c[1],c[2]); }
+function quad(v,c,line,hi){
+  tri(v[0],c);tri(v[1],c);tri(v[2],c); tri(v[0],c);tri(v[2],c);tri(v[3],c);
+  if(line||hi){ var e=hi?[0.30,0.70,1.0]:[0,0,0];
+    for(var i=0;i<4;i++){ var a=v[i],b=v[(i+1)%4];
+      LINE.push(a[0],a[1],a[2],e[0],e[1],e[2], b[0],b[1],b[2],e[0],e[1],e[2]); } }
+}
+function grid(){
+  var c=[0.16,0.21,0.30];
+  for(var i=-4;i<=4;i++){ var t=i*0.5;
+    LINE.push(-2,0,t,c[0],c[1],c[2], 2,0,t,c[0],c[1],c[2]);
+    LINE.push(t,0,-2,c[0],c[1],c[2], t,0,2,c[0],c[1],c[2]); }
+  LINE.push(0,0,0,0.9,0.35,0.25, 0.6,0,0,0.9,0.35,0.25);   // +X 빨강
+  LINE.push(0,0,0,0.30,0.85,0.45, 0,0,0.6,0.30,0.85,0.45); // +Z 초록(정면)
+  LINE.push(0,0,0,0.35,0.6,1.0, 0,0.6,0,0.35,0.6,1.0);     // +Y 파랑
+}
+function draw(){
+  var w=cv.clientWidth||900, h=cv.clientHeight||600, dpr=Math.min(2,devicePixelRatio||1);
+  if(cv.width!==Math.round(w*dpr)||cv.height!==Math.round(h*dpr)){ cv.width=Math.round(w*dpr); cv.height=Math.round(h*dpr); }
+  gl.viewport(0,0,cv.width,cv.height);
+  gl.clearColor(0.03,0.04,0.06,1); gl.clear(gl.COLOR_BUFFER_BIT|gl.DEPTH_BUFFER_BIT);
+  var pivot={x:0,y:camY,z:0};
+  var cp=Math.max(-1.4,Math.min(1.4,camPitch));
+  var F={x:Math.cos(cp)*Math.sin(camYaw), y:Math.sin(cp), z:Math.cos(cp)*Math.cos(camYaw)};
+  var pos={x:pivot.x-F.x*camDist, y:pivot.y-F.y*camDist, z:pivot.z-F.z*camDist};
+  var R={x:Math.cos(camYaw),y:0,z:-Math.sin(camYaw)};
+  var U={x:F.y*R.z-F.z*R.y, y:F.z*R.x-F.x*R.z, z:F.x*R.y-F.y*R.x};
+  var VP=mul(persp(60*Math.PI/180, w/h, 0.05, 100), view(pos,R,U,F));
+
+  TRI.length=0; LINE.length=0; grid();
+  // 선택 부품만 하이라이트하기 위해 부품별로 따로 그린다
+  for(var i=0;i<design.parts.length;i++){
+    var p=design.parts[i]; if(p.off) continue;
+    var one={rig:design.rig, parts:[p]};
+    var fs=PengChar.faces(one, 0,0,0, 0, 0, walkOn?walk:0, null);
+    for(var k=0;k<fs.length;k++){ var f=fs[k], c=rgb(f.col);
+      quad(f.v, [c[0]*f.sh, c[1]*f.sh, c[2]*f.sh], f.line, i===sel); }
+  }
+  gl.useProgram(P); gl.uniformMatrix4fv(P.uVP,false,VP);
+  gl.enable(gl.POLYGON_OFFSET_FILL); gl.polygonOffset(1,1);
+  arr(BT,TRI,gl.TRIANGLES); gl.disable(gl.POLYGON_OFFSET_FILL);
+  arr(BL,LINE,gl.LINES);
+}
+function arr(buf,a,mode){ if(!a.length)return;
+  gl.bindBuffer(gl.ARRAY_BUFFER,buf); gl.bufferData(gl.ARRAY_BUFFER,new Float32Array(a),gl.DYNAMIC_DRAW);
+  gl.enableVertexAttribArray(P.aPos); gl.vertexAttribPointer(P.aPos,3,gl.FLOAT,false,24,0);
+  gl.enableVertexAttribArray(P.aCol); gl.vertexAttribPointer(P.aCol,3,gl.FLOAT,false,24,12);
+  gl.drawArrays(mode,0,a.length/6); }
+function loop(t){ var dt=Math.min(0.05,(t-last)/1000)||0; last=t;
+  if(walkOn) walk+=dt*5.0;
+  draw(); requestAnimationFrame(loop); }
+
+/* ---------- 카메라 조작 ---------- */
+var drag=null;
+cv.addEventListener('mousedown',function(e){ drag={b:e.button,x:e.clientX,y:e.clientY}; e.preventDefault(); });
+window.addEventListener('mouseup',function(){ drag=null; });
+window.addEventListener('mousemove',function(e){ if(!drag)return;
+  var dx=e.clientX-drag.x, dy=e.clientY-drag.y; drag.x=e.clientX; drag.y=e.clientY;
+  if(drag.b===2){ camY -= dy*0.005; }
+  else { camYaw -= dx*0.008; camPitch = Math.max(-1.3,Math.min(1.3,camPitch + dy*0.006)); } });
+cv.addEventListener('contextmenu',function(e){ e.preventDefault(); });
+cv.addEventListener('wheel',function(e){ camDist=Math.max(0.8,Math.min(12,camDist*(1+Math.sign(e.deltaY)*0.1))); e.preventDefault(); },{passive:false});
+
+/* ---------- UI: 부품 목록 ---------- */
+var plist=document.getElementById('plist'), props=document.getElementById('props');
+function refreshList(){
+  plist.innerHTML='';
+  design.parts.forEach(function(p,i){
+    var d=document.createElement('div'); d.className='pitem'+(i===sel?' sel':'')+(p.off?' hidden':'');
+    var sw=document.createElement('span'); sw.className='sw'; sw.style.background=p.col||'#ccc'; d.appendChild(sw);
+    var nm=document.createElement('span'); nm.textContent=p.n||('부품'+(i+1)); d.appendChild(nm);
+    var bn=document.createElement('span'); bn.className='bn'; bn.textContent=PengChar.BONE_LABEL[p.bone]||p.bone; d.appendChild(bn);
+    d.addEventListener('click',function(){ sel=i; refreshList(); refreshProps(); });
+    plist.appendChild(d);
+  });
+}
+function mkRow(label, node){ var r=document.createElement('div'); r.className='row';
+  var l=document.createElement('label'); l.textContent=label; r.appendChild(l); r.appendChild(node); return r; }
+function slider(obj,k,lo,hi,st,onch){
+  var wrap=document.createDocumentFragment();
+  var i=document.createElement('input'); i.type='range'; i.min=lo; i.max=hi; i.step=st; i.value=obj[k]!=null?obj[k]:0;
+  var v=document.createElement('span'); v.className='val'; v.textContent=(+i.value).toFixed(3);
+  i.addEventListener('input',function(){ obj[k]=parseFloat(i.value); v.textContent=(+i.value).toFixed(3); if(onch)onch(); });
+  wrap.appendChild(i); wrap.appendChild(v); return wrap;
+}
+function refreshProps(){
+  props.innerHTML='';
+  var p=design.parts[sel]; if(!p){ return; }
+  var s=document.createElement('div'); s.className='sec'; s.textContent='선택: '+(p.n||''); props.appendChild(s);
+  // 이름
+  var nm=document.createElement('input'); nm.type='text'; nm.value=p.n||'';
+  nm.addEventListener('input',function(){ p.n=nm.value.slice(0,20); refreshList(); });
+  props.appendChild(mkRow('이름',nm));
+  // 뼈대
+  var bs=document.createElement('select');
+  PengChar.BONES.forEach(function(b){ var o=document.createElement('option'); o.value=b;
+    o.textContent=PengChar.BONE_LABEL[b]; if(p.bone===b)o.selected=true; bs.appendChild(o); });
+  bs.addEventListener('change',function(){ p.bone=bs.value; refreshList(); });
+  props.appendChild(mkRow('붙일 곳',bs));
+  // 위치
+  var sp=document.createElement('div'); sp.className='sec'; sp.textContent='위치'; props.appendChild(sp);
+  props.appendChild(mkRow('좌우 X', slider(p,'x',-1.2,1.2,0.005)));
+  props.appendChild(mkRow('높이 Y', slider(p,'y',-1.5,2.4,0.005)));
+  props.appendChild(mkRow('앞뒤 Z', slider(p,'z',-1.2,1.2,0.005)));
+  // 크기
+  var ss=document.createElement('div'); ss.className='sec'; ss.textContent='크기'; props.appendChild(ss);
+  if(p.type==='box'){
+    props.appendChild(mkRow('가로', slider(p,'sx',0.005,1.2,0.005)));
+    props.appendChild(mkRow('세로', slider(p,'sy',0.005,1.2,0.005)));
+    props.appendChild(mkRow('두께', slider(p,'sz',0.005,1.2,0.005)));
+  } else {
+    props.appendChild(mkRow('반지름', slider(p,'r',0.01,1.2,0.005)));
+    if(p.type==='cyl') props.appendChild(mkRow('높이', slider(p,'h',0.005,1.2,0.005)));
+  }
+  // 색·옵션
+  var cs=document.createElement('div'); cs.className='sec'; cs.textContent='모양'; props.appendChild(cs);
+  var ci=document.createElement('input'); ci.type='color'; ci.value=p.col||'#cccccc';
+  ci.addEventListener('input',function(){ p.col=ci.value; refreshList(); });
+  props.appendChild(mkRow('색',ci));
+  var fl=document.createElement('input'); fl.type='checkbox'; fl.checked=!!p.flat; fl.style.accentColor='#4db3ff';
+  fl.addEventListener('change',function(){ if(fl.checked)p.flat=1; else delete p.flat; });
+  props.appendChild(mkRow('음영 없음',fl));
+  var ln=document.createElement('input'); ln.type='checkbox'; ln.checked=!!p.line; ln.style.accentColor='#4db3ff';
+  ln.addEventListener('change',function(){ if(ln.checked)p.line=1; else delete p.line; });
+  props.appendChild(mkRow('외곽선',ln));
+}
+/* ---------- UI: 관절/걷기 ---------- */
+function buildRig(){
+  var host=document.getElementById('paneRig'); host.innerHTML='';
+  var r=design.rig;
+  function sec(t){ var d=document.createElement('div'); d.className='sec'; d.textContent=t; host.appendChild(d); }
+  sec('어깨');
+  host.appendChild(mkRow('좌우', slider(r,'shoulderX',0,1.0,0.005)));
+  host.appendChild(mkRow('높이', slider(r,'shoulderY',0,2.4,0.005)));
+  sec('엉덩이');
+  host.appendChild(mkRow('좌우', slider(r,'hipX',0,1.0,0.005)));
+  host.appendChild(mkRow('높이', slider(r,'hipY',0,2.0,0.005)));
+  sec('걷기');
+  host.appendChild(mkRow('팔 스윙', slider(r,'swingArm',0,1.4,0.01)));
+  host.appendChild(mkRow('다리 스윙', slider(r,'swingLeg',0,1.4,0.01)));
+  host.appendChild(mkRow('팔 벌어짐', slider(r,'armSplay',0,0.6,0.01)));
+  sec('기타');
+  var ga=document.createElement('select');
+  [['armR','오른팔'],['armL','왼팔']].forEach(function(o){ var e=document.createElement('option');
+    e.value=o[0]; e.textContent=o[1]; if(r.gunArm===o[0])e.selected=true; ga.appendChild(e); });
+  ga.addEventListener('change',function(){ r.gunArm=ga.value; });
+  host.appendChild(mkRow('총 든 팔',ga));
+  host.appendChild(mkRow('눈높이(카메라)', slider(r,'eyeH',0.8,2.4,0.01)));
+}
+/* ---------- 버튼 ---------- */
+function status(t){ document.getElementById('status').textContent=t;
+  setTimeout(function(){ var s=document.getElementById('status'); if(s.textContent===t)s.textContent=''; },2200); }
+[].forEach.call(document.querySelectorAll('[data-add]'),function(b){
+  b.addEventListener('click',function(){
+    var t=b.getAttribute('data-add');
+    var p={n:({box:'박스',cyl:'원통',dome:'반구',sph:'구'})[t], bone:'body', type:t, x:0,y:1.0,z:0, col:'#8fa3c8'};
+    if(t==='box'){ p.sx=0.12;p.sy=0.12;p.sz=0.12; } else { p.r=0.15; if(t==='cyl')p.h=0.15; }
+    design.parts.push(p); sel=design.parts.length-1; refreshList(); refreshProps(); status('부품을 추가했습니다');
+  });
+});
+document.getElementById('dupBtn').addEventListener('click',function(){
+  var p=design.parts[sel]; if(!p)return;
+  var c=JSON.parse(JSON.stringify(p)); c.n=(c.n||'부품')+' 복사';
+  design.parts.splice(sel+1,0,c); sel++; refreshList(); refreshProps(); });
+document.getElementById('delBtn').addEventListener('click',function(){
+  if(design.parts.length<=1) { status('부품이 하나뿐입니다'); return; }
+  design.parts.splice(sel,1); sel=Math.max(0,sel-1); refreshList(); refreshProps(); });
+document.getElementById('hideBtn').addEventListener('click',function(){
+  var p=design.parts[sel]; if(!p)return; if(p.off)delete p.off; else p.off=1; refreshList(); });
+function tab(btn,pane){ ['tabParts','tabRig','tabIO'].forEach(function(b){ document.getElementById(b).classList.toggle('on', b===btn); });
+  ['paneParts','paneRig','paneIO'].forEach(function(p){ document.getElementById(p).classList.toggle('on', p===pane); }); }
+document.getElementById('tabParts').addEventListener('click',function(){ tab('tabParts','paneParts'); });
+document.getElementById('tabRig').addEventListener('click',function(){ buildRig(); tab('tabRig','paneRig'); });
+document.getElementById('tabIO').addEventListener('click',function(){ syncJSON(); tab('tabIO','paneIO'); });
+function syncJSON(){ document.getElementById('json').value=JSON.stringify(design,null,1); }
+function doSave(){ design=PengChar.sanitize(design);
+  if(PengChar.save(design)){ status('저장했습니다 — 게임에 적용됩니다'); } else { status('저장 실패(저장소 사용 불가)'); }
+  refreshList(); refreshProps(); }
+document.getElementById('saveBtn').addEventListener('click',doSave);
+document.getElementById('saveBtn2').addEventListener('click',doSave);
+document.getElementById('reloadBtn').addEventListener('click',function(){ design=PengChar.load(); sel=0;
+  refreshList(); refreshProps(); syncJSON(); status('저장본을 불러왔습니다'); });
+document.getElementById('resetBtn').addEventListener('click',function(){ design=PengChar.clone(PengChar.DEFAULT); sel=0;
+  refreshList(); refreshProps(); syncJSON(); status('기본값으로 되돌렸습니다'); });
+document.getElementById('copyBtn').addEventListener('click',function(){ syncJSON();
+  var t=document.getElementById('json'); t.select();
+  if(navigator.clipboard) navigator.clipboard.writeText(t.value).then(function(){ status('복사했습니다'); },function(){ status('직접 복사하세요'); });
+  else status('직접 복사하세요'); });
+document.getElementById('applyBtn').addEventListener('click',function(){
+  try{ var d=JSON.parse(document.getElementById('json').value);
+    if(!d||!d.parts||!d.rig) throw new Error('형식이 다릅니다');
+    design=PengChar.sanitize(d); sel=0; refreshList(); refreshProps(); status('적용했습니다 — 저장을 눌러야 게임에 반영됩니다');
+  }catch(e){ status('JSON 오류: '+e.message); } });
+document.getElementById('fileBtn').addEventListener('click',function(){ syncJSON();
+  var blob=new Blob([document.getElementById('json').value],{type:'application/json'});
+  var a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='peng-character.json';
+  a.click(); setTimeout(function(){ URL.revokeObjectURL(a.href); },1000); status('파일로 내보냈습니다'); });
+document.getElementById('playBtn').addEventListener('click',function(){ doSave(); location.href='index.html'; });
+document.getElementById('walkChk').addEventListener('change',function(e){ walkOn=e.target.checked; });
+
+refreshList(); refreshProps(); buildRig(); syncJSON();
+requestAnimationFrame(loop);
+})();
+</script>
+</body>
+</html>
