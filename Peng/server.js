@@ -124,6 +124,7 @@ var server = http.createServer(function(req, res){
 /* ---------- 순수 WebSocket 구현 ---------- */
 var GUID = '258EAFA5-E914-47DA-95CA-C5AB0DC85B11';
 var rooms = {};        // room -> { id -> client }
+var roomLevel = {};    // room -> 호스트가 고른 맵 id (대기방에서도 같은 코스를 보도록)
 var nextId = 1;
 
 function roomOf(url){ var m = /[?&]room=([^&]+)/.exec(url || ''); return m ? decodeURIComponent(m[1]).slice(0,40) : 'lobby'; }
@@ -171,7 +172,7 @@ server.on('upgrade', function(req, socket){
     if(closed) return; closed = true;
     var r = rooms[room]; if(r){ delete r[id];
       broadcast(room, id, JSON.stringify({ t:'left', id:id }));
-      if(Object.keys(r).length === 0) delete rooms[room]; else sendRoster(room);
+      if(Object.keys(r).length === 0){ delete rooms[room]; delete roomLevel[room]; } else sendRoster(room);
     }
     try{ socket.destroy(); }catch(e){}
     log('left', 'room='+room, 'id='+id);
@@ -181,12 +182,26 @@ server.on('upgrade', function(req, socket){
     if(m.t === 'join'){
       if(typeof m.name === 'string') client.name = m.name.slice(0,24);
       sendRoster(room);
+      // 호스트가 이미 고른 맵이 있으면 새로 온 사람도 같은 코스를 보게 한다
+      if(roomLevel[room]) send(socket, JSON.stringify({ t:'lvl', level:roomLevel[room] }));
       // 이미 방에 있던 사람들의 외형을 새로 들어온 사람에게 전달
       var r0 = rooms[room];
       if(r0) Object.keys(r0).forEach(function(k){
         var o = r0[k];
         if(o.id !== id && o.cfg) send(socket, JSON.stringify({ t:'cfg', id:o.id, c:o.cfg }));
       });
+      return;
+    }
+    /* 대기방에서 호스트가 고른 맵을 방 전원에게 알린다.
+       대기방이 연습장이 되면서 월드가 실제로 보이기 때문에, 시작할 때만 맞추면
+       기다리는 동안 각자 다른 코스를 렌더해 상대가 허공에 떠 보인다.
+       나중에 들어온 사람에게도 알려야 하므로 방에 마지막 값을 기억해 둔다. */
+    if(m.t === 'lvl'){
+      if(id !== hostOf(room)) return;          // 맵을 정하는 건 호스트뿐
+      var lid = (typeof m.level === 'string') ? m.level.slice(0,40) : null;
+      if(!lid) return;
+      roomLevel[room] = lid;
+      broadcast(room, id, JSON.stringify({ t:'lvl', level:lid }));
       return;
     }
     if(m.t === 'start'){                       // 호스트만 시작시킬 수 있다

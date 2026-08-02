@@ -155,7 +155,7 @@
   <p style="color:#b7c3d8;letter-spacing:5px;font-size:12.5px;font-weight:800;text-transform:uppercase;margin:8px 0 16px">공기폭발 협동 질주</p>
   <p><b>PoofGun</b>은 닿는 곳에서 공기를 <b>뻥</b> 터뜨려 사람을 날린다.<br>
      발밑을 쏴 <b>로켓점프</b>로 못 넘는 협곡을 넘어 <b>결승선(초록)</b>까지!</p>
-  <p class="hint"><kbd>WASD</kbd> 이동 · <kbd>마우스</kbd> 시점 · <kbd>좌클릭</kbd> 펑! · <kbd>Space</kbd> 점프 · <kbd>R</kbd> 리스폰 · <kbd>V</kbd> 3인칭 · <kbd>Enter</kbd> 채팅<br>화면을 클릭하면 마우스가 잠깁니다(FPS). <kbd>ESC</kbd>로 해제.</p>
+  <p class="hint"><kbd>WASD</kbd> 이동 · <kbd>마우스</kbd> 시점 · <kbd>좌클릭</kbd> 펑! · <kbd>Space</kbd> 점프 · <kbd>R</kbd> 리스폰 · <kbd>V</kbd> 시점 전환(1·3인칭) · <kbd>Enter</kbd> 채팅<br>화면을 클릭하면 마우스가 잠깁니다. <kbd>ESC</kbd>로 해제.</p>
   <label class="pick">맵 <select id="mapSel"></select></label>
   <div class="menu">
     <button class="go" id="soloBtn">혼자 플레이</button>
@@ -289,7 +289,7 @@ var COYOTE=_P.COYOTE, JUMP_BUF=_P.JUMP_BUF, PITCH_LIM=_P.PITCH_LIM, FUSE_R=_P.FU
 function makeSim(){  // practice 를 켜면 기록/승리 없이 자유 연습
   var s=LEVEL.start;
   return { p:{x:s.x,y:s.y,z:s.z}, v:{x:0,y:0,z:0}, yaw:0, pitch:0, onGround:false,
-    ammo:AMMO_MAX, ammoT:0, t:0, cpIdx:0, win:false, blasts:[], particles:[], projectiles:[], shake:0, _fireCd:0, tp:false, recoil:0, kb:0,
+    ammo:AMMO_MAX, ammoT:0, t:0, cpIdx:0, win:false, blasts:[], particles:[], projectiles:[], shake:0, _fireCd:0, tp:true, recoil:0, kb:0,   // tp:true = 기본 3인칭 (V 로 전환)
     coyote:0, jumped:false };
 }
 function aabbHit(px,py,pz, b){ // 플레이어 중심(px,py+PH_HY,pz) vs 박스
@@ -804,6 +804,9 @@ function mpHandle(m){
   // 맵 id 를 함께 받는다. 맵이 여러 개가 된 뒤로는 이게 없으면 둘이 서로 다른
   // 코스에서 뛰게 된다(상대는 허공을 달리는 것처럼 보인다).
   else if(m.t==='start'){ startGame(m.level); }
+  // 호스트가 대기방에서 고른 맵 — 기다리는 동안에도 같은 코스를 보도록 즉시 반영
+  else if(m.t==='lvl'){ if(m.level && m.level!==CURLEVEL && setLevel(m.level)){
+      syncMapPickers(); applyLevelToPractice(); } }
   else if(m.t==='st'){ if(m.id===MP.id)return; var pe=MP.peers[m.id]||(MP.peers[m.id]={buf:[]});
     if(!pe.buf)pe.buf=[];
     pe.name=m.name||pe.name; pe.seen=performance.now();
@@ -898,7 +901,12 @@ function fillMapPickers(){
       sel.appendChild(o);
     });
     sel.value=CURLEVEL;
-    sel.addEventListener('change',function(){ setLevel(sel.value); syncMapPickers(); });
+    sel.addEventListener('change',function(){
+      if(!setLevel(sel.value)) return;
+      syncMapPickers();
+      applyLevelToPractice();                    // 대기방 연습장을 새 맵으로 교체
+      if(mpIsHost()) mpSend({t:'lvl', level:CURLEVEL});   // 팀원도 같은 코스를 보게
+    });
   });
   syncMapPickers();
 }
@@ -933,7 +941,7 @@ function renderLobby(){
 }
 document.getElementById('soloBtn').addEventListener('click',function(){ ensureAudio(); mpDisconnect(); startGame(); });
 document.getElementById('hostBtn').addEventListener('click',function(){ ensureAudio(); setWarn('서버에 연결 중…');
-  mpConnect(mpCode(), function(){ setWarn(''); enterLobby(); },
+  mpConnect(mpCode(), function(){ setWarn(''); enterLobby(); mpSend({t:'lvl', level:CURLEVEL}); },
     function(){ setWarn(noServerMsg()); }); });
 // 왜 연결이 안 되는지 현재 주소를 보고 구체적으로 안내
 function noServerMsg(){
@@ -970,6 +978,11 @@ document.getElementById('copyCode').addEventListener('click',function(e){ e.prev
 /* ---------- 라이브 입력/루프 ---------- */
 var keys={}, locked=false, jumpEdge=false;
 // levelId 를 주면 그 맵으로 바꿔서 시작한다(멀티: 호스트가 고른 맵). 없으면 현재 맵 유지.
+// 맵이 바뀌면 대기방 연습 캐릭터를 새 맵 시작점으로 옮긴다(예전 맵 좌표에 남으면 허공에 뜬다)
+function applyLevelToPractice(){
+  if(mode!=='lobbyScr') return;
+  sim=makeSim(); sim.practice=true; acc=0; last=0;
+}
 // 대기방 = 연습장. 기다리는 동안 실제로 움직이고 쏴볼 수 있다(기록은 세지 않음).
 function enterLobby(levelId){
   if(levelId) setLevel(levelId);
