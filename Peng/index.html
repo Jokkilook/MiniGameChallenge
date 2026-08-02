@@ -209,8 +209,19 @@ function doFire(s){
     dx:d.x, dy:d.y, dz:d.z, gone:0, dist:Math.max(0.05,tHit-start),
     bx:center.x, by:center.y, bz:center.z });
   sndShoot();
-  if(typeof mpSend==='function') mpSend({t:'bl', x:center.x, y:center.y, z:center.z}); // 팀원 넉백용 브로드캐스트
+  // 팀원에게 브로드캐스트: 폭발 지점 + 총구 원점(상대 화면에서 탄환이 날아가 보이도록)
+  if(typeof mpSend==='function') mpSend({t:'bl', x:center.x, y:center.y, z:center.z, ox:o.x, oy:o.y, oz:o.z});
   return true;
+}
+// 팀원이 쏜 탄환: 상대 총구에서 폭발 지점까지 날아가는 걸 보여주고, 도착 시 나에게 넉백+연출
+function spawnRemoteShot(s, m){
+  var ox=(m.ox!=null)?m.ox:m.x, oy=(m.oy!=null)?m.oy:m.y, oz=(m.oz!=null)?m.oz:m.z;
+  var dx=m.x-ox, dy=m.y-oy, dz=m.z-oz, L=Math.hypot(dx,dy,dz);
+  if(L<0.05){ applyBlast(s,m.x,m.y,m.z); blastFx(s,m.x,m.y,m.z); return; }
+  dx/=L; dy/=L; dz/=L;
+  var start=Math.min(0.6, L*0.5);
+  s.projectiles.push({ x:ox+dx*start, y:oy+dy*start, z:oz+dz*start, dx:dx, dy:dy, dz:dz,
+    gone:0, dist:Math.max(0.05,L-start), bx:m.x, by:m.y, bz:m.z, hitMe:true });
 }
 // 폭발 넉백(자기/원격 공용): 중심 기준으로 플레이어를 민다
 function applyBlast(s, cx, cy, cz){
@@ -252,7 +263,7 @@ function stepSim(s, dt, inp){
   // 발사체 비행 → 착탄 시 폭발 연출
   for(var pi=s.projectiles.length-1;pi>=0;pi--){ var pr=s.projectiles[pi]; var mv=PROJ_SPD*dt; pr.gone+=mv;
     pr.x+=pr.dx*mv; pr.y+=pr.dy*mv; pr.z+=pr.dz*mv;
-    if(pr.gone>=pr.dist){ blastFx(s, pr.bx, pr.by, pr.bz); s.projectiles.splice(pi,1); } }
+    if(pr.gone>=pr.dist){ if(pr.hitMe) applyBlast(s, pr.bx, pr.by, pr.bz); blastFx(s, pr.bx, pr.by, pr.bz); s.projectiles.splice(pi,1); } }
   // 블래스트/파티클
   for(var i=s.blasts.length-1;i>=0;i--){ s.blasts[i].t+=dt*3; if(s.blasts[i].t>=1)s.blasts.splice(i,1); }
   for(var j=s.particles.length-1;j>=0;j--){ var pt=s.particles[j]; pt.life-=dt*1.6; pt.x+=pt.vx*dt; pt.y+=pt.vy*dt; pt.z+=pt.vz*dt; pt.vy-=8*dt; if(pt.life<=0)s.particles.splice(j,1); }
@@ -284,7 +295,7 @@ var NEAR=0.12, FOV=78*Math.PI/180, FOCAL;
 function computeFocal(){ FOCAL=(H/2)/Math.tan(FOV/2); }
 computeFocal();
 function boxFaces(b){ var x0=b.cx-b.hx,x1=b.cx+b.hx,y0=b.cy-b.hy,y1=b.cy+b.hy,z0=b.cz-b.hz,z1=b.cz+b.hz;
-  return [
+  var raw=[
     {n:{x:0,y:1,z:0}, sh:1.0, v:[[x0,y1,z0],[x1,y1,z0],[x1,y1,z1],[x0,y1,z1]]},
     {n:{x:0,y:-1,z:0},sh:0.35,v:[[x0,y0,z1],[x1,y0,z1],[x1,y0,z0],[x0,y0,z0]]},
     {n:{x:0,y:0,z:-1},sh:0.72,v:[[x0,y1,z0],[x0,y0,z0],[x1,y0,z0],[x1,y1,z0]]},
@@ -292,6 +303,25 @@ function boxFaces(b){ var x0=b.cx-b.hx,x1=b.cx+b.hx,y0=b.cy-b.hy,y1=b.cy+b.hy,z0
     {n:{x:-1,y:0,z:0},sh:0.55,v:[[x0,y1,z1],[x0,y0,z1],[x0,y0,z0],[x0,y1,z0]]},
     {n:{x:1,y:0,z:0}, sh:0.5, v:[[x1,y1,z0],[x1,y0,z0],[x1,y0,z1],[x1,y1,z1]]},
   ];
+  var out=[]; for(var i=0;i<raw.length;i++) subdivideQuad(raw[i], out);
+  return out;
+}
+// 큰 면을 타일로 분할 — painter 정렬은 면 하나를 한 깊이로 취급하므로, 큰 바닥이
+// 카메라 쪽으로 뻗으면 평균 깊이가 앞서서 캐릭터를 덮어버린다. 잘게 쪼개면 해소.
+var TILE=2.5, MAXDIV=6;
+function subdivideQuad(face, out){
+  var v=face.v, a=v[0], b=v[1], d=v[3];
+  var eu=[b[0]-a[0], b[1]-a[1], b[2]-a[2]], ev=[d[0]-a[0], d[1]-a[1], d[2]-a[2]];
+  var lu=Math.hypot(eu[0],eu[1],eu[2]), lv=Math.hypot(ev[0],ev[1],ev[2]);
+  var nu=Math.max(1,Math.min(MAXDIV,Math.ceil(lu/TILE))), nv=Math.max(1,Math.min(MAXDIV,Math.ceil(lv/TILE)));
+  if(nu===1&&nv===1){ out.push(face); return; }
+  function P(u,w){ return [a[0]+eu[0]*u+ev[0]*w, a[1]+eu[1]*u+ev[1]*w, a[2]+eu[2]*u+ev[2]*w]; }
+  for(var i=0;i<nu;i++)for(var j=0;j<nv;j++){
+    var u0=i/nu,u1=(i+1)/nu,w0=j/nv,w1=(j+1)/nv;
+    // edges: 원래 면의 바깥 모서리만 true → 그 변만 검은 외곽선(내부 이음새는 자기 색으로 메움)
+    out.push({ n:face.n, sh:face.sh, v:[P(u0,w0),P(u1,w0),P(u1,w1),P(u0,w1)],
+      tile:true, edges:[ j===0, i===nu-1, j===nv-1, i===0 ] });
+  }
 }
 // 렌더용 카메라 기저(CAM*)와 플레이어 조준 기저(AIM*)를 분리.
 // 1인칭: 둘이 동일. 3인칭: 카메라는 궤도(피치 제한+플레이어 바라봄), 총은 AIM* 사용.
@@ -332,18 +362,16 @@ function render(){
   // 면 수집
   var faces=[];
   for(var i=0;i<LEVEL.boxes.length;i++){ emitFaces(boxFaces(LEVEL.boxes[i]), LEVEL.boxes[i].col, LEVEL.boxes[i]===LEVEL.boxes[5], faces); }
-  if(sim.tp){ // 3인칭: 자기 캡슐(매끈 — 외곽선 없음)
-    emitFaces(capsuleFaces(sim.p.x, sim.p.y+0.9, sim.p.z, 0.35, 0.55), PLAYER_COL, false, faces, true);
-  }
-  // 원격 플레이어(멀티) — 항상 렌더
+  // 원격 플레이어(멀티) — 캡슐+눈+총
   for(var pid in MP.peers){ var pe=MP.peers[pid]; if(pe.x==null)continue;
     emitCharacter(pe.x, pe.y, pe.z, pe.yaw||0, pe.pitch||0, pe.rc||0, PEER_COL, faces); }
-  // 3D 총 — 항상. 플레이어 눈 위치 + '조준' 기저(AIM*)에 부착(카메라와 무관) → 1·3인칭 동일 모델
-  var eye={x:sim.p.x,y:sim.p.y+EYE,z:sim.p.z}, kick=(sim.recoil||0)*(sim.recoil||0);
-  var gtp=sim.tp?GUN_TP:[0,0,0];
-  for(var gi=0;gi<GUN.length;gi++){ var gp=GUN[gi];
-    var lc=[gp.lc[0]+gtp[0], gp.lc[1]+gtp[1]-0.05*kick, gp.lc[2]+gtp[2]-0.16*kick];
-    emitFaces(orientedBox(lc, gp.lh, eye, AIMR, AIMU, AIMF), gp.col, false, faces);
+  if(sim.tp){ // 3인칭: 자기 캐릭터(캡슐+눈+총) — 원격과 동일 렌더 경로
+    emitCharacter(sim.p.x, sim.p.y, sim.p.z, sim.yaw, sim.pitch, sim.recoil||0, PLAYER_COL, faces);
+  } else { // 1인칭: 눈 위치에 총만
+    var eye={x:sim.p.x,y:sim.p.y+EYE,z:sim.p.z}, kick=(sim.recoil||0)*(sim.recoil||0);
+    for(var gi=0;gi<GUN.length;gi++){ var gp=GUN[gi];
+      emitFaces(orientedBox([gp.lc[0], gp.lc[1]-0.05*kick, gp.lc[2]-0.16*kick], gp.lh, eye, AIMR, AIMU, AIMF), gp.col, false, faces);
+    }
   }
   // 발사체(공기 탄환)를 깊이 정렬용 스프라이트로 추가 → 캡슐/벽에 가려지게(관통 방지)
   for(var pj=0;pj<sim.projectiles.length;pj++){ var pr=sim.projectiles[pj]; var pc=toCam([pr.x,pr.y,pr.z]); if(pc.z<=NEAR)continue;
@@ -361,8 +389,16 @@ function render(){
     }
     ctx.fillStyle=fa.col; ctx.beginPath(); ctx.moveTo(fa.pts[0].x,fa.pts[0].y);
     for(var p=1;p<fa.pts.length;p++)ctx.lineTo(fa.pts[p].x,fa.pts[p].y); ctx.closePath(); ctx.fill();
-    if(fa.stroke!==false){ ctx.strokeStyle='rgba(0,0,0,.18)'; ctx.lineWidth=1; ctx.stroke(); }
+    if(fa.tile){ ctx.strokeStyle=fa.col; ctx.lineWidth=1; ctx.stroke(); }  // 타일 이음새(AA 틈) 메움
     if(fa.goal){ ctx.fillStyle='rgba(255,255,255,.12)'; ctx.fill(); }
+    if(fa.stroke!==false){
+      ctx.strokeStyle='rgba(0,0,0,.18)'; ctx.lineWidth=1;
+      if(!fa.tile){ ctx.stroke(); }
+      else if(fa.edges){ // 원래 면의 바깥 모서리만
+        for(var e=0;e<4;e++){ if(!fa.edges[e])continue; var A=fa.pts[e], B=fa.pts[(e+1)%4];
+          ctx.beginPath(); ctx.moveTo(A.x,A.y); ctx.lineTo(B.x,B.y); ctx.stroke(); }
+      }
+    }
   }
   // 총구 플래시(발사 직후) — 총열 끝 월드 위치
   if((sim.recoil||0)>0.5){ var kk=(sim.recoil-0.5)/0.5;
@@ -395,7 +431,8 @@ function emitFaces(fl, baseCol, isGoal, out, noStroke){
     var cs=face.v.map(function(p){return toCam(p);});
     var clipped=clipNear(cs); if(clipped.length<3)continue;
     var z=0; for(var q=0;q<clipped.length;q++)z+=clipped[q].z; z/=clipped.length;
-    out.push({pts:clipped.map(project), z:z, col:shadeCol(baseCol,face.sh), goal:isGoal, stroke:!noStroke});
+    out.push({pts:clipped.map(project), z:z, col:shadeCol(baseCol,face.sh), goal:isGoal, stroke:!noStroke,
+      tile:face.tile, edges:(face.edges&&clipped.length===4)?face.edges:null});
   }
 }
 // 회전된(카메라 기저 R/U/F에 부착된) 박스 → 월드 면. 1인칭 총에 사용.
@@ -450,6 +487,14 @@ function emitCharacter(px,py,pz,yaw,pitch,recoil,col,faces){
   var U={x:f.y*R.z-f.z*R.y, y:f.z*R.x-f.x*R.z, z:f.x*R.y-f.y*R.x};
   var eye={x:px,y:py+EYE,z:pz};
   emitFaces(capsuleFaces(px,py+0.9,pz,0.35,0.55), col, false, faces, true);
+  // 눈 — 어느 쪽을 보는지 식별용. 수평(yaw) 기준 + pitch 는 살짝만 반영.
+  var HF={x:Math.sin(yaw),y:0,z:Math.cos(yaw)}, HU={x:0,y:1,z:0};
+  var hy=py+1.42+Math.max(-0.12,Math.min(0.12,(pitch||0)*0.14));
+  var head={x:px, y:hy, z:pz};
+  for(var s=-1;s<=1;s+=2){
+    emitFaces(orientedBox([s*0.15,0,0.315],[0.095,0.115,0.075], head,R,HU,HF), '#ffffff', false, faces, true); // 흰자
+    emitFaces(orientedBox([s*0.15,-0.008,0.385],[0.05,0.062,0.035], head,R,HU,HF), '#101c33', false, faces, true); // 눈동자
+  }
   var kick=(recoil||0)*(recoil||0);
   for(var gi=0;gi<GUN.length;gi++){ var gp=GUN[gi];
     var lc=[gp.lc[0]+GUN_TP[0], gp.lc[1]+GUN_TP[1]-0.05*kick, gp.lc[2]+GUN_TP[2]-0.16*kick];
@@ -497,7 +542,7 @@ function mpHandle(m){
   else if(m.t==='start'){ if(mode==='lobbyScr') startGame(); }   // 호스트가 시작 → 전원 시작
   else if(m.t==='st'){ if(m.id===MP.id)return; var pe=MP.peers[m.id]||(MP.peers[m.id]={});
     pe.x=m.x;pe.y=m.y;pe.z=m.z;pe.yaw=m.yaw;pe.pitch=m.pitch;pe.rc=m.rc;pe.name=m.name||pe.name; pe.seen=performance.now(); }
-  else if(m.t==='bl'){ if(m.id===MP.id)return; if(sim&&!sim.win){ applyBlast(sim,m.x,m.y,m.z); blastFx(sim,m.x,m.y,m.z); } }
+  else if(m.t==='bl'){ if(m.id===MP.id)return; if(sim&&!sim.win) spawnRemoteShot(sim,m); }
   else if(m.t==='left'){ delete MP.peers[m.id]; }
   mpStatus();
 }
