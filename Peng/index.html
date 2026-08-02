@@ -1073,12 +1073,21 @@ function updateCrosshair(s){
   el.style.top =(rect.top  + sp.y/H*rect.height)+'px';
 }
 function requestLock(){ try{ cv.requestPointerLock(); }catch(e){} }
+// 잠기지 않은 상태에서 화면을 클릭하면 마우스를 잠근다(발사는 아래 mousedown 이 담당)
 cv.addEventListener('click',function(){ ensureAudio(); if(chatting) return;
-  if(mode==='play'||mode==='lobbyScr'){ if(!locked)requestLock(); else doFire(sim); } });
-/* 우클릭 홀드 = 조준 모드(3인칭에서 캐릭터가 왼쪽으로 비켜 조준점이 드러난다).
-   포인터락 중에도 mousedown/up 은 오는데 contextmenu 가 뜨면 락이 풀리므로 막는다. */
-cv.addEventListener('contextmenu',function(e){ e.preventDefault(); });
-window.addEventListener('mousedown',function(e){ if(e.button===2 && sim && !chatting) sim.aimHold=true; });
+  if((mode==='play'||mode==='lobbyScr') && !locked) requestLock(); });
+/* 우클릭 홀드 = 조준 모드. contextmenu 는 document 에서 막아야 한다 —
+   포인터락 중에는 이벤트가 캔버스가 아니라 document 로 가기 때문에, cv 에만 걸면
+   메뉴가 떠서 락이 풀리고 그 다음 좌클릭이 '재잠금'으로 먹혀 발사가 안 됐다. */
+document.addEventListener('contextmenu',function(e){
+  if(mode==='play'||mode==='lobbyScr') e.preventDefault(); });
+/* 발사는 click 대신 mousedown 으로 처리한다. click 은 좌버튼을 뗄 때만 오고
+   다른 버튼과 겹치면 누락될 수 있어, 조준(우클릭) 중 좌클릭이 씹히는 원인이 된다. */
+window.addEventListener('mousedown',function(e){
+  if(chatting || !sim) return;
+  if(e.button===2){ sim.aimHold=true; return; }
+  if(e.button===0 && locked && (mode==='play'||mode==='lobbyScr')){ ensureAudio(); doFire(sim); }
+});
 window.addEventListener('mouseup',function(e){ if(e.button===2 && sim) sim.aimHold=false; });
 // 창 밖으로 나가면 버튼을 놓친다 → 조준이 걸린 채 남지 않게
 window.addEventListener('blur',function(){ if(sim) sim.aimHold=false; });
