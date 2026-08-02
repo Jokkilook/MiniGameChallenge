@@ -269,8 +269,8 @@ function render(){
   // 면 수집
   var faces=[];
   for(var i=0;i<LEVEL.boxes.length;i++){ emitFaces(boxFaces(LEVEL.boxes[i]), LEVEL.boxes[i].col, LEVEL.boxes[i]===LEVEL.boxes[5], faces); }
-  if(sim.tp){ // 3인칭: 플레이어 캡슐
-    emitFaces(capsuleFaces(sim.p.x, sim.p.y+0.9, sim.p.z, 0.35, 0.55), '#ff8a3a', false, faces);
+  if(sim.tp){ // 3인칭: 플레이어 캡슐(매끈 — 외곽선 없음)
+    emitFaces(capsuleFaces(sim.p.x, sim.p.y+0.9, sim.p.z, 0.35, 0.55), PLAYER_COL, false, faces, true);
   }
   // 3D 총 — 항상. 플레이어 눈 위치 + 조준 기저(R/U/F)에 부착 → 시점 따라 각도 변함
   var eye={x:sim.p.x,y:sim.p.y+EYE,z:sim.p.z}, kick=(sim.recoil||0)*(sim.recoil||0);
@@ -317,14 +317,14 @@ function render(){
 function drawBeam(x,y,z){ var lo=toCam([x,y+0.5,z]), hi=toCam([x,y+8,z]); if(lo.z<=NEAR||hi.z<=NEAR)return;
   var a=project(lo), b=project(hi); ctx.strokeStyle='rgba(120,255,170,.4)'; ctx.lineWidth=6; ctx.beginPath(); ctx.moveTo(a.x,a.y); ctx.lineTo(b.x,b.y); ctx.stroke(); }
 // 한 메시(면 배열)를 컬링·클립·투영해 렌더 목록에 추가
-function emitFaces(fl, baseCol, isGoal, out){
+function emitFaces(fl, baseCol, isGoal, out, noStroke){
   for(var f=0;f<fl.length;f++){ var face=fl[f];
     var fc={x:(face.v[0][0]+face.v[2][0])/2, y:(face.v[0][1]+face.v[2][1])/2, z:(face.v[0][2]+face.v[2][2])/2};
     if(face.n.x*(CAMPOS.x-fc.x)+face.n.y*(CAMPOS.y-fc.y)+face.n.z*(CAMPOS.z-fc.z)<=0) continue;
     var cs=face.v.map(function(p){return toCam(p);});
     var clipped=clipNear(cs); if(clipped.length<3)continue;
     var z=0; for(var q=0;q<clipped.length;q++)z+=clipped[q].z; z/=clipped.length;
-    out.push({pts:clipped.map(project), z:z, col:shadeCol(baseCol,face.sh), goal:isGoal});
+    out.push({pts:clipped.map(project), z:z, col:shadeCol(baseCol,face.sh), goal:isGoal, stroke:!noStroke});
   }
 }
 // 회전된(카메라 기저 R/U/F에 부착된) 박스 → 월드 면. 1인칭 총에 사용.
@@ -353,12 +353,14 @@ function capsuleFaces(cx,cy,cz,r,h){
           v2=[cx+B.rr*Math.cos(a1),B.y,cz+B.rr*Math.sin(a1)], v3=[cx+B.rr*Math.cos(a0),B.y,cz+B.rr*Math.sin(a0)];
       var mx=(v0[0]+v1[0]+v2[0]+v3[0])/4, my=(v0[1]+v1[1]+v2[1]+v3[1])/4, mz=(v0[2]+v1[2]+v2[2]+v3[2])/4;
       var ay=Math.max(cy-h,Math.min(cy+h,my)); var nx=mx-cx,ny=my-ay,nz=mz-cz; var nl=Math.hypot(nx,ny,nz)||1; nx/=nl;ny/=nl;nz/=nl;
-      var sh=0.42+0.58*Math.max(0, nx*0.32+ny*0.9+nz*0.28);
+      // 광원: 위+앞(-z, 보통 카메라 쪽). 앰비언트 높여 매끈하고 밝게.
+      var dl=nx*0.32+ny*0.85-nz*0.42; var sh=0.55+0.45*(dl>0?dl:0);
       out.push({v:[v0,v1,v2,v3], n:{x:nx,y:ny,z:nz}, sh:sh});
     }
   }
   return out;
 }
+var PLAYER_COL='#ff8a3a';
 // 1인칭 PoofGun 3D 모델(카메라 로컬: x=오른쪽, y=위, z=앞)
 var GUN=[
   {lc:[0.255,-0.34,0.46], lh:[0.05,0.11,0.05],  col:'#242c46'}, // 손잡이
