@@ -591,6 +591,7 @@ function render(){
   if(sim.shake>0.01){ var k=sim.shake*0.06;
     cpos={ x:CAMPOS.x+(Math.random()*2-1)*k, y:CAMPOS.y+(Math.random()*2-1)*k, z:CAMPOS.z+(Math.random()*2-1)*k }; }
   var VP=mat4Mul(mat4Perspective(FOV, W/H, NEAR, FAR), mat4View(cpos,CAMR,CAMU,CAMF));
+  CURVP=VP;                       // 조준점 투영용으로 이번 프레임 행렬을 남긴다
 
   TRI.length=0; LINE.length=0; BB.length=0;
   // 레벨
@@ -1048,17 +1049,26 @@ document.getElementById('retryBtn').addEventListener('click',function(){ ensureA
 document.getElementById('menuBtn').addEventListener('click',function(){ mpDisconnect(); showScreen('title'); setWarn(''); });
 /* 조준점을 '실제로 맞는 지점'에 붙인다.
    3인칭은 카메라가 몸 뒤(조준 시엔 옆)에 있어 화면 정중앙이 탄착점과 어긋난다.
-   doFire 와 같은 광선(지형 + 팀원 퓨즈)을 써서 폭발이 생길 자리에 표시한다. */
+   doFire 와 같은 광선(지형 deco 제외 + 팀원 퓨즈)으로 폭발이 생길 자리를 구해 표시한다. */
+var CURVP=null;
+function projectWorld(p){                 // 월드 → 논리 화면(W,H) 좌표. 카메라 뒤면 null
+  var V=CURVP; if(!V) return null;
+  var x=p[0], y=p[1], z=p[2];
+  var cx=V[0]*x+V[4]*y+V[8]*z+V[12];
+  var cy=V[1]*x+V[5]*y+V[9]*z+V[13];
+  var cw=V[3]*x+V[7]*y+V[11]*z+V[15];
+  if(cw<=0.0001) return null;
+  return { x:(cx/cw*0.5+0.5)*W, y:(1-(cy/cw*0.5+0.5))*H };
+}
 function updateCrosshair(s){
   var el=document.getElementById('crosshair'); if(!el) return;
   var o=eyePos(s), d=forwardVec(s), tHit=BLAST_RANGE;
   for(var i=0;i<LEVEL.boxes.length;i++){ if(LEVEL.boxes[i].deco) continue;
     var t=rayBox(o,d,LEVEL.boxes[i]); if(t<tHit)tHit=t; }
   tHit = peerFuse(o, d, tHit);
-  var c=toCam([o.x+d.x*tHit, o.y+d.y*tHit, o.z+d.z*tHit]);
-  if(c.z<=NEAR){ el.style.left='50%'; el.style.top='50%'; return; }   // 뒤쪽이면 중앙 유지
-  var sp=project(c), rect=cv.getBoundingClientRect();
-  if(rect.width<1||rect.height<1) return;                            // 아직 레이아웃 전
+  var sp=projectWorld([o.x+d.x*tHit, o.y+d.y*tHit, o.z+d.z*tHit]);
+  var rect=cv.getBoundingClientRect();
+  if(!sp || rect.width<1 || rect.height<1){ el.style.left='50%'; el.style.top='50%'; return; }
   el.style.left=(rect.left + sp.x/W*rect.width)+'px';
   el.style.top =(rect.top  + sp.y/H*rect.height)+'px';
 }
@@ -1124,7 +1134,8 @@ function loop(now){ if(!last)last=now; var dt=Math.min(0.05,(now-last)/1000); la
     if(mode==='play') showHint(sim); else showHint(null);
   }
   render();
-  if((mode==='play'||mode==='lobbyScr') && sim) updateCrosshair(sim);
+  // 조준점은 표시용이므로 실패해도 루프를 멈추면 안 된다(예전에 여기서 게임이 얼었다)
+  if((mode==='play'||mode==='lobbyScr') && sim){ try{ updateCrosshair(sim); }catch(e){} }
   requestAnimationFrame(loop);
 }
 // 탄창 게이지. frac = 다음 한 발의 충전 진행도(0~1) → 그 칸만 아래에서 위로 차오른다.
