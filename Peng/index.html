@@ -92,6 +92,7 @@ function tone(f,dur,type,vol,to){ ensureAudio(); if(!AC)return; var t=AC.current
   o.type=type||'sine';o.frequency.setValueAtTime(f,t); if(to)o.frequency.exponentialRampToValueAtTime(Math.max(30,to),t+dur);
   g.gain.setValueAtTime(0.0001,t);g.gain.exponentialRampToValueAtTime(vol||0.15,t+0.008);g.gain.exponentialRampToValueAtTime(0.0001,t+dur);
   o.connect(g);g.connect(master||AC.destination);o.start(t);o.stop(t+dur+0.02); }
+function sndShoot(){ tone(560,0.06,'square',0.11,260); tone(240,0.05,'triangle',0.08); }
 function sndPoof(){ tone(140,0.18,'square',0.16,50); tone(320,0.1,'sawtooth',0.1,90); }
 function sndJump(){ tone(400,0.08,'sine',0.08,600); }
 function sndWin(){ [523,659,784,1046].forEach(function(f,i){setTimeout(function(){tone(f,0.16,'triangle',0.13);},i*90);}); }
@@ -121,12 +122,12 @@ function isPlatform(b){ return b.hy<=1 && b.cy>-10; } // 서는 발판만(바닥
 
 /* ---------- 물리 상수 ---------- */
 var RUN=6.2, JUMPV=8.6, GRAV=22, EYE=1.6, PH_HX=0.35, PH_HY=0.9, PH_HZ=0.35;
-var BLAST_R=4.2, BLAST_F=13.5, BLAST_RANGE=40, AMMO_MAX=3, AMMO_REGEN=1.1;
+var BLAST_R=4.2, BLAST_F=13.5, BLAST_RANGE=40, AMMO_MAX=3, AMMO_REGEN=1.1, PROJ_SPD=62;
 
 function makeSim(){
   var s=LEVEL.start;
   return { p:{x:s.x,y:s.y,z:s.z}, v:{x:0,y:0,z:0}, yaw:0, pitch:0, onGround:false,
-    ammo:AMMO_MAX, ammoT:0, t:0, cpIdx:0, win:false, blasts:[], particles:[], shake:0, _fireCd:0, tp:false, recoil:0 };
+    ammo:AMMO_MAX, ammoT:0, t:0, cpIdx:0, win:false, blasts:[], particles:[], projectiles:[], shake:0, _fireCd:0, tp:false, recoil:0 };
 }
 function aabbHit(px,py,pz, b){ // 플레이어 중심(px,py+PH_HY,pz) vs 박스
   return Math.abs(px-b.cx)<PH_HX+b.hx && Math.abs((py+PH_HY)-b.cy)<PH_HY+b.hy && Math.abs(pz-b.cz)<PH_HZ+b.hz;
@@ -153,11 +154,20 @@ function doFire(s){
   var diff=sub(pc,center), dist=len(diff);
   if(dist<BLAST_R){ var f=BLAST_F*(1-dist/BLAST_R); if(dist<0.001){diff={x:0,y:1,z:0};dist=1;}
     s.v.x+=diff.x/dist*f; s.v.y+=diff.y/dist*f; s.v.z+=diff.z/dist*f; s.onGround=false; }
-  s.blasts.push({x:center.x,y:center.y,z:center.z,t:0}); s.shake=Math.min(0.5,s.shake+0.25); s.recoil=1;
-  for(var k=0;k<14;k++){ var a=Math.random()*6.28,b=Math.random()*6.28,sp=3+Math.random()*4;
-    s.particles.push({x:center.x,y:center.y,z:center.z, vx:Math.cos(a)*Math.cos(b)*sp, vy:Math.sin(b)*sp, vz:Math.sin(a)*Math.cos(b)*sp, life:1}); }
-  sndPoof();
+  // 즉시: 총 반동/작은 흔들림. 폭발 연출은 발사체가 착탄할 때.
+  s.recoil=1; s.shake=Math.min(0.4,s.shake+0.12);
+  var start=Math.min(0.6, tHit*0.5);
+  s.projectiles.push({ x:o.x+d.x*start, y:o.y+d.y*start, z:o.z+d.z*start,
+    dx:d.x, dy:d.y, dz:d.z, gone:0, dist:Math.max(0.05,tHit-start),
+    bx:center.x, by:center.y, bz:center.z });
+  sndShoot();
   return true;
+}
+function blastFx(s,x,y,z){ // 착탄 폭발 연출(구+파편+흔들림+소리)
+  s.blasts.push({x:x,y:y,z:z,t:0}); s.shake=Math.min(0.5,s.shake+0.22);
+  for(var k=0;k<14;k++){ var a=Math.random()*6.28,b=Math.random()*6.28,sp=3+Math.random()*4;
+    s.particles.push({x:x,y:y,z:z, vx:Math.cos(a)*Math.cos(b)*sp, vy:Math.sin(b)*sp, vz:Math.sin(a)*Math.cos(b)*sp, life:1}); }
+  sndPoof();
 }
 function respawn(s){ var cp=LEVEL.checkpoints[s.cpIdx]; s.p={x:cp.x,y:cp.y,z:cp.z}; s.v={x:0,y:0,z:0}; s.onGround=true; sndDie(); }
 
@@ -183,6 +193,10 @@ function stepSim(s, dt, inp){
   // 이동 + 충돌(축별)
   s.onGround=false;
   moveAxis(s,'x',s.v.x*dt); moveAxis(s,'z',s.v.z*dt); moveAxis(s,'y',s.v.y*dt);
+  // 발사체 비행 → 착탄 시 폭발 연출
+  for(var pi=s.projectiles.length-1;pi>=0;pi--){ var pr=s.projectiles[pi]; var mv=PROJ_SPD*dt; pr.gone+=mv;
+    pr.x+=pr.dx*mv; pr.y+=pr.dy*mv; pr.z+=pr.dz*mv;
+    if(pr.gone>=pr.dist){ blastFx(s, pr.bx, pr.by, pr.bz); s.projectiles.splice(pi,1); } }
   // 블래스트/파티클
   for(var i=s.blasts.length-1;i>=0;i--){ s.blasts[i].t+=dt*3; if(s.blasts[i].t>=1)s.blasts.splice(i,1); }
   for(var j=s.particles.length-1;j>=0;j--){ var pt=s.particles[j]; pt.life-=dt*1.6; pt.x+=pt.vx*dt; pt.y+=pt.vy*dt; pt.z+=pt.vz*dt; pt.vy-=8*dt; if(pt.life<=0)s.particles.splice(j,1); }
@@ -257,12 +271,12 @@ function render(){
   for(var i=0;i<LEVEL.boxes.length;i++){ emitFaces(boxFaces(LEVEL.boxes[i]), LEVEL.boxes[i].col, LEVEL.boxes[i]===LEVEL.boxes[5], faces); }
   if(sim.tp){ // 3인칭: 플레이어 캡슐
     emitFaces(capsuleFaces(sim.p.x, sim.p.y+0.9, sim.p.z, 0.35, 0.55), '#ff8a3a', false, faces);
-  } else { // 1인칭: 카메라에 붙은 3D 총(월드 공간 → 시점 따라 각도 변함)
-    var eye={x:sim.p.x,y:sim.p.y+EYE,z:sim.p.z}, kick=(sim.recoil||0)*(sim.recoil||0);
-    for(var gi=0;gi<GUN.length;gi++){ var gp=GUN[gi];
-      var lc=[gp.lc[0], gp.lc[1]-0.05*kick, gp.lc[2]-0.16*kick];
-      emitFaces(orientedBox(lc, gp.lh, eye, CAMR, CAMU, CAMF), gp.col, false, faces);
-    }
+  }
+  // 3D 총 — 항상. 플레이어 눈 위치 + 조준 기저(R/U/F)에 부착 → 시점 따라 각도 변함
+  var eye={x:sim.p.x,y:sim.p.y+EYE,z:sim.p.z}, kick=(sim.recoil||0)*(sim.recoil||0);
+  for(var gi=0;gi<GUN.length;gi++){ var gp=GUN[gi];
+    var lc=[gp.lc[0], gp.lc[1]-0.05*kick, gp.lc[2]-0.16*kick];
+    emitFaces(orientedBox(lc, gp.lh, eye, CAMR, CAMU, CAMF), gp.col, false, faces);
   }
   faces.sort(function(a,b){return b.z-a.z;});
   for(var d=0;d<faces.length;d++){ var fa=faces[d];
@@ -272,7 +286,7 @@ function render(){
     if(fa.goal){ ctx.fillStyle='rgba(255,255,255,.12)'; ctx.fill(); }
   }
   // 총구 플래시(발사 직후) — 총열 끝 월드 위치
-  if(!sim.tp && (sim.recoil||0)>0.5){ var kk=(sim.recoil-0.5)/0.5;
+  if((sim.recoil||0)>0.5){ var kk=(sim.recoil-0.5)/0.5;
     var eye2={x:sim.p.x,y:sim.p.y+EYE,z:sim.p.z};
     var mz=[0.26,-0.20,1.12-0.16*(sim.recoil*sim.recoil)];
     var mw=[eye2.x+mz[0]*CAMR.x+mz[1]*CAMU.x+mz[2]*CAMF.x, eye2.y+mz[0]*CAMR.y+mz[1]*CAMU.y+mz[2]*CAMF.y, eye2.z+mz[0]*CAMR.z+mz[1]*CAMU.z+mz[2]*CAMF.z];
@@ -281,6 +295,15 @@ function render(){
       ctx.fillStyle='rgba(140,220,255,.5)'; ctx.beginPath(); ctx.arc(msp.x,msp.y,(0.22+0.4*kk)/mc.z*FOCAL,0,6.28); ctx.fill(); ctx.globalAlpha=1; } }
   // 결승 기둥 빛
   drawBeam(LEVEL.goal.cx, LEVEL.goal.cy, LEVEL.goal.cz);
+  // 발사체(공기 탄환) — 빛나는 오브 + 트레일
+  for(var pj=0;pj<sim.projectiles.length;pj++){ var pr=sim.projectiles[pj]; var pc=toCam([pr.x,pr.y,pr.z]); if(pc.z<=NEAR)continue;
+    var psp=project(pc); var pr2=Math.max(2,0.16/pc.z*FOCAL);
+    var tb=toCam([pr.x-pr.dx*1.1, pr.y-pr.dy*1.1, pr.z-pr.dz*1.1]);
+    if(tb.z>NEAR){ var tsp=project(tb); ctx.strokeStyle='rgba(150,220,255,.45)'; ctx.lineWidth=Math.max(1,pr2*0.8); ctx.beginPath(); ctx.moveTo(tsp.x,tsp.y); ctx.lineTo(psp.x,psp.y); ctx.stroke(); }
+    var grd=ctx.createRadialGradient(psp.x,psp.y,0,psp.x,psp.y,pr2*2.2);
+    grd.addColorStop(0,'#f2ffff'); grd.addColorStop(0.45,'#7fd0ff'); grd.addColorStop(1,'rgba(120,200,255,0)');
+    ctx.fillStyle=grd; ctx.beginPath(); ctx.arc(psp.x,psp.y,pr2*2.2,0,6.28); ctx.fill();
+    ctx.fillStyle='#fff'; ctx.beginPath(); ctx.arc(psp.x,psp.y,pr2*0.75,0,6.28); ctx.fill(); }
   // 블래스트(구)
   for(var b2=0;b2<sim.blasts.length;b2++){ var bl=sim.blasts[b2]; var c=toCam([bl.x,bl.y,bl.z]); if(c.z<=NEAR)continue;
     var sp=project(c); var rad=(BLAST_R*bl.t)/c.z*FOCAL; ctx.strokeStyle='rgba(160,220,255,'+(1-bl.t)+')'; ctx.lineWidth=3;
