@@ -27,9 +27,12 @@
   #topbar .pill{background:rgba(8,11,17,.75);border:1px solid var(--line);padding:7px 14px;
     font-size:12px;font-weight:800;letter-spacing:1.2px;text-transform:uppercase;color:#9dabc4}
   #topbar .pill b{color:#fff;font-family:var(--mono);font-weight:700;letter-spacing:0}
-  #ammo{position:absolute;right:18px;bottom:18px;display:flex;gap:4px}
-  #ammo .p{width:5px;height:24px;background:transparent;border:1px solid var(--line2)}
+  #ammo{position:absolute;right:18px;bottom:18px;display:flex;gap:5px;align-items:flex-end}
+  #ammo .p{position:relative;width:7px;height:28px;background:transparent;border:1px solid var(--line2);overflow:hidden}
   #ammo .p.on{background:var(--acc);border-color:var(--acc)}
+  /* 재충전 중인 칸: 아래에서 위로 차오르는 막대 */
+  #ammo .p i{position:absolute;left:0;right:0;bottom:0;height:0;background:var(--acc);opacity:.55;display:block}
+  #ammo .p.charging{border-color:#3f5a7d}
   #msg{position:absolute;left:50%;top:22%;transform:translateX(-50%);font-weight:800;font-size:clamp(17px,2.7vw,24px);
     letter-spacing:-.1px;color:#fff;background:rgba(8,11,17,.78);border-left:3px solid var(--acc);
     padding:9px 18px;opacity:0;transition:opacity .18s;text-align:left}
@@ -906,15 +909,26 @@ function loop(now){ if(!last)last=now; var dt=Math.min(0.05,(now-last)/1000); la
     // HUD
     document.getElementById('timeV').textContent = sim.practice ? '연습' : sim.t.toFixed(1);
     document.getElementById('cpV').textContent = sim.practice ? '자유 연습' : ('체크포인트 '+sim.cpIdx);
-    renderAmmo(sim.ammo);
+    renderAmmo(sim.ammo, sim.ammo<AMMO_MAX ? sim.ammoT/AMMO_REGEN : 0);
     if(sim.win){ document.getElementById('winMsg').textContent='기록 '+sim.t.toFixed(1)+'초!'; showScreen('win'); sndWin(); if(locked)document.exitPointerLock(); }
     if(mode==='play') showHint(sim); else showHint(null);
   }
   render();
   requestAnimationFrame(loop);
 }
-function renderAmmo(n){ var el=document.getElementById('ammo'); if(el.children.length!==AMMO_MAX){ el.innerHTML=''; for(var i=0;i<AMMO_MAX;i++){var d=document.createElement('div');d.className='p';el.appendChild(d);} }
-  for(var i=0;i<AMMO_MAX;i++)el.children[i].classList.toggle('on', i<n); }
+// 탄창 게이지. frac = 다음 한 발의 충전 진행도(0~1) → 그 칸만 아래에서 위로 차오른다.
+function renderAmmo(n, frac){
+  var el=document.getElementById('ammo');
+  if(el.children.length!==AMMO_MAX){ el.innerHTML='';
+    for(var i=0;i<AMMO_MAX;i++){ var d=document.createElement('div'); d.className='p';
+      d.appendChild(document.createElement('i')); el.appendChild(d); } }
+  for(var i=0;i<AMMO_MAX;i++){
+    var slot=el.children[i], full=(i<n), charging=(!full && i===n);
+    slot.classList.toggle('on', full);
+    slot.classList.toggle('charging', charging);
+    slot.firstChild.style.height = charging ? (Math.max(0,Math.min(1,frac))*100).toFixed(1)+'%' : '0%';
+  }
+}
 var lastHint='';
 function showHint(s){ var m=document.getElementById('msg'); var h='';
   if(!s){ if(lastHint!==''){ lastHint=''; m.innerHTML=''; m.classList.remove('on'); } return; }
