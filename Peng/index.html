@@ -362,9 +362,10 @@ function render(){
   // 면 수집
   var faces=[];
   for(var i=0;i<LEVEL.boxes.length;i++){ emitFaces(boxFaces(LEVEL.boxes[i]), LEVEL.boxes[i].col, LEVEL.boxes[i]===LEVEL.boxes[5], faces); }
-  // 원격 플레이어(멀티) — 캡슐+눈+총
-  for(var pid in MP.peers){ var pe=MP.peers[pid]; if(pe.x==null)continue;
-    emitCharacter(pe.x, pe.y, pe.z, pe.yaw||0, pe.pitch||0, pe.rc||0, PEER_COL, faces); }
+  // 원격 플레이어(멀티) — 캡슐+눈+총. 보간된 위치로 렌더.
+  var pnow=performance.now();
+  for(var pid in MP.peers){ var ps=peerSample(MP.peers[pid], pnow); if(!ps)continue;
+    emitCharacter(ps.x, ps.y, ps.z, ps.yaw, ps.pitch, ps.rc, PEER_COL, faces); }
   if(sim.tp){ // 3인칭: 자기 캐릭터(캡슐+눈+총) — 원격과 동일 렌더 경로
     emitCharacter(sim.p.x, sim.p.y, sim.p.z, sim.yaw, sim.pitch, sim.recoil||0, PLAYER_COL, faces);
   } else { // 1인칭: 눈 위치에 총만
@@ -480,6 +481,24 @@ var GUN=[
 ];
 var GUN_TP=[0.15,0,-0.05]; // 3인칭: 오른쪽 가슴 쪽으로 살짝만(몸에 붙은 채 보이게)
 var PEER_COL='#42d6c8'; // 원격 플레이어(팀원) 캡슐 색(자기=주황과 구분)
+/* 엔티티 보간: 수신(≈22Hz)을 화면(60fps)에서 부드럽게.
+   일부러 INTERP_MS 만큼 과거를 렌더해, 항상 스냅샷 두 개 사이를 이어 그린다. */
+var INTERP_MS=110;
+function angLerp(a,b,f){ var d=(b-a)%6.2831853; if(d>3.1415927)d-=6.2831853; if(d<-3.1415927)d+=6.2831853; return a+d*f; }
+function peerSample(pe, now){
+  var b=pe.buf; if(!b||!b.length) return null;
+  var rt=now-INTERP_MS;
+  if(rt<=b[0].t) return b[0];                       // 아직 버퍼가 덜 찼음
+  for(var i=b.length-1;i>0;i--){
+    var A=b[i-1], B=b[i];
+    if(A.t<=rt && rt<=B.t){
+      var f=(rt-A.t)/Math.max(1,B.t-A.t);
+      return { x:A.x+(B.x-A.x)*f, y:A.y+(B.y-A.y)*f, z:A.z+(B.z-A.z)*f,
+        yaw:angLerp(A.yaw,B.yaw,f), pitch:A.pitch+(B.pitch-A.pitch)*f, rc:A.rc+(B.rc-A.rc)*f };
+    }
+  }
+  return b[b.length-1];                             // 패킷이 늦음 → 마지막 위치 유지
+}
 // 한 플레이어(캡슐+총)를 임의 위치/시점으로 렌더 — 3인칭 자기·원격 팀원 공용
 function emitCharacter(px,py,pz,yaw,pitch,recoil,col,faces){
   var f={x:Math.cos(pitch)*Math.sin(yaw), y:Math.sin(pitch), z:Math.cos(pitch)*Math.cos(yaw)};
@@ -540,8 +559,12 @@ function mpHandle(m){
   if(m.t==='welcome'){ MP.id=m.id; }
   else if(m.t==='roster'){ MP.players=m.players||[]; MP.host=m.host; renderLobby(); }
   else if(m.t==='start'){ if(mode==='lobbyScr') startGame(); }   // 호스트가 시작 → 전원 시작
-  else if(m.t==='st'){ if(m.id===MP.id)return; var pe=MP.peers[m.id]||(MP.peers[m.id]={});
-    pe.x=m.x;pe.y=m.y;pe.z=m.z;pe.yaw=m.yaw;pe.pitch=m.pitch;pe.rc=m.rc;pe.name=m.name||pe.name; pe.seen=performance.now(); }
+  else if(m.t==='st'){ if(m.id===MP.id)return; var pe=MP.peers[m.id]||(MP.peers[m.id]={buf:[]});
+    if(!pe.buf)pe.buf=[];
+    pe.name=m.name||pe.name; pe.seen=performance.now();
+    // 스냅샷을 쌓아두고 렌더 시 보간 — 22Hz 수신을 60fps 화면에서 부드럽게
+    pe.buf.push({t:pe.seen, x:m.x, y:m.y, z:m.z, yaw:m.yaw||0, pitch:m.pitch||0, rc:m.rc||0});
+    if(pe.buf.length>16)pe.buf.shift(); }
   else if(m.t==='bl'){ if(m.id===MP.id)return; if(sim&&!sim.win) spawnRemoteShot(sim,m); }
   else if(m.t==='left'){ delete MP.peers[m.id]; }
   mpStatus();
