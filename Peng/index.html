@@ -56,7 +56,7 @@
   <p style="color:#7fd0ff;letter-spacing:2px;margin-top:-2px">공기폭발 협동 질주</p>
   <p><b>PoofGun</b>은 닿는 곳에서 공기를 <b>뻥</b> 터뜨려 사람을 날린다.<br>
      발밑을 쏴 <b>로켓점프</b>로 못 넘는 협곡을 넘어 <b>결승선(초록)</b>까지!</p>
-  <p class="hint"><kbd>WASD</kbd> 이동 · <kbd>마우스</kbd> 시점 · <kbd>좌클릭</kbd> 펑! · <kbd>Space</kbd> 점프 · <kbd>R</kbd> 리스폰<br>화면을 클릭하면 마우스가 잠깁니다(FPS). <kbd>ESC</kbd>로 해제.</p>
+  <p class="hint"><kbd>WASD</kbd> 이동 · <kbd>마우스</kbd> 시점 · <kbd>좌클릭</kbd> 펑! · <kbd>Space</kbd> 점프 · <kbd>R</kbd> 리스폰 · <kbd>V</kbd> 3인칭<br>화면을 클릭하면 마우스가 잠깁니다(FPS). <kbd>ESC</kbd>로 해제.</p>
   <button class="go" id="startBtn">시작</button>
 </div>
 
@@ -126,7 +126,7 @@ var BLAST_R=4.2, BLAST_F=13.5, BLAST_RANGE=40, AMMO_MAX=3, AMMO_REGEN=1.1;
 function makeSim(){
   var s=LEVEL.start;
   return { p:{x:s.x,y:s.y,z:s.z}, v:{x:0,y:0,z:0}, yaw:0, pitch:0, onGround:false,
-    ammo:AMMO_MAX, ammoT:0, t:0, cpIdx:0, win:false, blasts:[], particles:[], shake:0, _fireCd:0 };
+    ammo:AMMO_MAX, ammoT:0, t:0, cpIdx:0, win:false, blasts:[], particles:[], shake:0, _fireCd:0, tp:false, recoil:0 };
 }
 function aabbHit(px,py,pz, b){ // 플레이어 중심(px,py+PH_HY,pz) vs 박스
   return Math.abs(px-b.cx)<PH_HX+b.hx && Math.abs((py+PH_HY)-b.cy)<PH_HY+b.hy && Math.abs(pz-b.cz)<PH_HZ+b.hz;
@@ -153,7 +153,7 @@ function doFire(s){
   var diff=sub(pc,center), dist=len(diff);
   if(dist<BLAST_R){ var f=BLAST_F*(1-dist/BLAST_R); if(dist<0.001){diff={x:0,y:1,z:0};dist=1;}
     s.v.x+=diff.x/dist*f; s.v.y+=diff.y/dist*f; s.v.z+=diff.z/dist*f; s.onGround=false; }
-  s.blasts.push({x:center.x,y:center.y,z:center.z,t:0}); s.shake=Math.min(0.5,s.shake+0.25);
+  s.blasts.push({x:center.x,y:center.y,z:center.z,t:0}); s.shake=Math.min(0.5,s.shake+0.25); s.recoil=1;
   for(var k=0;k<14;k++){ var a=Math.random()*6.28,b=Math.random()*6.28,sp=3+Math.random()*4;
     s.particles.push({x:center.x,y:center.y,z:center.z, vx:Math.cos(a)*Math.cos(b)*sp, vy:Math.sin(b)*sp, vz:Math.sin(a)*Math.cos(b)*sp, life:1}); }
   sndPoof();
@@ -165,6 +165,7 @@ function stepSim(s, dt, inp){
   if(s.win) return; s.t+=dt;
   if(s._fireCd>0)s._fireCd-=dt;
   if(s.shake>0)s.shake=Math.max(0,s.shake-dt*2);
+  if(s.recoil>0)s.recoil=Math.max(0,s.recoil-dt*4.5);
   // 탄 재충전
   if(s.ammo<AMMO_MAX){ s.ammoT+=dt; if(s.ammoT>=AMMO_REGEN){ s.ammoT=0; s.ammo++; } }
   // 이동 입력 → 목표 수평속도
@@ -222,13 +223,16 @@ function boxFaces(b){ var x0=b.cx-b.hx,x1=b.cx+b.hx,y0=b.cy-b.hy,y1=b.cy+b.hy,z0
     {n:{x:1,y:0,z:0}, sh:0.5, v:[[x1,y1,z0],[x1,y0,z0],[x1,y0,z1],[x1,y1,z1]]},
   ];
 }
-function toCam(s, p){ var d={x:p[0]-s.p.x, y:p[1]-(s.p.y+EYE), z:p[2]-s.p.z};
-  // yaw 회전(주위 Y)
-  var cy=Math.cos(-s.yaw), sy=Math.sin(-s.yaw); var x1=d.x*cy - d.z*sy, z1=d.x*sy + d.z*cy;
-  // pitch 회전(주위 X)
-  var cp=Math.cos(-s.pitch), sp=Math.sin(-s.pitch); var y2=d.y*cp - z1*sp, z2=d.y*sp + z1*cp;
-  return {x:x1, y:y2, z:z2}; // z=깊이(+앞)
+// 카메라: 이동/조준과 동일한 forward(=forwardVec) 사용 → 회전/이동/발사 일관
+var CAMPOS={x:0,y:0,z:0}, CAMF={x:0,y:0,z:1}, CAMR={x:1,y:0,z:0}, CAMU={x:0,y:1,z:0};
+function setCamera(s){ var f=forwardVec(s); CAMF=f;
+  CAMR={x:Math.cos(s.yaw),y:0,z:-Math.sin(s.yaw)};
+  CAMU={x:f.y*CAMR.z-f.z*CAMR.y, y:f.z*CAMR.x-f.x*CAMR.z, z:f.x*CAMR.y-f.y*CAMR.x}; // F×R
+  var eye={x:s.p.x,y:s.p.y+EYE,z:s.p.z};
+  CAMPOS = s.tp ? {x:eye.x-f.x*4.5, y:eye.y-f.y*4.5+1.1, z:eye.z-f.z*4.5} : eye;
 }
+function toCam(p){ var dx=p[0]-CAMPOS.x, dy=p[1]-CAMPOS.y, dz=p[2]-CAMPOS.z;
+  return {x:dx*CAMR.x+dy*CAMR.y+dz*CAMR.z, y:dx*CAMU.x+dy*CAMU.y+dz*CAMU.z, z:dx*CAMF.x+dy*CAMF.y+dz*CAMF.z}; }
 function clipNear(verts){ var out=[]; for(var i=0;i<verts.length;i++){ var a=verts[i], b=verts[(i+1)%verts.length];
   var ain=a.z>=NEAR, bin=b.z>=NEAR;
   if(ain)out.push(a);
@@ -245,17 +249,19 @@ function render(){
   var sky=ctx.createLinearGradient(0,0,0,H); sky.addColorStop(0,'#3a5a8a'); sky.addColorStop(0.55,'#7fa8d8'); sky.addColorStop(1,'#cfe0f0');
   ctx.fillStyle=sky; ctx.fillRect(0,0,W,H);
   if(!sim){ return; }
+  setCamera(sim);
   ctx.save();
   if(sim.shake>0.01){ ctx.translate((Math.random()*2-1)*sim.shake*12,(Math.random()*2-1)*sim.shake*12); }
-  // 면 수집
+  // 면 수집 (3인칭이면 플레이어 박스도)
   var faces=[];
-  for(var i=0;i<LEVEL.boxes.length;i++){ var b=LEVEL.boxes[i]; var fs=boxFaces(b);
+  var boxes = sim.tp ? LEVEL.boxes.concat([{cx:sim.p.x, cy:sim.p.y+PH_HY, cz:sim.p.z, hx:PH_HX+0.08, hy:PH_HY, hz:PH_HZ+0.08, col:'#ff8a3a'}]) : LEVEL.boxes;
+  for(var i=0;i<boxes.length;i++){ var b=boxes[i]; var fs=boxFaces(b);
     for(var f=0;f<fs.length;f++){ var face=fs[f];
-      // 백페이스 컬링(월드)
+      // 백페이스 컬링(월드, 카메라 위치 기준)
       var fc={x:(face.v[0][0]+face.v[2][0])/2,y:(face.v[0][1]+face.v[2][1])/2,z:(face.v[0][2]+face.v[2][2])/2};
-      var toCamV={x:(sim.p.x)-fc.x, y:(sim.p.y+EYE)-fc.y, z:(sim.p.z)-fc.z};
+      var toCamV={x:CAMPOS.x-fc.x, y:CAMPOS.y-fc.y, z:CAMPOS.z-fc.z};
       if(dot(face.n,toCamV)<=0) continue;
-      var cs=face.v.map(function(p){return toCam(sim,p);});
+      var cs=face.v.map(function(p){return toCam(p);});
       var clipped=clipNear(cs); if(clipped.length<3)continue;
       var zsum=0; for(var q=0;q<clipped.length;q++)zsum+=clipped[q].z; var zavg=zsum/clipped.length;
       faces.push({pts:clipped.map(project), z:zavg, col:shadeCol(b.col,face.sh), goal:(b===LEVEL.boxes[5])});
@@ -271,17 +277,44 @@ function render(){
   // 결승 기둥 빛
   drawBeam(LEVEL.goal.cx, LEVEL.goal.cy, LEVEL.goal.cz);
   // 블래스트(구)
-  for(var b2=0;b2<sim.blasts.length;b2++){ var bl=sim.blasts[b2]; var c=toCam(sim,[bl.x,bl.y,bl.z]); if(c.z<=NEAR)continue;
+  for(var b2=0;b2<sim.blasts.length;b2++){ var bl=sim.blasts[b2]; var c=toCam([bl.x,bl.y,bl.z]); if(c.z<=NEAR)continue;
     var sp=project(c); var rad=(BLAST_R*bl.t)/c.z*FOCAL; ctx.strokeStyle='rgba(160,220,255,'+(1-bl.t)+')'; ctx.lineWidth=3;
     ctx.beginPath(); ctx.arc(sp.x,sp.y,Math.max(1,rad),0,6.28); ctx.stroke(); }
   // 파티클
-  for(var pp=0;pp<sim.particles.length;pp++){ var pt=sim.particles[pp]; var c2=toCam(sim,[pt.x,pt.y,pt.z]); if(c2.z<=NEAR)continue;
+  for(var pp=0;pp<sim.particles.length;pp++){ var pt=sim.particles[pp]; var c2=toCam([pt.x,pt.y,pt.z]); if(c2.z<=NEAR)continue;
     var s2=project(c2); ctx.globalAlpha=Math.max(0,pt.life); ctx.fillStyle='#dff0ff'; var r=Math.max(1,6/c2.z*FOCAL*0.3);
     ctx.beginPath(); ctx.arc(s2.x,s2.y,r,0,6.28); ctx.fill(); } ctx.globalAlpha=1;
   ctx.restore();
+  // 1인칭 총(뷰모델) — 화면 공간
+  if(!sim.tp) drawGun(sim);
 }
-function drawBeam(x,y,z){ var lo=toCam(sim,[x,y+0.5,z]), hi=toCam(sim,[x,y+8,z]); if(lo.z<=NEAR||hi.z<=NEAR)return;
+function drawBeam(x,y,z){ var lo=toCam([x,y+0.5,z]), hi=toCam([x,y+8,z]); if(lo.z<=NEAR||hi.z<=NEAR)return;
   var a=project(lo), b=project(hi); ctx.strokeStyle='rgba(120,255,170,.4)'; ctx.lineWidth=6; ctx.beginPath(); ctx.moveTo(a.x,a.y); ctx.lineTo(b.x,b.y); ctx.stroke(); }
+// 1인칭 뷰모델: 우하단에 PoofGun. 반동(recoil)으로 뒤로 밀렸다 복귀 + 발사 시 총구 플래시
+function drawGun(s){
+  var rc=s.recoil||0; var kick=rc*rc; // 강한 초기 킥
+  var bx=W*0.66, by=H - 8 + kick*46;   // 반동 시 아래로
+  ctx.save(); ctx.translate(bx,by); ctx.rotate(-0.10 + kick*0.16);
+  // 팔뚝
+  ctx.fillStyle='#c9782f'; rr(-30,74,52,80,10);
+  // 총 몸통
+  ctx.fillStyle='#3a4664'; rr(-58,-2,120,54,10);
+  ctx.fillStyle='#2b3350'; rr(-58,30,120,18,6);
+  // 손잡이
+  ctx.fillStyle='#242c46'; ctx.save(); ctx.translate(18,44); ctx.rotate(0.32); rr(-14,0,28,52,8); ctx.restore();
+  // 총열(앞으로, 크로스헤어 쪽=위-왼쪽)
+  ctx.fillStyle='#4a597e'; rr(-104,-16,60,30,8);
+  // 공기통(파랑) + 노즐
+  ctx.fillStyle='#2aa8e0'; ctx.beginPath(); ctx.arc(6,4,20,0,6.28); ctx.fill();
+  ctx.strokeStyle='#8fe0ff'; ctx.lineWidth=3; ctx.beginPath(); ctx.arc(6,4,20,0,6.28); ctx.stroke();
+  ctx.fillStyle='#141a2c'; ctx.beginPath(); ctx.arc(-108,-1,12,0,6.28); ctx.fill();
+  // 총구 플래시(발사 직후)
+  if(rc>0.55){ var a=(rc-0.55)/0.45; ctx.globalAlpha=a;
+    ctx.fillStyle='#cdefff'; ctx.beginPath(); ctx.arc(-118,-1,10+18*a,0,6.28); ctx.fill();
+    ctx.fillStyle='rgba(140,220,255,.6)'; ctx.beginPath(); ctx.arc(-118,-1,18+34*a,0,6.28); ctx.fill(); ctx.globalAlpha=1; }
+  ctx.restore();
+}
+function rr(x,y,w,h,r){ ctx.beginPath(); ctx.moveTo(x+r,y); ctx.arcTo(x+w,y,x+w,y+h,r); ctx.arcTo(x+w,y+h,x,y+h,r); ctx.arcTo(x,y+h,x,y,r); ctx.arcTo(x,y,x+w,y,r); ctx.closePath(); ctx.fill(); }
 
 /* ---------- 라이브 입력/루프 ---------- */
 var mode='title', keys={}, locked=false, jumpEdge=false;
@@ -296,7 +329,8 @@ document.addEventListener('pointerlockchange',function(){ locked=(document.point
 document.addEventListener('mousemove',function(e){ if(!locked||!sim)return; var sX=0.0022;
   sim.yaw+=e.movementX*sX; sim.pitch-=e.movementY*sX; sim.pitch=Math.max(-1.45,Math.min(1.45,sim.pitch)); });
 window.addEventListener('keydown',function(e){ ensureAudio(); var k=e.key.toLowerCase(); keys[k]=true;
-  if(k===' '){ jumpEdge=true; e.preventDefault(); } if(k==='r'&&sim)respawn(sim); });
+  if(k===' '){ jumpEdge=true; e.preventDefault(); } if(k==='r'&&sim)respawn(sim);
+  if(k==='v'&&sim)sim.tp=!sim.tp; });
 window.addEventListener('keyup',function(e){ keys[e.key.toLowerCase()]=false; });
 
 var last=0, acc=0, STEP=1/120;
