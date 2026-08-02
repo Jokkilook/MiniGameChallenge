@@ -142,7 +142,25 @@ function send(socket, data, opcode){
 
 function log(){ var a = Array.prototype.slice.call(arguments); console.log('[peng]', a.join(' ')); }
 
-server.listen(PORT, function(){
-  console.log('PENG! 멀티 서버 실행 → http://localhost:' + PORT + '/');
-  console.log('친구와 함께: http://localhost:' + PORT + '/?room=<방이름>  (같은 링크 공유)');
+// 0.0.0.0 = 모든 네트워크 인터페이스에서 수신(외부 접속 허용). 기본값이며 별도 설정 불필요.
+server.listen(PORT, '0.0.0.0', function(){
+  var os = require('os'), ifs = os.networkInterfaces(), lan = [];
+  Object.keys(ifs).forEach(function(name){
+    (ifs[name] || []).forEach(function(a){
+      if(a.family === 'IPv4' && !a.internal) lan.push({ name:name, ip:a.address });
+    });
+  });
+  console.log('');
+  console.log('  PENG! 멀티 서버 실행 중 (포트 ' + PORT + ', 모든 인터페이스 수신)');
+  console.log('');
+  console.log('  이 PC에서:      http://localhost:' + PORT + '/');
+  if(lan.length){
+    console.log('  같은 공유기의 친구에게 알려줄 주소:');
+    lan.forEach(function(l){ console.log('      http://' + l.ip + ':' + PORT + '/     (' + l.name + ')'); });
+  }
+  console.log('');
+  console.log('  · 친구가 접속이 안 되면 Windows 방화벽에서 Node.js 인바운드를 허용하세요.');
+  console.log('  · 인터넷 너머의 친구는 공유기 포트포워딩(' + PORT + ') 또는 터널이 필요합니다:');
+  console.log('        npx localtunnel --port ' + PORT);
+  console.log('');
 });
