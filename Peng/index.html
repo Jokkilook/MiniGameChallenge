@@ -531,7 +531,16 @@ function renderLobby(){
 document.getElementById('soloBtn').addEventListener('click',function(){ ensureAudio(); mpDisconnect(); startGame(); });
 document.getElementById('hostBtn').addEventListener('click',function(){ ensureAudio(); setWarn('서버에 연결 중…');
   mpConnect(mpCode(), function(){ setWarn(''); showScreen('lobbyScr'); renderLobby(); },
-    function(){ setWarn('⚠️ 멀티 서버에 연결할 수 없습니다. <b>node server.js</b> 로 서버를 켠 뒤 그 주소로 접속하세요.'); }); });
+    function(){ setWarn(noServerMsg()); }); });
+// 왜 연결이 안 되는지 현재 주소를 보고 구체적으로 안내
+function noServerMsg(){
+  var where = (location.protocol==='file:')
+    ? '지금 <b>파일을 직접</b> 열었습니다(file://).'
+    : '지금 주소는 <b>'+location.host+'</b> 인데, 여기에는 멀티 서버가 없습니다.';
+  return '⚠️ 멀티 서버에 연결할 수 없습니다.<br>'+where+
+    '<br>터미널에서 <b>Peng</b> 폴더로 이동해 <b>node server.js</b> 를 실행한 뒤,<br>'+
+    '브라우저에서 <b>http://localhost:8090/</b> 로 다시 여세요.';
+}
 document.getElementById('joinBtn').addEventListener('click',function(){ ensureAudio(); setWarn('');
   document.getElementById('joinErr').textContent=''; document.getElementById('codeInput').value='';
   showScreen('joinScr'); setTimeout(function(){ document.getElementById('codeInput').focus(); },50); });
@@ -544,9 +553,8 @@ function doJoin(){ ensureAudio();
   if(code.length<4){ err.textContent='세션 코드를 입력하세요.'; return; }
   err.textContent='접속 중…';
   mpConnect(code, function(){ err.textContent=''; showScreen('lobbyScr'); renderLobby(); },
-    function(why){ err.textContent = (why==='nosuch')
-      ? ('“'+code+'” 방을 찾을 수 없어요. 코드를 다시 확인하세요.')
-      : '서버에 연결할 수 없습니다. 호스트가 서버를 켰는지 확인하세요.'; }, true);
+    function(why){ if(why==='nosuch') err.textContent='“'+code+'” 방을 찾을 수 없어요. 코드를 다시 확인하세요.';
+      else err.innerHTML=noServerMsg(); }, true);
 }
 document.getElementById('lobbyStartBtn').addEventListener('click',function(){
   if(!mpIsHost()||MP.players.length<2)return; mpSend({t:'start'}); startGame(); });
@@ -604,6 +612,17 @@ function showHint(s){ var m=document.getElementById('msg'); var h='';
   if(h!==lastHint){ lastHint=h; m.innerHTML=h; m.classList.toggle('on', !!h); }
 }
 showScreen('title');
+// 시작 시 멀티 서버 유무를 미리 확인해 안내(버튼을 눌러보기 전에 알 수 있게)
+(function probeServer(){
+  if(location.protocol==='file:'){ setWarn(noServerMsg()); return; }
+  var base=location.pathname.replace(/[^/]*$/,'');
+  var done=false, to=setTimeout(function(){ if(!done){ done=true; setWarn(noServerMsg()); } }, 2500);
+  try{
+    fetch(base+'__peng',{cache:'no-store'}).then(function(r){ return r.ok?r.json():Promise.reject(); })
+      .then(function(){ if(!done){ done=true; clearTimeout(to); setWarn('🟢 멀티 서버 준비됨 — 방을 만들거나 코드로 참가하세요.'); } })
+      .catch(function(){ if(!done){ done=true; clearTimeout(to); setWarn(noServerMsg()); } });
+  }catch(e){ if(!done){ done=true; clearTimeout(to); setWarn(noServerMsg()); } }
+})();
 layout(); requestAnimationFrame(loop);
 
 /* ---------- 검증 노출 ---------- */

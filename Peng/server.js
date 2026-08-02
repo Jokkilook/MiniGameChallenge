@@ -20,6 +20,8 @@ var MIME = { '.html':'text/html; charset=utf-8', '.js':'text/javascript', '.css'
 /* ---------- 정적 파일 서버 ---------- */
 var server = http.createServer(function(req, res){
   var urlPath = decodeURIComponent(req.url.split('?')[0]);
+  // 클라이언트가 "멀티 서버가 맞는지" 확인하는 용도
+  if(urlPath === '/__peng'){ res.writeHead(200, {'Content-Type':'application/json'}); res.end('{"peng":1}'); return; }
   if(urlPath === '/' || urlPath === '') urlPath = '/index.html';
   // 경로 탈출 방지
   var filePath = path.normalize(path.join(ROOT, urlPath));
