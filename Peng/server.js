@@ -125,6 +125,7 @@ var server = http.createServer(function(req, res){
 var GUID = '258EAFA5-E914-47DA-95CA-C5AB0DC85B11';
 var rooms = {};        // room -> { id -> client }
 var roomLevel = {};    // room -> 호스트가 고른 맵 id (대기방에서도 같은 코스를 보도록)
+var roomMode  = {};    // room -> 호스트가 고른 게임 모드(coop/versus)
 var nextId = 1;
 
 function roomOf(url){ var m = /[?&]room=([^&]+)/.exec(url || ''); return m ? decodeURIComponent(m[1]).slice(0,40) : 'lobby'; }
@@ -172,7 +173,7 @@ server.on('upgrade', function(req, socket){
     if(closed) return; closed = true;
     var r = rooms[room]; if(r){ delete r[id];
       broadcast(room, id, JSON.stringify({ t:'left', id:id }));
-      if(Object.keys(r).length === 0){ delete rooms[room]; delete roomLevel[room]; } else sendRoster(room);
+      if(Object.keys(r).length === 0){ delete rooms[room]; delete roomLevel[room]; delete roomMode[room]; } else sendRoster(room);
     }
     try{ socket.destroy(); }catch(e){}
     log('left', 'room='+room, 'id='+id);
@@ -182,52 +183,31 @@ server.on('upgrade', function(req, socket){
     if(m.t === 'join'){
       if(typeof m.name === 'string') client.name = m.name.slice(0,24);
       sendRoster(room);
-      // 호스트가 이미 고른 맵이 있으면 새로 온 사람도 같은 코스를 보게 한다
+      // 새로 들어온 사람이 방의 현재 상태를 그대로 보도록 맞춰 준다
       if(roomLevel[room]) send(socket, JSON.stringify({ t:'lvl', level:roomLevel[room] }));
-      // 이미 방에 있던 사람들의 외형을 새로 들어온 사람에게 전달
+      if(roomMode[room])  send(socket, JSON.stringify({ t:'gm',  mode:roomMode[room] }));
       var r0 = rooms[room];
       if(r0) Object.keys(r0).forEach(function(k){
         var o = r0[k];
-        if(o.id !== id && o.cfg) send(socket, JSON.stringify({ t:'cfg', id:o.id, c:o.cfg }));
+        if(o.id !== id && o.col) send(socket, JSON.stringify({ t:'col', id:o.id, c:o.col }));
       });
       return;
     }
-    /* 대기방에서 호스트가 고른 맵을 방 전원에게 알린다.
-       대기방이 연습장이 되면서 월드가 실제로 보이기 때문에, 시작할 때만 맞추면
-       기다리는 동안 각자 다른 코스를 렌더해 상대가 허공에 떠 보인다.
-       나중에 들어온 사람에게도 알려야 하므로 방에 마지막 값을 기억해 둔다. */
-    if(m.t === 'lvl'){
-      if(id !== hostOf(room)) return;          // 맵을 정하는 건 호스트뿐
-      var lid = (typeof m.level === 'string') ? m.level.slice(0,40) : null;
-      if(!lid) return;
-      roomLevel[room] = lid;
-      broadcast(room, id, JSON.stringify({ t:'lvl', level:lid }));
+    if(m.t === 'col'){          // 몸통 색 — #rrggbb 만 통과, 방에 저장해 새 참가자에게도 전달
+      if(typeof m.c !== 'string' || !/^#[0-9a-fA-F]{6}$/.test(m.c)) return;
+      client.col = m.c;
+      broadcast(room, id, JSON.stringify({ t:'col', id:id, c:m.c }));
       return;
     }
-    if(m.t === 'start'){                       // 호스트만 시작시킬 수 있다
+    if(m.t === 'gm'){           // 게임 모드 — 호스트만 정한다
       if(id !== hostOf(room)) return;
-      // 호스트가 고른 맵 id 도 함께 전달한다. 빠뜨리면 각자 다른 코스에서 뛰게 되고,
-      // 상대가 허공을 달리는 것처럼 보인다(모르는 id 는 클라이언트가 기본 맵으로 떨군다).
-      var lv = (typeof m.level === 'string') ? m.level.slice(0,40) : null;
-      broadcast(room, id, JSON.stringify({ t:'start', level:lv })); return;
-    }
-    if(m.t === 'ch'){   // 채팅: 길이 제한 후 본인 포함 방 전원에게(모두 같은 순서로 보이도록)
-      var text = String(m.text == null ? '' : m.text).slice(0, 120);
-      if(!text.trim()) return;
-      var out = JSON.stringify({ t:'ch', id:id, name:client.name, text:text });
-      var r = rooms[room]; if(r) Object.keys(r).forEach(function(k){ send(r[k].socket, out); });
+      if(m.mode !== 'coop' && m.mode !== 'versus') return;
+      roomMode[room] = m.mode;
+      broadcast(room, id, JSON.stringify({ t:'gm', mode:m.mode }));
       return;
     }
-    if(m.t === 'cfg'){ // 캐릭터 외형 설정 — 숫자/짧은 문자열만 통과시킨다
-      var c = m.c; if(!c || typeof c !== 'object') return;
-      var out = {};
-      Object.keys(c).slice(0, 40).forEach(function(k){
-        var v = c[k];
-        if(typeof v === 'number' && isFinite(v)) out[k] = v;
-        else if(typeof v === 'string' && /^#[0-9a-fA-F]{6}$/.test(v)) out[k] = v;
-      });
-      client.cfg = out;
-      broadcast(room, id, JSON.stringify({ t:'cfg', id:id, c:out }));
+    if(m.t === 'fell'){         // 아레나 밖으로 떨어짐 — 떨어진 본인이 알린다
+      broadcast(room, id, JSON.stringify({ t:'fell', id:id }));
       return;
     }
     if(m.t === 'st'){  m.id = id; m.name = client.name; broadcast(room, id, JSON.stringify(m)); return; }
