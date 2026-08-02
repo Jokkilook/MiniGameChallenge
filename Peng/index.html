@@ -556,7 +556,7 @@ function glInit(){
   PROG.bb.uUp    =gl.getUniformLocation(PROG.bb,'uUp');
   PROG.sky=glProgram(VS_SKY,FS_SKY);
   PROG.sky.aP=gl.getAttribLocation(PROG.sky,'aP');
-  BUF.tri=gl.createBuffer(); BUF.line=gl.createBuffer(); BUF.bb=gl.createBuffer(); BUF.sky=gl.createBuffer();
+  BUF.tri=gl.createBuffer(); BUF.line=gl.createBuffer(); BUF.outl=gl.createBuffer(); BUF.bb=gl.createBuffer(); BUF.sky=gl.createBuffer();
   gl.bindBuffer(gl.ARRAY_BUFFER,BUF.sky);
   gl.bufferData(gl.ARRAY_BUFFER,new Float32Array([-1,-1, 3,-1, -1,3]),gl.STATIC_DRAW);
   gl.enable(gl.DEPTH_TEST); gl.depthFunc(gl.LEQUAL);
@@ -601,7 +601,32 @@ function setCamera(s){ var f=forwardVec(s);
   } else { CAMPOS=eye; CAMF=AIMF; CAMR=AIMR; CAMU=AIMU; }
 }
 /* --- 프레임 기하 누적 버퍼 --- */
-var TRI=[], LINE=[], BB=[];      // 삼각형(pos+col), 외곽선(pos+col), 빌보드
+var TRI=[], LINE=[], BB=[], OUTL=[];   // 삼각형 · 선 · 빌보드 · 윤곽선 셸
+/* 툰 윤곽선: 모델을 법선 방향으로 살짝 부풀린 '껍질'을 만들어 뒷면만 그린다.
+   본체를 먼저 그린 뒤 껍질을 그리면 실루엣 바깥 테두리만 남는다.
+   곡면의 모든 모서리를 선으로 그으면 와이어프레임이 되므로 이 방식을 쓴다. */
+function outlPush(p,c){ OUTL.push(p[0],p[1],p[2],c[0],c[1],c[2]); }
+var OUTLINE_COL=[0.04,0.06,0.10];
+function capsuleOutlineGL(cx,cy,cz,r,h,w){
+  if(w<=0) return;
+  if(!CAPS_CACHE) CAPS_CACHE=buildCapsule(r,h);
+  var fl=CAPS_CACHE, c=OUTLINE_COL;
+  for(var f=0;f<fl.length;f++){ var v=fl[f].v, n=fl[f].n4, p=[];
+    for(var k=0;k<4;k++) p.push([v[k][0]+n[k][0]*w+cx, v[k][1]+n[k][1]*w+cy, v[k][2]+n[k][2]*w+cz]);
+    outlPush(p[0],c); outlPush(p[1],c); outlPush(p[2],c);
+    outlPush(p[0],c); outlPush(p[2],c); outlPush(p[3],c);
+  }
+}
+function sphereOutlineGL(cx,cy,cz,r,w){
+  if(w<=0) return;
+  var key=r.toFixed(3), fl=SPH_CACHE[key]||(SPH_CACHE[key]=buildSphere(r)), c=OUTLINE_COL;
+  var k2=(r+w)/r;                                  // 구는 중심에서 균일 확대면 충분
+  for(var f=0;f<fl.length;f++){ var v=fl[f].v, p=[];
+    for(var k=0;k<4;k++) p.push([v[k][0]*k2+cx, v[k][1]*k2+cy, v[k][2]*k2+cz]);
+    outlPush(p[0],c); outlPush(p[1],c); outlPush(p[2],c);
+    outlPush(p[0],c); outlPush(p[2],c); outlPush(p[3],c);
+  }
+}
 function triPush(p,c){ TRI.push(p[0],p[1],p[2],c[0],c[1],c[2]); }
 // 사각형 하나 → 삼각형 2개(+옵션 외곽선). CCW 유지(백페이스 컬링용)
 function quadGL(v,c,outline){
@@ -635,7 +660,7 @@ function render(){
   var VP=mat4Mul(mat4Perspective(FOV, W/H, NEAR, FAR), mat4View(cpos,CAMR,CAMU,CAMF));
   CURVP=VP;                       // 조준점 투영용으로 이번 프레임 행렬을 남긴다
 
-  TRI.length=0; LINE.length=0; BB.length=0;
+  TRI.length=0; LINE.length=0; BB.length=0; OUTL.length=0;
   // 레벨
   for(var i=0;i<LEVEL.boxes.length;i++){ var bx=LEVEL.boxes[i]; meshGL(boxFaces(bx), bx.col, true); }
   // 원격 플레이어 — 보간된 위치
@@ -676,6 +701,13 @@ function render(){
   gl.enable(gl.POLYGON_OFFSET_FILL); gl.polygonOffset(1.0,1.0);  // 외곽선이 면에 묻히지 않게
   drawArr(BUF.tri, TRI, PROG.main, gl.TRIANGLES);
   gl.disable(gl.POLYGON_OFFSET_FILL);
+  // 윤곽선 껍질 — 카메라를 등진 면만 남겨야 실루엣 테두리가 된다.
+  // 이 메시들은 바깥면이 CW(=GL 기준 뒷면)라 BACK 을 컬링해야 바깥이 지워진다.
+  if(OUTL.length){
+    gl.enable(gl.CULL_FACE); gl.cullFace(gl.BACK);
+    drawArr(BUF.outl, OUTL, PROG.main, gl.TRIANGLES);
+    gl.disable(gl.CULL_FACE);
+  }
   if(LINE.length) drawArr(BUF.line, LINE, PROG.main, gl.LINES);
   if(BB.length){
     gl.useProgram(PROG.bb); gl.uniformMatrix4fv(PROG.bb.uVP,false,VP);
@@ -731,6 +763,12 @@ var CAPS_CACHE=null;
 /* 캡슐 — 정점마다 밝기를 계산한다(Gouraud).
    면 하나에 밝기 하나를 주면 24분할이어도 띠(계단)가 눈에 띈다.
    정점색은 셰이더의 varying 으로 보간되므로 면 사이가 매끄럽게 이어진다. */
+// 캡슐 표면 정점의 바깥 방향(윤곽선용 껍질을 부풀릴 때 쓴다)
+function capsuleVertNormal(v,h){
+  var ay=Math.max(-h,Math.min(h,v[1]));
+  var nx=v[0], ny=v[1]-ay, nz=v[2], nl=Math.hypot(nx,ny,nz)||1;
+  return [nx/nl, ny/nl, nz/nl];
+}
 function capsuleVertShade(vx,vy,vz,h){
   var ay=Math.max(-h,Math.min(h,vy));            // 캡슐 축에서 가장 가까운 점
   var nx=vx, ny=vy-ay, nz=vz, nl=Math.hypot(nx,ny,nz)||1;
@@ -747,10 +785,11 @@ function buildCapsule(r,h){
     for(var s=0;s<S;s++){ var a0=s/S*6.2831853,a1=(s+1)/S*6.2831853;
       var v=[[A.rr*Math.cos(a0),A.y,A.rr*Math.sin(a0)], [A.rr*Math.cos(a1),A.y,A.rr*Math.sin(a1)],
              [B.rr*Math.cos(a1),B.y,B.rr*Math.sin(a1)], [B.rr*Math.cos(a0),B.y,B.rr*Math.sin(a0)]];
-      out.push({ v:v, sh4:[ capsuleVertShade(v[0][0],v[0][1],v[0][2],h),
-                            capsuleVertShade(v[1][0],v[1][1],v[1][2],h),
-                            capsuleVertShade(v[2][0],v[2][1],v[2][2],h),
-                            capsuleVertShade(v[3][0],v[3][1],v[3][2],h) ] });
+      out.push({ v:v,
+        sh4:[ capsuleVertShade(v[0][0],v[0][1],v[0][2],h), capsuleVertShade(v[1][0],v[1][1],v[1][2],h),
+              capsuleVertShade(v[2][0],v[2][1],v[2][2],h), capsuleVertShade(v[3][0],v[3][1],v[3][2],h) ],
+        n4:[ capsuleVertNormal(v[0],h), capsuleVertNormal(v[1],h),
+             capsuleVertNormal(v[2],h), capsuleVertNormal(v[3],h) ] });
     }
   }
   return out;
@@ -794,6 +833,7 @@ function sphereGL(cx,cy,cz,r,col){
 }
 /* 눈 배치·굴림 — 디버그 패널에서 조절할 수 있게 변수로 뺀다 */
 var EYE_Y=1.42, EYE_X=0.15, EYE_Z=0.295, EYE_R=0.115, EYE_PUPIL_R=0.058, EYE_ROLL=0.85;
+var OUTLINE_BODY=0.022, OUTLINE_EYE=0.012;   // 윤곽선 두께(월드 단위)
 var EYE_PUPIL_SINK=0.88;   // 눈동자가 흰자 안으로 얼마나 들어가는지(1에 가까울수록 깊이 박힘)
 var PLAYER_COL='#ff8a3a';
 // 1인칭 PoofGun 3D 모델(카메라 로컬: x=오른쪽, y=위, z=앞)
@@ -831,7 +871,8 @@ function emitCharacter(px,py,pz,yaw,pitch,recoil,col){
   var R={x:Math.cos(yaw),y:0,z:-Math.sin(yaw)};
   var U={x:f.y*R.z-f.z*R.y, y:f.z*R.x-f.x*R.z, z:f.x*R.y-f.y*R.x};
   var eye={x:px,y:py+EYE,z:pz};
-  capsuleGL(px,py+0.9,pz,0.35,0.55,col);   // 캡슐은 외곽선 없이 매끈하게(캐시 재사용)
+  capsuleGL(px,py+0.9,pz,0.35,0.55,col);
+  capsuleOutlineGL(px,py+0.9,pz,0.35,0.55, OUTLINE_BODY);   // 몸통 실루엣   // 캡슐은 외곽선 없이 매끈하게(캐시 재사용)
   // 눈 — 흰자는 고정, 눈동자가 시선(pitch)을 따라 흰자 표면 위를 굴러간다.
   // 몸이 yaw 를 따라 돌므로 좌우 성분은 이미 반영돼 있고, 여기서는 상하가 남는다.
   var HF={x:Math.sin(yaw),y:0,z:Math.cos(yaw)}, HU={x:0,y:1,z:0};
@@ -845,6 +886,7 @@ function emitCharacter(px,py,pz,yaw,pitch,recoil,col){
     var w=headPos(s*EYE_X, 0, EYE_Z);
     var p=headPos(s*EYE_X, ldy*orbit, EYE_Z + ldz*orbit);
     sphereGL(w.x,w.y,w.z, EYE_R, '#ffffff');            // 흰자
+    sphereOutlineGL(w.x,w.y,w.z, EYE_R, OUTLINE_EYE);   // 눈 테두리
     sphereGL(p.x,p.y,p.z, EYE_PUPIL_R, '#101c33');      // 눈동자
   }
   var kick=(recoil||0)*(recoil||0);
@@ -1106,6 +1148,9 @@ var DBG_SPEC=[
   ['눈 크기',       0.03,0.3, 0.005,function(){return EYE_R;},      function(v){EYE_R=v;}],
   ['눈동자 크기',   0.01,0.2, 0.005,function(){return EYE_PUPIL_R;},function(v){EYE_PUPIL_R=v;}],
   ['눈동자 깊이',   0,   1.6, 0.02, function(){return EYE_PUPIL_SINK;},function(v){EYE_PUPIL_SINK=v;}],
+  ['sec','윤곽선'],
+  ['몸통 굵기',     0,   0.1, 0.002,function(){return OUTLINE_BODY;},  function(v){OUTLINE_BODY=v;}],
+  ['눈 굵기',       0,   0.06,0.002,function(){return OUTLINE_EYE;},   function(v){OUTLINE_EYE=v;}],
   ['눈 간격',       0,   0.4, 0.005,function(){return EYE_X;},      function(v){EYE_X=v;}],
   ['눈 높이',       0.8, 2.2, 0.01, function(){return EYE_Y;},      function(v){EYE_Y=v;}],
   ['sec','멀티'],
