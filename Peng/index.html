@@ -44,7 +44,7 @@
   <div id="topbar">
     <span class="pill">⏱ <b id="timeV">0.0</b>s</span>
     <span class="pill" id="cpV">체크포인트 0</span>
-    <span class="pill">PoofGun</span>
+    <span class="pill" id="mpV">🎮 솔로</span>
   </div>
   <div id="ammo"></div>
   <div id="msg"></div>
@@ -58,6 +58,8 @@
      발밑을 쏴 <b>로켓점프</b>로 못 넘는 협곡을 넘어 <b>결승선(초록)</b>까지!</p>
   <p class="hint"><kbd>WASD</kbd> 이동 · <kbd>마우스</kbd> 시점 · <kbd>좌클릭</kbd> 펑! · <kbd>Space</kbd> 점프 · <kbd>R</kbd> 리스폰 · <kbd>V</kbd> 3인칭<br>화면을 클릭하면 마우스가 잠깁니다(FPS). <kbd>ESC</kbd>로 해제.</p>
   <button class="go" id="startBtn">시작</button>
+  <p class="hint" id="mpNote" style="margin-top:14px">멀티: 같은 <b>방 링크</b>를 친구와 공유하면 함께 플레이 · 팀원을 펑건으로 밀어 협곡을 넘겨주세요!<br>
+    <span id="mpRoomLbl">방: lobby</span> · <a href="#" id="copyLink" style="color:#7fd0ff">방 링크 복사</a></p>
 </div>
 
 <div class="screen off" id="win">
@@ -149,11 +151,7 @@ function doFire(s){
   var tHit=BLAST_RANGE;
   for(var i=0;i<LEVEL.boxes.length;i++){ var t=rayBox(o,d,LEVEL.boxes[i]); if(t<tHit)tHit=t; }
   var center={x:o.x+d.x*tHit, y:o.y+d.y*tHit, z:o.z+d.z*tHit};
-  // 넉백: 플레이어 중심 기준
-  var pc={x:s.p.x, y:s.p.y+PH_HY, z:s.p.z};
-  var diff=sub(pc,center), dist=len(diff);
-  if(dist<BLAST_R){ var f=BLAST_F*(1-dist/BLAST_R); if(dist<0.001){diff={x:0,y:1,z:0};dist=1;}
-    s.v.x+=diff.x/dist*f; s.v.y+=diff.y/dist*f; s.v.z+=diff.z/dist*f; s.onGround=false; }
+  applyBlast(s, center.x, center.y, center.z);   // 자기 넉백
   // 즉시: 총 반동/작은 흔들림. 폭발 연출은 발사체가 착탄할 때.
   s.recoil=1; s.shake=Math.min(0.4,s.shake+0.12);
   var start=Math.min(0.6, tHit*0.5);
@@ -161,7 +159,15 @@ function doFire(s){
     dx:d.x, dy:d.y, dz:d.z, gone:0, dist:Math.max(0.05,tHit-start),
     bx:center.x, by:center.y, bz:center.z });
   sndShoot();
+  if(typeof mpSend==='function') mpSend({t:'bl', x:center.x, y:center.y, z:center.z}); // 팀원 넉백용 브로드캐스트
   return true;
+}
+// 폭발 넉백(자기/원격 공용): 중심 기준으로 플레이어를 민다
+function applyBlast(s, cx, cy, cz){
+  var pc={x:s.p.x, y:s.p.y+PH_HY, z:s.p.z};
+  var diff={x:pc.x-cx, y:pc.y-cy, z:pc.z-cz}, dist=Math.hypot(diff.x,diff.y,diff.z);
+  if(dist<BLAST_R){ var f=BLAST_F*(1-dist/BLAST_R); if(dist<0.001){diff={x:0,y:1,z:0};dist=1;}
+    s.v.x+=diff.x/dist*f; s.v.y+=diff.y/dist*f; s.v.z+=diff.z/dist*f; s.onGround=false; }
 }
 function blastFx(s,x,y,z){ // 착탄 폭발 연출(구+파편+흔들림+소리)
   s.blasts.push({x:x,y:y,z:z,t:0}); s.shake=Math.min(0.5,s.shake+0.22);
@@ -276,9 +282,12 @@ function render(){
   // 면 수집
   var faces=[];
   for(var i=0;i<LEVEL.boxes.length;i++){ emitFaces(boxFaces(LEVEL.boxes[i]), LEVEL.boxes[i].col, LEVEL.boxes[i]===LEVEL.boxes[5], faces); }
-  if(sim.tp){ // 3인칭: 플레이어 캡슐(매끈 — 외곽선 없음)
+  if(sim.tp){ // 3인칭: 자기 캡슐(매끈 — 외곽선 없음)
     emitFaces(capsuleFaces(sim.p.x, sim.p.y+0.9, sim.p.z, 0.35, 0.55), PLAYER_COL, false, faces, true);
   }
+  // 원격 플레이어(멀티) — 항상 렌더
+  for(var pid in MP.peers){ var pe=MP.peers[pid]; if(pe.x==null)continue;
+    emitCharacter(pe.x, pe.y, pe.z, pe.yaw||0, pe.pitch||0, pe.rc||0, PEER_COL, faces); }
   // 3D 총 — 항상. 플레이어 눈 위치 + '조준' 기저(AIM*)에 부착(카메라와 무관) → 1·3인칭 동일 모델
   var eye={x:sim.p.x,y:sim.p.y+EYE,z:sim.p.z}, kick=(sim.recoil||0)*(sim.recoil||0);
   var gtp=sim.tp?GUN_TP:[0,0,0];
@@ -383,12 +392,61 @@ var GUN=[
   {lc:[0.225,-0.285,0.62],lh:[0.062,0.062,0.075],col:'#2aa8e0'},// 공기통
 ];
 var GUN_TP=[0.15,0,-0.05]; // 3인칭: 오른쪽 가슴 쪽으로 살짝만(몸에 붙은 채 보이게)
+var PEER_COL='#42d6c8'; // 원격 플레이어(팀원) 캡슐 색(자기=주황과 구분)
+// 한 플레이어(캡슐+총)를 임의 위치/시점으로 렌더 — 3인칭 자기·원격 팀원 공용
+function emitCharacter(px,py,pz,yaw,pitch,recoil,col,faces){
+  var f={x:Math.cos(pitch)*Math.sin(yaw), y:Math.sin(pitch), z:Math.cos(pitch)*Math.cos(yaw)};
+  var R={x:Math.cos(yaw),y:0,z:-Math.sin(yaw)};
+  var U={x:f.y*R.z-f.z*R.y, y:f.z*R.x-f.x*R.z, z:f.x*R.y-f.y*R.x};
+  var eye={x:px,y:py+EYE,z:pz};
+  emitFaces(capsuleFaces(px,py+0.9,pz,0.35,0.55), col, false, faces, true);
+  var kick=(recoil||0)*(recoil||0);
+  for(var gi=0;gi<GUN.length;gi++){ var gp=GUN[gi];
+    var lc=[gp.lc[0]+GUN_TP[0], gp.lc[1]+GUN_TP[1]-0.05*kick, gp.lc[2]+GUN_TP[2]-0.16*kick];
+    emitFaces(orientedBox(lc, gp.lh, eye, R, U, f), gp.col, false, faces);
+  }
+}
+
+/* ---------- 멀티플레이(릴레이) ---------- */
+var MP={ ws:null, id:null, connected:false, peers:{}, room:'lobby', name:'P'+(100+Math.floor(Math.random()*900)), lastSend:0 };
+function mpRoom(){ var m=location.search.match(/[?&]room=([^&]+)/); return m?decodeURIComponent(m[1]):'lobby'; }
+function mpConnect(){
+  if(MP.ws) return; MP.room=mpRoom();
+  var url; try{
+    var proto=location.protocol==='https:'?'wss:':'ws:';
+    var base=location.pathname.replace(/[^/]*$/,'');
+    url=proto+'//'+location.host+base+'ws?room='+encodeURIComponent(MP.room);
+    MP.ws=new WebSocket(url);
+  }catch(e){ MP.ws=null; return; }
+  MP.ws.onopen=function(){ MP.connected=true; mpSend({t:'join',name:MP.name}); mpStatus(); };
+  MP.ws.onclose=function(){ MP.connected=false; MP.ws=null; MP.peers={}; mpStatus(); };
+  MP.ws.onerror=function(){ /* 서버 없으면 조용히 솔로 */ };
+  MP.ws.onmessage=function(ev){ var m; try{m=JSON.parse(ev.data);}catch(e){return;} mpHandle(m); };
+}
+function mpSend(o){ if(MP.ws&&MP.connected){ try{ MP.ws.send(JSON.stringify(o)); }catch(e){} } }
+function mpHandle(m){
+  if(m.t==='welcome'){ MP.id=m.id; }
+  else if(m.t==='st'){ if(m.id===MP.id)return; var pe=MP.peers[m.id]||(MP.peers[m.id]={}); pe.x=m.x;pe.y=m.y;pe.z=m.z;pe.yaw=m.yaw;pe.pitch=m.pitch;pe.rc=m.rc;pe.name=m.name||pe.name; pe.seen=performance.now(); }
+  else if(m.t==='bl'){ if(m.id===MP.id)return; if(sim&&!sim.win){ applyBlast(sim,m.x,m.y,m.z); blastFx(sim,m.x,m.y,m.z); } }
+  else if(m.t==='left'){ delete MP.peers[m.id]; }
+  mpStatus();
+}
+function mpStatus(){ var el=document.getElementById('mpV'); if(!el)return;
+  var n=0; for(var k in MP.peers)n++;
+  el.textContent = MP.connected ? ('🟢 '+ (n+1) +'명 · '+MP.room) : '🎮 솔로';
+}
+document.getElementById('mpRoomLbl').textContent='방: '+mpRoom();
+document.getElementById('copyLink').addEventListener('click',function(e){ e.preventDefault();
+  var u=location.origin+location.pathname+'?room='+encodeURIComponent(mpRoom());
+  if(navigator.clipboard&&navigator.clipboard.writeText){ navigator.clipboard.writeText(u).then(function(){ e.target.textContent='복사됨!'; },function(){ prompt('링크:',u); }); }
+  else prompt('링크:',u);
+});
 
 /* ---------- 라이브 입력/루프 ---------- */
 var mode='title', keys={}, locked=false, jumpEdge=false;
 function toggleScreens(){ document.getElementById('title').classList.toggle('off', mode!=='title');
   document.getElementById('win').classList.toggle('off', mode!=='win'); }
-function start(){ sim=makeSim(); mode='play'; toggleScreens(); acc=0; last=0; requestLock(); }
+function start(){ sim=makeSim(); mode='play'; toggleScreens(); acc=0; last=0; requestLock(); mpConnect(); }
 document.getElementById('startBtn').addEventListener('click',function(){ ensureAudio(); start(); });
 document.getElementById('retryBtn').addEventListener('click',function(){ ensureAudio(); start(); });
 function requestLock(){ try{ cv.requestPointerLock(); }catch(e){} }
@@ -407,6 +465,11 @@ function loop(now){ if(!last)last=now; var dt=Math.min(0.05,(now-last)/1000); la
     var inp={ mf:keys['w'], mb:keys['s'], ml:keys['a'], mr:keys['d'], jump:jumpEdge };
     acc+=dt; var guard=0; while(acc>=STEP && guard<12){ stepSim(sim,STEP, inp); inp.jump=false; acc-=STEP; guard++; }
     jumpEdge=false;
+    // 멀티: 내 상태 ~22Hz 전송 + 끊긴 피어 정리
+    if(MP.connected && now-MP.lastSend>45){ MP.lastSend=now;
+      mpSend({t:'st', name:MP.name, x:Math.round(sim.p.x*1000)/1000, y:Math.round(sim.p.y*1000)/1000, z:Math.round(sim.p.z*1000)/1000,
+        yaw:Math.round(sim.yaw*1000)/1000, pitch:Math.round(sim.pitch*1000)/1000, rc:Math.round((sim.recoil||0)*100)/100}); }
+    for(var _pid in MP.peers){ if(now-(MP.peers[_pid].seen||0)>5000) delete MP.peers[_pid]; }
     // HUD
     document.getElementById('timeV').textContent=sim.t.toFixed(1);
     document.getElementById('cpV').textContent='체크포인트 '+sim.cpIdx;
