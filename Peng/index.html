@@ -5,70 +5,121 @@
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>PENG! · 공기폭발 협동 질주 (프로토타입)</title>
 <style>
-  :root{ --ink:#eaf2ff; }
+  /* ============================================================
+     모던·샤프: 직각 · 얇은 1px 선 · 플랫 컬러 · 타이트한 대문자 라벨.
+     그라디언트/글로우/둥근 모서리/블러 없음.
+     ============================================================ */
+  :root{
+    --ink:#e8eef8; --dim:#8492ad; --line:#243044; --line2:#33425e;
+    --bg:#080b11; --panel:#0d1219; --acc:#4db3ff; --acc2:#2ee6b6; --warn:#ff6b5a;
+    --mono:ui-monospace,"Cascadia Mono","Consolas","Roboto Mono",monospace;
+  }
   *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
-  html,body{margin:0;height:100%;overflow:hidden;background:#0b1220;color:var(--ink);
-    font-family:"Segoe UI","Malgun Gothic",sans-serif;-webkit-font-smoothing:antialiased;-webkit-user-select:none;user-select:none}
-  #wrap{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:#05070e}
+  html,body{margin:0;height:100%;overflow:hidden;background:var(--bg);color:var(--ink);
+    font-family:"Pretendard","Inter","Segoe UI","Malgun Gothic",sans-serif;font-weight:600;
+    -webkit-font-smoothing:antialiased;-webkit-user-select:none;user-select:none}
+  #wrap{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:#04060a}
   canvas{display:block;cursor:none}
   #hud{position:fixed;inset:0;pointer-events:none;z-index:5}
-  #crosshair{position:absolute;left:50%;top:50%;width:18px;height:18px;transform:translate(-50%,-50%);opacity:.85}
-  #topbar{position:absolute;top:0;left:0;right:0;padding:10px 14px;display:flex;gap:10px;justify-content:center;font-size:13px;font-weight:700}
-  #topbar .pill{background:rgba(10,16,34,.6);border:1px solid rgba(120,150,230,.3);border-radius:16px;padding:5px 12px;letter-spacing:.5px}
-  #topbar .pill b{color:#7fd0ff}
-  #ammo{position:absolute;right:20px;bottom:20px;display:flex;gap:6px}
-  #ammo .p{width:14px;height:26px;border-radius:5px;background:rgba(255,255,255,.15);border:1px solid rgba(255,255,255,.3)}
-  #ammo .p.on{background:linear-gradient(180deg,#8fe0ff,#3aa8ff);box-shadow:0 0 8px #3aa8ff}
-  #msg{position:absolute;left:50%;top:24%;transform:translateX(-50%);font-weight:900;font-size:clamp(20px,4vw,34px);
-    text-shadow:0 2px 12px rgba(0,0,0,.6);opacity:0;transition:opacity .25s;text-align:center}
+  #crosshair{position:absolute;left:50%;top:50%;width:18px;height:18px;transform:translate(-50%,-50%);opacity:.9}
+  /* HUD: 각진 칩, 수치는 고정폭 */
+  #topbar{position:absolute;top:0;left:0;right:0;padding:12px;display:flex;gap:1px;justify-content:center}
+  #topbar .pill{background:rgba(8,11,17,.75);border:1px solid var(--line);padding:7px 14px;
+    font-size:12px;font-weight:800;letter-spacing:1.2px;text-transform:uppercase;color:#9dabc4}
+  #topbar .pill b{color:#fff;font-family:var(--mono);font-weight:700;letter-spacing:0}
+  #ammo{position:absolute;right:18px;bottom:18px;display:flex;gap:5px;align-items:flex-end}
+  #ammo .p{position:relative;width:7px;height:28px;background:transparent;border:1px solid var(--line2);overflow:hidden}
+  #ammo .p.on{background:var(--acc);border-color:var(--acc)}
+  /* 재충전 중인 칸: 아래에서 위로 차오르는 막대 */
+  #ammo .p i{position:absolute;left:0;right:0;bottom:0;height:0;background:var(--acc);opacity:.55;display:block}
+  #ammo .p.charging{border-color:#3f5a7d}
+  #msg{position:absolute;left:50%;top:22%;transform:translateX(-50%);font-weight:800;font-size:clamp(17px,2.7vw,24px);
+    letter-spacing:-.1px;color:#fff;background:rgba(8,11,17,.78);border-left:3px solid var(--acc);
+    padding:9px 18px;opacity:0;transition:opacity .18s;text-align:left}
   #msg.on{opacity:1}
-  .screen{position:fixed;inset:0;z-index:20;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:26px;
-    background:radial-gradient(120% 100% at 50% 25%,#16223e,#080c16 70%)}
+  #msg b{color:var(--acc);font-weight:900}
+  /* 화면 */
+  .screen{position:fixed;inset:0;z-index:20;display:flex;flex-direction:column;align-items:center;justify-content:center;
+    text-align:center;padding:28px;background:var(--bg)}
   .screen.off{display:none}
-  .screen h1{margin:0 0 4px;font-size:clamp(32px,9vw,64px);font-weight:900;letter-spacing:3px;
-    background:linear-gradient(180deg,#fff,#7fd0ff);-webkit-background-clip:text;background-clip:text;color:transparent}
-  .screen .sub{color:#7f8bc0;letter-spacing:5px;font-size:12px;margin-bottom:14px;font-weight:800}
-  .screen p{color:#b3bce4;font-size:15px;line-height:1.9;max-width:520px} .screen p b{color:#7fd0ff}
-  .screen kbd{background:rgba(255,255,255,.1);border:1px solid rgba(255,255,255,.25);border-radius:5px;padding:2px 8px;font-weight:800;margin:0 1px}
-  button.go{margin-top:22px;cursor:pointer;font:inherit;font-weight:800;font-size:17px;letter-spacing:2px;
-    color:#06121e;background:linear-gradient(180deg,#a8e0ff,#3aa8ff);border:0;padding:14px 40px;border-radius:30px;box-shadow:0 10px 30px -8px #2a88d6}
-  button.go:active{transform:translateY(1px)}
-  button.go.alt{background:linear-gradient(180deg,#54648c,#2f3a56);color:#dbe6ff;box-shadow:0 8px 24px -10px #1b2540}
-  button.go:disabled{opacity:.4;cursor:not-allowed;filter:grayscale(.6)}
-  .menu{display:flex;flex-direction:column;gap:11px;margin-top:20px;width:min(340px,86vw)}
+  .screen h1{margin:0;font-size:clamp(38px,9vw,68px);font-weight:900;letter-spacing:-2px;color:#fff;line-height:.95}
+  .screen .sub{color:var(--acc);letter-spacing:4px;font-size:11px;margin-bottom:10px;font-weight:900;text-transform:uppercase}
+  .screen p{color:#9dabc4;font-size:14.5px;font-weight:500;line-height:1.7;max-width:520px;margin:6px 0}
+  .screen p b{color:#fff;font-weight:800}
+  .screen kbd{font-family:var(--mono);font-size:11.5px;font-weight:700;background:transparent;border:1px solid var(--line2);
+    padding:2px 7px;margin:0 1px;color:#fff}
+  /* 버튼: 플랫 + 1px 선. 기본은 아웃라인, 주버튼만 단색 채움 */
+  button.go{margin-top:0;cursor:pointer;font:inherit;font-weight:900;font-size:14.5px;letter-spacing:1.6px;
+    text-transform:uppercase;color:#03080f;background:var(--acc);border:1px solid var(--acc);
+    padding:14px 26px;border-radius:0;transition:background .12s,color .12s,border-color .12s}
+  button.go:hover{background:#7cc8ff;border-color:#7cc8ff}
+  button.go:active{transform:none;background:#2f9de8}
+  button.go.alt{background:transparent;color:var(--ink);border-color:var(--line2)}
+  button.go.alt:hover{background:rgba(255,255,255,.05);border-color:var(--acc);color:var(--acc)}
+  button.go:disabled{opacity:1;cursor:not-allowed;background:transparent;color:#3d4a60;border-color:var(--line)}
+  button.go:disabled:hover{background:transparent;color:#3d4a60;border-color:var(--line)}
+  .menu{display:flex;flex-direction:column;gap:8px;margin-top:22px;width:min(320px,86vw)}
   .menu.row{flex-direction:row}
-  .menu.row button{flex:1;padding:13px 10px;font-size:15px}
-  .menu button{width:100%;margin-top:0}
-  #codeInput{margin-top:16px;width:min(320px,80vw);text-align:center;font:900 30px/1.4 "Segoe UI",monospace;letter-spacing:10px;
-    text-transform:uppercase;color:#eaf2ff;background:rgba(255,255,255,.07);border:2px solid rgba(127,208,255,.4);border-radius:14px;padding:12px 8px;outline:none}
-  #codeInput:focus{border-color:#7fd0ff;background:rgba(127,208,255,.12)}
-  #codeBig{margin-top:6px;font:900 clamp(34px,8vw,54px)/1.2 "Segoe UI",monospace;letter-spacing:12px;color:#7fd0ff;text-shadow:0 0 24px rgba(127,208,255,.45)}
-  #playerList{list-style:none;margin:18px 0 0;padding:0;width:min(340px,86vw);display:flex;flex-direction:column;gap:8px}
-  #playerList li{background:rgba(255,255,255,.06);border:1px solid rgba(140,170,240,.25);border-radius:12px;padding:10px 14px;
-    font-size:14.5px;font-weight:700;color:#cfe0ff;display:flex;align-items:center;gap:9px}
-  #playerList li .dot{width:10px;height:10px;border-radius:50%;background:#42d6c8;flex:none}
-  #playerList li.me .dot{background:#ff8a3a}
-  #playerList li .tag{margin-left:auto;font-size:11.5px;font-weight:800;letter-spacing:1px;color:#7f8bc0}
-  /* --- 맵 선택 --- */
-  .pick{margin-top:18px;display:flex;align-items:center;gap:9px;color:#7f8bc0;font-size:12px;font-weight:800;letter-spacing:2px}
-  .pick select{font:inherit;font-size:14px;font-weight:700;letter-spacing:0;color:#eaf2ff;cursor:pointer;
-    background:rgba(255,255,255,.08);border:1px solid rgba(127,208,255,.4);border-radius:9px;padding:7px 11px;outline:none}
-  .pick select:focus{border-color:#7fd0ff}
-  .pick select:disabled{opacity:.45;cursor:not-allowed}
-  /* --- 채팅 --- */
-  #chat{position:fixed;left:14px;bottom:14px;z-index:30;width:min(400px,62vw);pointer-events:none}
-  #chatLog{display:flex;flex-direction:column;gap:3px;margin-bottom:6px}
-  .cmsg{background:rgba(8,12,24,.55);border-left:3px solid #42d6c8;border-radius:0 8px 8px 0;
-    padding:4px 10px;font-size:13px;line-height:1.45;color:#e8f0ff;transition:opacity .45s linear;
-    text-shadow:0 1px 3px rgba(0,0,0,.7);word-break:break-word}
+  .menu.row button{flex:1;padding:12px 8px;font-size:13px;letter-spacing:1.2px}
+  .menu button{width:100%}
+  /* 코드 입력/표시: 고정폭, 각진 테두리 */
+  #codeInput{margin-top:18px;width:min(320px,80vw);text-align:center;font:800 29px/1.3 var(--mono);letter-spacing:12px;
+    text-transform:uppercase;color:#fff;background:transparent;border:1px solid var(--line2);
+    border-radius:0;padding:12px 8px 12px 20px;outline:none;transition:border-color .12s}
+  #codeInput:focus{border-color:var(--acc)}
+  #codeBig{margin-top:4px;font:800 clamp(32px,7.5vw,48px)/1.1 var(--mono);letter-spacing:14px;
+    color:var(--acc);padding-left:14px}
+  /* 명단: 각진 행, 좌측 상태 바 */
+  #playerList{list-style:none;margin:16px 0 0;padding:0;width:min(320px,86vw);display:flex;flex-direction:column;gap:1px}
+  #playerList li{background:rgba(255,255,255,.04);border-left:3px solid var(--acc2);padding:10px 13px;
+    font-size:13.5px;font-weight:700;color:#fff;display:flex;align-items:center;gap:9px;text-align:left}
+  #playerList li.me{border-left-color:#ff8a3a}
+  #playerList li .dot{display:none}
+  #playerList li .tag{margin-left:auto;font-size:10px;font-weight:900;letter-spacing:1.4px;color:#9dabc4;
+    border:1px solid var(--line2);padding:2px 6px}
+  /* 대기방(연습장): 전체를 가리지 않는 각진 패널 */
+  .screen.asPanel{inset:auto;top:0;right:0;width:min(300px,84vw);height:auto;padding:16px 18px;
+    background:rgba(8,11,17,.88);border:0;border-left:1px solid var(--line);border-bottom:1px solid var(--line);
+    align-items:stretch;text-align:left}
+  .screen.asPanel h1{font-size:25px;letter-spacing:-1px;margin:0}
+  .screen.asPanel .sub{font-size:10px;margin-bottom:4px;letter-spacing:3px}
+  .screen.asPanel p{font-size:12px;font-weight:600;line-height:1.5;margin:2px 0}
+  .screen.asPanel #codeBig{font-size:29px;letter-spacing:9px;margin-top:2px;padding-left:9px}
+  .screen.asPanel #playerList{width:100%;margin-top:10px}
+  .screen.asPanel #playerList li{padding:8px 11px;font-size:12.5px}
+  .screen.asPanel .menu{width:100%;margin-top:12px}
+  .screen.asPanel .menu.row button{padding:10px 6px;font-size:12px}
+  .screen.asPanel .hint{font-size:11px;margin-top:8px}
+  /* 채팅: 각진 좌측 액센트 */
+  #chat{position:fixed;left:0;bottom:0;z-index:30;width:min(400px,62vw);padding:0 0 12px 12px;pointer-events:none}
+  #chatLog{display:flex;flex-direction:column;gap:1px;margin-bottom:5px}
+  .cmsg{background:rgba(8,11,17,.78);border-left:3px solid var(--acc2);border-radius:0;
+    padding:5px 11px;font-size:13px;font-weight:600;line-height:1.4;color:#fff;
+    transition:opacity .45s linear;word-break:break-word}
   .cmsg.me{border-left-color:#ff8a3a}
-  .cmsg.sys{border-left-color:#7f8bc0;color:#aab6dd;font-style:italic}
-  .cmsg b{color:#7fd0ff;font-weight:800}
-  .cmsg.me b{color:#ffb27a}
-  #chatInput{display:none;width:100%;pointer-events:auto;font:inherit;font-size:14px;color:#eaf2ff;
-    background:rgba(8,12,24,.88);border:2px solid #7fd0ff;border-radius:9px;padding:8px 11px;outline:none}
+  .cmsg.sys{border-left-color:var(--line2);color:#9dabc4;font-style:normal;font-weight:600}
+  .cmsg b{color:var(--acc2);font-weight:900}
+  .cmsg.me b{color:#ff9d55}
+  #chatInput{display:none;width:100%;pointer-events:auto;font:inherit;font-size:13.5px;font-weight:600;color:#fff;
+    background:rgba(8,11,17,.94);border:1px solid var(--acc);border-radius:0;padding:9px 11px;outline:none}
   #chatInput.on{display:block}
-  .hint{color:#5a6494;font-size:12.5px;margin-top:16px;line-height:1.8}
+  /* .screen p 보다 우선하도록 명시도를 맞춘다(안 그러면 크기가 덮어씌워짐) */
+  .screen p.hint, .hint{color:#8a97ae;font-size:12px;font-weight:600;margin-top:14px;line-height:1.75}
+  .screen p.hint b, .hint b{color:#cfd9e8;font-weight:800}
+  /* 맵 선택(병합분) — 샤프 톤에 맞춤 */
+  .pick{margin-top:16px;display:flex;align-items:center;gap:9px;color:#9dabc4;
+    font-size:10.5px;font-weight:900;letter-spacing:2px;text-transform:uppercase}
+  /* select 는 브라우저 기본 외형이 배경을 덮으므로 appearance 를 꺼야 어두운 톤이 먹는다 */
+  .pick select{font:inherit;font-size:13px;font-weight:700;letter-spacing:0;color:#fff;cursor:pointer;
+    -webkit-appearance:none;appearance:none;background-color:#0d1219;
+    border:1px solid var(--line2);border-radius:0;padding:7px 26px 7px 9px;outline:none;
+    transition:border-color .12s;
+    background-image:linear-gradient(45deg,transparent 50%,#8492ad 50%),linear-gradient(135deg,#8492ad 50%,transparent 50%);
+    background-position:calc(100% - 14px) 50%,calc(100% - 9px) 50%;
+    background-size:5px 5px,5px 5px;background-repeat:no-repeat}
+  .pick select:focus{border-color:var(--acc)}
+  .pick select:disabled{opacity:.45;cursor:not-allowed}
+  .pick select option{background:#0d1219;color:#fff}
 </style>
 </head>
 <body>
@@ -81,7 +132,14 @@
 </div>
 
 <div id="hud">
-  <svg id="crosshair" viewBox="0 0 18 18"><circle cx="9" cy="9" r="7" fill="none" stroke="#7fd0ff" stroke-width="1.5"/><circle cx="9" cy="9" r="1.5" fill="#fff"/></svg>
+  <!-- 샤프한 십자선: 중앙을 비운 4방향 직선 + 1px 점 -->
+  <svg id="crosshair" viewBox="0 0 18 18" shape-rendering="crispEdges">
+    <g stroke="#e8eef8" stroke-width="1">
+      <line x1="9" y1="0" x2="9" y2="5"/><line x1="9" y1="13" x2="9" y2="18"/>
+      <line x1="0" y1="9" x2="5" y2="9"/><line x1="13" y1="9" x2="18" y2="9"/>
+    </g>
+    <rect x="8.5" y="8.5" width="1" height="1" fill="#4db3ff"/>
+  </svg>
   <div id="topbar">
     <span class="pill">⏱ <b id="timeV">0.0</b>s</span>
     <span class="pill" id="cpV">체크포인트 0</span>
@@ -94,7 +152,7 @@
 <div class="screen" id="title">
   <div class="sub">PROTOTYPE · P0</div>
   <h1>PENG!</h1>
-  <p style="color:#7fd0ff;letter-spacing:2px;margin-top:-2px">공기폭발 협동 질주</p>
+  <p style="color:#b7c3d8;letter-spacing:5px;font-size:12.5px;font-weight:800;text-transform:uppercase;margin:8px 0 16px">공기폭발 협동 질주</p>
   <p><b>PoofGun</b>은 닿는 곳에서 공기를 <b>뻥</b> 터뜨려 사람을 날린다.<br>
      발밑을 쏴 <b>로켓점프</b>로 못 넘는 협곡을 넘어 <b>결승선(초록)</b>까지!</p>
   <p class="hint"><kbd>WASD</kbd> 이동 · <kbd>마우스</kbd> 시점 · <kbd>좌클릭</kbd> 펑! · <kbd>Space</kbd> 점프 · <kbd>R</kbd> 리스폰 · <kbd>V</kbd> 3인칭 · <kbd>Enter</kbd> 채팅<br>화면을 클릭하면 마우스가 잠깁니다(FPS). <kbd>ESC</kbd>로 해제.</p>
@@ -113,7 +171,7 @@
   <h1>방 참가</h1>
   <p>친구에게 받은 <b>세션 코드</b>를 입력하세요.</p>
   <input id="codeInput" maxlength="6" placeholder="ABC123" autocomplete="off" spellcheck="false" />
-  <p class="hint" id="joinErr" style="color:#ff8a8a;min-height:18px"></p>
+  <p class="hint" id="joinErr" style="color:#ff6b5a;min-height:18px"></p>
   <div class="menu row">
     <button class="go" id="joinGoBtn">참가</button>
     <button class="go alt" id="joinBackBtn">뒤로</button>
@@ -121,12 +179,12 @@
 </div>
 
 <!-- 대기방 -->
-<div class="screen off" id="lobbyScr">
+<div class="screen off asPanel" id="lobbyScr">
   <div class="sub">LOBBY</div>
   <h1>대기방</h1>
   <p>세션 코드 — 친구에게 알려주세요</p>
   <div id="codeBig">------</div>
-  <a href="#" id="copyCode" style="color:#7fd0ff;font-size:13px">코드 복사</a>
+  <a href="#" id="copyCode" style="color:#4db3ff;font-size:10.5px;letter-spacing:1.6px;text-transform:uppercase;text-decoration:none;border-bottom:1px solid #243044;padding-bottom:1px">코드 복사</a>
   <ul id="playerList"></ul>
   <label class="pick"><span id="mapPickLabel">맵</span> <select id="mapSelLobby"></select></label>
   <p class="hint" id="lobbyHint">친구가 들어오면 시작할 수 있어요.</p>
@@ -228,7 +286,7 @@ var AMMO_MAX=_P.AMMO_MAX, AMMO_REGEN=_P.AMMO_REGEN, PROJ_SPD=_P.PROJ_SPD;
 var KB_TIME=_P.KB_TIME;   // 폭발 후 조작 권한이 약해지는 시간(초)
 var COYOTE=_P.COYOTE, JUMP_BUF=_P.JUMP_BUF, PITCH_LIM=_P.PITCH_LIM, FUSE_R=_P.FUSE_R;
 
-function makeSim(){
+function makeSim(){  // practice 를 켜면 기록/승리 없이 자유 연습
   var s=LEVEL.start;
   return { p:{x:s.x,y:s.y,z:s.z}, v:{x:0,y:0,z:0}, yaw:0, pitch:0, onGround:false,
     ammo:AMMO_MAX, ammoT:0, t:0, cpIdx:0, win:false, blasts:[], particles:[], projectiles:[], shake:0, _fireCd:0, tp:false, recoil:0, kb:0,
@@ -361,7 +419,9 @@ function stepSim(s, dt, inp){
   // 낙하
   if(s.p.y < LEVEL.killY){ respawn(s); }
   // 결승
-  var g=LEVEL.goal; if(Math.hypot(s.p.x-g.cx, s.p.z-g.cz)<g.r && Math.abs(s.p.y-(g.cy-1))<2.5){ s.win=true; }
+  // 연습(대기방)에서는 결승에 닿아도 승리로 치지 않는다
+  if(!s.practice){ var g=LEVEL.goal;
+    if(Math.hypot(s.p.x-g.cx, s.p.z-g.cz)<g.r && Math.abs(s.p.y-(g.cy-1))<2.5){ s.win=true; } }
 }
 // 한 축 이동 후 충돌 해소. 첫 충돌에서 멈추면 두 박스에 동시에 걸렸을 때
 // 나머지 하나에 파고든 채 남으므로, 모든 박스를 검사해 가장 깊이 밀어내는 해를 쓴다.
@@ -866,12 +926,14 @@ function renderLobby(){
     hint.textContent= enough ? '모두 준비됐어요! 시작을 누르세요.' : '친구가 코드를 입력해 들어오면 시작할 수 있어요.'; }
   else { btn.disabled=true; btn.textContent='호스트 대기 중…';
     hint.textContent='호스트가 게임을 시작하면 함께 출발합니다.'; }
-  hint.textContent += '  (Enter: 채팅)';
+  // 연습장 안내: 화면 클릭으로 조작, Esc 로 마우스를 풀어야 버튼을 누를 수 있다
+  hint.innerHTML += '<br>기다리는 동안 <b>자유롭게 연습</b>하세요 — 화면 클릭 후 이동·펑!<br>'+
+    '<b>Esc</b> 로 마우스를 풀면 버튼을 누를 수 있어요 · <b>Enter</b> 채팅 · <b>R</b> 리스폰';
   syncMapPickers();
 }
 document.getElementById('soloBtn').addEventListener('click',function(){ ensureAudio(); mpDisconnect(); startGame(); });
 document.getElementById('hostBtn').addEventListener('click',function(){ ensureAudio(); setWarn('서버에 연결 중…');
-  mpConnect(mpCode(), function(){ setWarn(''); showScreen('lobbyScr'); renderLobby(); },
+  mpConnect(mpCode(), function(){ setWarn(''); enterLobby(); },
     function(){ setWarn(noServerMsg()); }); });
 // 왜 연결이 안 되는지 현재 주소를 보고 구체적으로 안내
 function noServerMsg(){
@@ -893,7 +955,7 @@ function doJoin(){ ensureAudio();
   var err=document.getElementById('joinErr');
   if(code.length<4){ err.textContent='세션 코드를 입력하세요.'; return; }
   err.textContent='접속 중…';
-  mpConnect(code, function(){ err.textContent=''; showScreen('lobbyScr'); renderLobby(); },
+  mpConnect(code, function(){ err.textContent=''; enterLobby(); },
     function(why){ if(why==='nosuch') err.textContent='“'+code+'” 방을 찾을 수 없어요. 코드를 다시 확인하세요.';
       else err.innerHTML=noServerMsg(); }, true);
 }
@@ -908,6 +970,12 @@ document.getElementById('copyCode').addEventListener('click',function(e){ e.prev
 /* ---------- 라이브 입력/루프 ---------- */
 var keys={}, locked=false, jumpEdge=false;
 // levelId 를 주면 그 맵으로 바꿔서 시작한다(멀티: 호스트가 고른 맵). 없으면 현재 맵 유지.
+// 대기방 = 연습장. 기다리는 동안 실제로 움직이고 쏴볼 수 있다(기록은 세지 않음).
+function enterLobby(levelId){
+  if(levelId) setLevel(levelId);
+  if(!sim || !sim.practice){ sim=makeSim(); sim.practice=true; }
+  acc=0; last=0; showScreen('lobbyScr'); renderLobby();
+}
 function startGame(levelId){
   // 내게 없는 맵이면 setLevel 이 기본 맵으로 떨군다. 그걸 조용히 넘기면
   // "같은 방인데 서로 다른 맵을 달리는" 상태가 되고, 한참 뒤에야 알아채게 된다.
@@ -923,11 +991,11 @@ function startGame(levelId){
 }
 // 다시하기: 멀티면 대기방으로, 솔로면 바로 재시작
 document.getElementById('retryBtn').addEventListener('click',function(){ ensureAudio();
-  if(MP.connected){ showScreen('lobbyScr'); renderLobby(); } else startGame(); });
+  if(MP.connected){ sim=makeSim(); sim.practice=true; enterLobby(); } else startGame(); });
 document.getElementById('menuBtn').addEventListener('click',function(){ mpDisconnect(); showScreen('title'); setWarn(''); });
 function requestLock(){ try{ cv.requestPointerLock(); }catch(e){} }
 cv.addEventListener('click',function(){ ensureAudio(); if(chatting) return;
-  if(mode==='play'){ if(!locked)requestLock(); else doFire(sim); } });
+  if(mode==='play'||mode==='lobbyScr'){ if(!locked)requestLock(); else doFire(sim); } });
 document.addEventListener('pointerlockchange',function(){ locked=(document.pointerLockElement===cv); });
 document.addEventListener('mousemove',function(e){ if(!locked||!sim)return; var sX=0.0022;
   // 시야각 하한이 -1.45rad(83.1°)이면 "발밑"을 쏴도 폭발 중심이 몸보다 7° 앞에 생겨
@@ -950,7 +1018,8 @@ window.addEventListener('keyup',function(e){ if(chatting) return; keys[e.key.toL
 
 var last=0, acc=0, STEP=1/120, jumpBuf=0;
 function loop(now){ if(!last)last=now; var dt=Math.min(0.05,(now-last)/1000); last=now;
-  if(mode==='play' && sim){
+  // 본선(play)과 대기방 연습(lobbyScr) 모두 물리를 돌린다 — 기다리는 동안 몸을 풀 수 있게
+  if((mode==='play'||mode==='lobbyScr') && sim){
     // 점프 입력을 프레임이 아니라 시간으로 들고 있는다.
     // 예전엔 서브스텝이 한 번도 안 돈 프레임에서도 jumpEdge 를 지워버려서,
     // 화면 주사율이 시뮬(120Hz)보다 높으면 그 비율만큼 점프가 통째로 씹혔다
@@ -971,21 +1040,33 @@ function loop(now){ if(!last)last=now; var dt=Math.min(0.05,(now-last)/1000); la
         yaw:Math.round(sim.yaw*1000)/1000, pitch:Math.round(sim.pitch*1000)/1000, rc:Math.round((sim.recoil||0)*100)/100}); }
     for(var _pid in MP.peers){ if(now-(MP.peers[_pid].seen||0)>5000) delete MP.peers[_pid]; }
     // HUD
-    document.getElementById('timeV').textContent=sim.t.toFixed(1);
-    document.getElementById('cpV').textContent='체크포인트 '+sim.cpIdx;
-    renderAmmo(sim.ammo);
+    document.getElementById('timeV').textContent = sim.practice ? '연습' : sim.t.toFixed(1);
+    document.getElementById('cpV').textContent = sim.practice ? '자유 연습' : ('체크포인트 '+sim.cpIdx);
+    renderAmmo(sim.ammo, sim.ammo<AMMO_MAX ? sim.ammoT/AMMO_REGEN : 0);
     if(sim.win){ document.getElementById('winMsg').textContent='기록 '+sim.t.toFixed(1)+'초!'; showScreen('win'); sndWin(); if(locked)document.exitPointerLock(); }
-    showHint(sim);
+    if(mode==='play') showHint(sim); else showHint(null);
   }
   render();
   requestAnimationFrame(loop);
 }
-function renderAmmo(n){ var el=document.getElementById('ammo'); if(el.children.length!==AMMO_MAX){ el.innerHTML=''; for(var i=0;i<AMMO_MAX;i++){var d=document.createElement('div');d.className='p';el.appendChild(d);} }
-  for(var i=0;i<AMMO_MAX;i++)el.children[i].classList.toggle('on', i<n); }
+// 탄창 게이지. frac = 다음 한 발의 충전 진행도(0~1) → 그 칸만 아래에서 위로 차오른다.
+function renderAmmo(n, frac){
+  var el=document.getElementById('ammo');
+  if(el.children.length!==AMMO_MAX){ el.innerHTML='';
+    for(var i=0;i<AMMO_MAX;i++){ var d=document.createElement('div'); d.className='p';
+      d.appendChild(document.createElement('i')); el.appendChild(d); } }
+  for(var i=0;i<AMMO_MAX;i++){
+    var slot=el.children[i], full=(i<n), charging=(!full && i===n);
+    slot.classList.toggle('on', full);
+    slot.classList.toggle('charging', charging);
+    slot.firstChild.style.height = charging ? (Math.max(0,Math.min(1,frac))*100).toFixed(1)+'%' : '0%';
+  }
+}
 var lastHint='';
 // 힌트는 코스마다 다르므로 레벨 데이터(LEVEL.hints)에 들어 있다. 체크포인트 번호로 고르고,
 // 마지막 힌트는 그 뒤 구간까지 유지한다. 힌트가 없는 맵은 아무것도 띄우지 않는다.
 function showHint(s){ var m=document.getElementById('msg');
+  if(!s){ if(lastHint!==''){ lastHint=''; m.innerHTML=''; m.classList.remove('on'); } return; }  // 대기방=힌트 없음
   var hs=LEVEL.hints||[], h = hs.length ? (hs[Math.min(s.cpIdx, hs.length-1)]||'') : '';
   if(h!==lastHint){ lastHint=h; m.innerHTML=h; m.classList.toggle('on', !!h); }
 }
