@@ -21,10 +21,24 @@ PENG.PHYS = {
   // 조작 감각용 유예 시간. 둘 다 없으면 발판 끝에서 점프가 씹힌다.
   COYOTE:0.09,    // 발판을 벗어난 뒤에도 점프를 받아주는 시간(초)
   JUMP_BUF:0.12,  // 착지 직전에 누른 점프를 기억하는 시간(초)
+  /* 발밑을 "먼저 쏜" 뒤에 누른 점프를 받아주는 시간(초).
+     폭발은 맞은 사람의 지면 접촉을 지운다(onGround=false, coyote=0). 그래서 로켓점프를
+     점프→사격 순서로 하면 8.0m 오르지만, 사격→점프 순서로 하면 점프가 통째로 씹혀
+     2.5m 밖에 못 올랐다 — 간격을 아무리 좁혀도 마찬가지였다(입력 순서가 곧 실력이 됨).
+     점프에는 선입력 버퍼(JUMP_BUF)가 있는데 사격에는 대응물이 없어 생긴 비대칭이다. */
+  BLAST_JUMP_GRACE:0.22,
   // 시야각 상하한(rad). 거의 수직(88.8°)까지 내려가야 발밑 자폭이 몸을 곧게 위로 민다.
   PITCH_LIM:1.55,
   // 근접 신관 반경(m). 광선이 팀원 몸에서 이 거리 안을 지나가면 거기서 폭발한다.
-  FUSE_R:1.3
+  FUSE_R:1.3,
+  /* 리프트 샷 — 팀원을 근접 신관 안으로 "직격"했을 때 주는 순수 상승 속도(m/s).
+     폭발은 원래 방사형(중심 → 몸)이라 위에서 쏘면 팀원이 아래로 밀린다. 그래서
+     도움이 "발밑을 받쳐 쏘기" 한 방향뿐이었고, 협동 전용 구간은 한 명만 넘고
+     나머지 한 명은 영영 못 넘는 편도 구조였다. 직격만 위로 미는 규칙으로 바꿔
+     양방향(위에서 아래로도)으로 끌어올릴 수 있게 한다.
+     거리 감쇠를 두지 않는 이유: 레벨 설계가 "팀원이 얼마나 가까이서 쐈나"에
+     흔들리면 아래 도달 분석을 믿을 수 없게 된다. */
+  LIFT_V:9.0
 };
 
 /* ---------- 레벨 등록 ---------- */
@@ -73,23 +87,35 @@ PENG.reach = {
   // 폭발 중심은 발판 표면, 플레이어 중심은 발에서 PH_HY 위 → 그 거리만큼 감쇠한다.
   selfBlast: function(){ var P=PENG.PHYS; return P.BLAST_F * (1 - P.PH_HY/P.BLAST_R); },
   // 팀원이 d 미터 떨어진 곳에서 쏴 주는 보조 임펄스(기본 1.5m — 현실적인 근접 사격).
+  // 직격이 아닌 "근처 폭발"은 지금도 방사형이라 이 값이 그대로 쓰인다.
   teamBlast: function(d){ var P=PENG.PHYS; d=(d==null?1.5:d);
     return d>=P.BLAST_R ? 0 : P.BLAST_F * (1 - d/P.BLAST_R); },
 
   // 높이차 dy 를 오르면서 넘을 수 있는 최대 수평 간격
   jump:     function(dy){ var P=PENG.PHYS; return P.RUN * this.airTime(P.JUMPV, dy); },
   rocket:   function(dy){ var P=PENG.PHYS; return P.RUN * this.airTime(P.JUMPV + this.selfBlast(), dy); },
-  assisted: function(dy, d){ var P=PENG.PHYS;
-    return P.RUN * this.airTime(P.JUMPV + this.selfBlast() + this.teamBlast(d), dy); },
+  // 팀원이 리프트 샷으로 직격해 준 경우. 거리와 무관한 고정 상승이라 설계값이 흔들리지 않는다.
+  assisted: function(dy){ var P=PENG.PHYS;
+    return P.RUN * this.airTime(P.JUMPV + this.selfBlast() + P.LIFT_V, dy); },
 
   /* 구간 난이도 분류 — 에디터가 협곡마다 이 라벨을 띄운다.
      'coop' = 혼자서는 불가능하고 팀원이 밀어줘야만 넘어가는 구간(= 2인 게임의 존재 이유). */
-  classify: function(gap, dy, d){
-    if(gap <= this.jump(dy))        return 'jump';
-    if(gap <= this.rocket(dy))      return 'rocket';
-    if(gap <= this.assisted(dy, d)) return 'coop';
+  /* 각 방식의 도달거리는 "그 높이에 아예 못 닿으면 0"이다. 그래서 0 과 비교하기 전에
+     0 보다 큰지를 먼저 본다 — 안 그러면 협곡이 없는(겹친) 구간이 전부 '점프'로 통과된다.
+     겹친 발판(gap<=0)은 수평 제약이 없으므로 남는 제약은 높이뿐이다. */
+  classify: function(gap, dy){
+    var g = gap>0 ? gap : 0;
+    var j=this.jump(dy);     if(j>0 && g<=j) return 'jump';
+    var r=this.rocket(dy);   if(r>0 && g<=r) return 'rocket';
+    var a=this.assisted(dy); if(a>0 && g<=a) return 'coop';
     return 'impossible';
-  }
+  },
+
+  /* 수직 설계용 한계. 수평 이동이 0일 때 한 번에 오를 수 있는 최대 높이다.
+     탑처럼 위로 쌓는 코스에서는 협곡 길이가 아니라 이 값이 난이도를 정한다 —
+     턱이 soloRise 를 넘으면 판정에 기대지 않고 물리적으로 혼자서는 불가능해진다. */
+  soloRise: function(){ var P=PENG.PHYS; return this.apex(P.JUMPV + this.selfBlast()); },
+  coopRise: function(){ var P=PENG.PHYS; return this.apex(P.JUMPV + this.selfBlast() + P.LIFT_V); }
 };
 
 /* 어느 발판 위의 지점인지 찾는다(체크포인트·결승이 어느 발판에 속하는지 판정용). */
@@ -117,8 +143,11 @@ function gapBetween(a, b){
 /* 코스의 구간별 난이도 분석.
    경로는 "체크포인트 순서 → 결승"으로 잡는다. 예전처럼 z 좌표로 정렬하면
    좌우로 꺾이는 코스에서 엉뚱한 발판끼리 짝지어진다. 체크포인트가 없으면 z 정렬로 폴백. */
+/* 경로 후보가 되는 발판. 장식뿐 아니라 압력판도 뺀다 — 압력판은 밟는 물건이지
+   도착지가 아니라서, 경로에 끼면 협곡이 엉뚱한 지점에서 쪼개진다. */
+PENG.isPlatform = function(b){ return !b.deco && !b.plate; };
 PENG.levelRoute = function(d){
-  var pf = d.boxes.filter(function(b){ return !b.deco; });
+  var pf = d.boxes.filter(PENG.isPlatform);
   if(!pf.length) return [];
   var route=[];
   if(d.checkpoints && d.checkpoints.length){
@@ -135,17 +164,27 @@ PENG.levelRoute = function(d){
 /* 결승이 코스 끝에 있는지. 아니면 마지막 발판까지 갔는데 끝나지 않는 맵이 된다. */
 PENG.goalAtEnd = function(d){
   var route=PENG.levelRoute(d); if(route.length<2 || !d.goal) return true;
-  var pf=d.boxes.filter(function(b){ return !b.deco; });
+  var pf=d.boxes.filter(PENG.isPlatform);
   var g=PENG.platformAt(pf, d.goal.cx, d.goal.cy-0.5, d.goal.cz);
   return g === route[route.length-1];
 };
 PENG.analyzeLevel = function(d){
   var route=PENG.levelRoute(d), out=[];
+  // 어떤 채널에 압력판이 실제로 존재하는지 — 스위치 없는 다리는 영영 안 열린다.
+  var plates={};
+  for(var k=0;k<d.boxes.length;k++) if(d.boxes[k].plate) plates[d.boxes[k].plate]=true;
   for(var i=0;i<route.length-1;i++){
-    var a=route[i], b=route[i+1];
+    var a=route[i], b=route[i+1], kind;
     var gap=gapBetween(a,b), dy=(b.cy+b.hy)-(a.cy+a.hy);
+    // 연동 발판으로 가는 구간은 간격과 무관하게 협동 관문이다 —
+    // 팀원이 압력판을 밟아주지 않으면 발판 자체가 존재하지 않으므로.
+    /* '붙어 있음'은 발판이 겹치고 "높이도 걸어 오를 만할 때"만이다. 수평으로 겹쳤다고
+       14m 위로 올라갈 수는 없으므로, 높이가 일반 점프 한계를 넘으면 그대로 분류에 넘긴다. */
+    if(b.link) kind = plates[b.link] ? 'gate' : 'noswitch';
+    else if(gap<=0 && dy<=PENG.reach.apex(PENG.PHYS.JUMPV)) kind='touch';
+    else kind = PENG.reach.classify(gap, dy);
     out.push({ from:i, to:i+1, gap:Math.round(gap*100)/100, dy:Math.round(dy*100)/100,
-               a:a, b:b, kind: gap<=0 ? 'touch' : PENG.reach.classify(gap, dy) });
+               a:a, b:b, kind:kind });
   }
   return out;
 };
@@ -159,6 +198,66 @@ PENG.gapFor = function(kind, dy){
   if(hi<=0) return null;                            // 그 높이는 이 방식으론 불가능
   if(lo<=0) lo=0;
   return Math.round((lo + (hi-lo)*0.62)*10)/10;     // 한계에 너무 붙지 않게 살짝 안쪽
+};
+
+/* ---------- 협동 관문 표식 (물리에서 자동 파생) ----------
+   협동 전용 구간은 "혼자서는 물리적으로 불가능한 턱"인데 화면에 아무 표시가 없어서,
+   플레이어가 자기 실력 탓으로 오해하고 같은 자리에서 계속 죽었다. 텍스트 힌트는 한 번
+   읽고 사라지므로 규칙을 배우게 하지 못한다 — 그래서 코스 자체에 표식을 세운다.
+
+   표식은 손으로 놓지 않고 analyzeLevel() 의 판정에서 바로 만든다. 판정이 쓰는 숫자가
+   곧 게임이 쓰는 숫자(PENG.PHYS)이므로, 상수를 고치거나 발판을 옮기면 표식이 저절로
+   따라온다 — 표식이 물리와 어긋나 거짓말을 하는 상태가 원천적으로 생기지 않는다.
+
+   두 가지를 세운다.
+     · 한계 기둥 — 발판 표면에서 soloRise(혼자 로켓점프 최대 상승) 높이까지 오르는 가는
+       기둥. 꼭대기의 빨간 띠가 "혼자서는 여기까지"다. 다음 발판이 띠보다 위에 보이면
+       혼자서는 못 간다 — 규칙을 한 번 익히면 모든 맵에서 그대로 통한다.
+     · 가장자리 테두리 — 관문 양쪽 발판의 표면 가장자리. 도우는 사람이 설 자리다.
+       안쪽에서 쏘면 자기 발판에 막혀 팀원을 못 띄우므로, 테두리가 곧 사격 위치다.
+
+   전부 deco:true 라 충돌하지도, 광선에 맞지도 않는다. 레벨 데이터(boxes)에 섞지 말고
+   따로 받아서 그리기만 할 것 — 섞으면 에디터가 저장할 때 파일에 딸려 들어간다. */
+PENG.MARK_COL = { rim:'#c05ad0', post:'#7a5a8c', band:'#e8484f' };
+PENG.coopMarkers = function(d){
+  var out=[], C=PENG.MARK_COL, lim=PENG.reach.soloRise(), done=[];
+
+  // 발판 표면 가장자리를 두르는 얇은 띠 4개. 모서리에서 겹치지 않게 좌우 막대를 줄인다
+  // (같은 높이로 겹치면 윗면이 z파이팅으로 지글거린다).
+  function rim(b){
+    if(done.indexOf(b)>=0) return; done.push(b);      // 발판이 두 구간에 걸려도 한 번만
+    var y=b.cy+b.hy, t=0.26, h=0.05, inner=b.hz-2*t;
+    out.push({cx:b.cx, cy:y+h, cz:b.cz-b.hz+t, hx:b.hx, hy:h, hz:t, col:C.rim, deco:true});
+    out.push({cx:b.cx, cy:y+h, cz:b.cz+b.hz-t, hx:b.hx, hy:h, hz:t, col:C.rim, deco:true});
+    if(inner<=0) return;                               // 너무 작은 발판이면 좌우 막대는 생략
+    out.push({cx:b.cx-b.hx+t, cy:y+h, cz:b.cz, hx:t, hy:h, hz:inner, col:C.rim, deco:true});
+    out.push({cx:b.cx+b.hx-t, cy:y+h, cz:b.cz, hx:t, hy:h, hz:inner, col:C.rim, deco:true});
+  }
+  /* 출발 발판에 세우는 한계 기둥 + 목표까지 뻗는 점선 레일.
+     기둥만 세웠더니 읽히지 않았다 — 목표 발판은 10m 넘게 떨어져 있어서, 실제로는 띠보다
+     높은데도 원근 때문에 화면에서는 띠보다 아래로 보였다(가까운 것이 커 보이니까).
+     그래서 같은 높이를 목표 발판 코앞까지 점선으로 끌고 간다. 레일의 끝과 목표 발판이
+     같은 거리에 놓이므로 "발판이 선 위에 있다"가 원근에 왜곡되지 않고 그대로 보인다. */
+  function post(a, b){
+    var dx=b.cx-a.cx, dz=b.cz-a.cz, L=Math.hypot(dx,dz)||1, ux=dx/L, uz=dz/L;
+    var y=a.cy+a.hy+lim;                                  // 혼자서는 여기까지
+    var px=a.cx+ux*Math.max(0,a.hx-0.5), pz=a.cz+uz*Math.max(0,a.hz-0.5);
+    out.push({cx:px, cy:y-lim/2, cz:pz, hx:0.075, hy:lim/2, hz:0.075, col:C.post, deco:true});
+    out.push({cx:px, cy:y,       cz:pz, hx:0.22,  hy:0.11,  hz:0.22,  col:C.band, deco:true});
+    // 목표 발판의 앞 가장자리까지. 그 너머로 넘기면 발판 밑에 가려 안 보인다.
+    var end=L-(Math.abs(ux)*b.hx+Math.abs(uz)*b.hz);
+    var run=end-Math.max(0,a.hx*Math.abs(ux)+a.hz*Math.abs(uz)-0.5);
+    var n=Math.floor(run/0.85);
+    for(var k=1;k<=n;k++){ var t=k*0.85;
+      out.push({cx:px+ux*t, cy:y, cz:pz+uz*t, hx:0.13, hy:0.05, hz:0.13, col:C.band, deco:true}); }
+  }
+
+  var segs=PENG.analyzeLevel(d);
+  for(var i=0;i<segs.length;i++){ var s=segs[i];
+    if(s.kind!=='coop') continue;     // 압력판 다리(gate)는 청록 발판·노란 판이 이미 말해 준다
+    rim(s.a); rim(s.b); post(s.a, s.b);
+  }
+  return out;
 };
 
 /* ---------- 프롭(배치 요소) ----------
@@ -178,6 +277,16 @@ PENG.PROPS = [
   { id:'crate', name:'상자', deco:false, tag:'코스',
     icon:'<rect x="6" y="6" width="12" height="12" rx="1" fill="#8a6a45"/><path d="M6 12h12M12 6v12" stroke="#5e4830" stroke-width="1.4"/>',
     build:function(){ return [{cx:0,cy:0.8,cz:0,hx:0.8,hy:0.8,hz:0.8,col:'#8a6a45'}]; } },
+
+  /* 협동 전용 — 압력판과 연동 발판은 한 쌍이다. 같은 채널(a~f)끼리 묶인다.
+     한 명이 판을 밟고 있는 동안에만 다리가 실체가 되므로, 밟는 사람은 건널 수 없다.
+     건너간 사람이 반대편 판을 밟아 되갚아 주는 왕복 릴레이가 이 기믹의 노림수다. */
+  { id:'plate', name:'압력판', deco:false, tag:'협동',
+    icon:'<rect x="3" y="10" width="18" height="4" rx="1" fill="#c8a52e"/><path d="M12 3v6M9 6l3-3 3 3" stroke="#ffe066" stroke-width="1.6" fill="none"/>',
+    build:function(){ return [{cx:0,cy:0.12,cz:0,hx:1.4,hy:0.12,hz:1.4,col:'#c8a52e',plate:'a'}]; } },
+  { id:'bridge', name:'연동 발판', deco:false, tag:'협동',
+    icon:'<rect x="2" y="9" width="20" height="6" rx="1" fill="#2f9c9c" stroke="#7fe3e3" stroke-width="1" stroke-dasharray="3 2"/>',
+    build:function(){ return [{cx:0,cy:-0.5,cz:0,hx:3,hy:0.5,hz:3,col:'#2f9c9c',link:'a'}]; } },
 
   { id:'tree', name:'나무', deco:true, tag:'장식',
     icon:'<rect x="10.5" y="13" width="3" height="8" fill="#5a4632"/><path d="M12 2l6 8H6zM12 7l5 7H7z" fill="#3f7a46"/>',
@@ -219,7 +328,7 @@ PENG.propById = function(id){
 };
 /* 프롭을 (x,y,z) 에 놓아 박스 배열로 편다. 여러 박스짜리는 같은 그룹 id 를 달아
    에디터에서 하나처럼 선택·이동·삭제된다(게임은 g 필드를 무시한다). */
-PENG.placeProp = function(id, x, y, z, gid){
+PENG.placeProp = function(id, x, y, z, gid, ch){
   var p=PENG.propById(id); if(!p) return [];
   var parts=p.build(), out=[];
   for(var i=0;i<parts.length;i++){
@@ -227,6 +336,8 @@ PENG.placeProp = function(id, x, y, z, gid){
     var nb={cx:x+b.cx, cy:y+b.cy, cz:z+b.cz, hx:b.hx, hy:b.hy, hz:b.hz, col:b.col};
     if(p.deco) nb.deco=true;
     if(parts.length>1 && gid) nb.g=gid;
+    if(b.plate) nb.plate = ch || b.plate;      // 협동 채널(a~f) — 놓을 때 지정하거나 나중에 속성 패널에서
+    if(b.link)  nb.link  = ch || b.link;
     out.push(nb);
   }
   return out;
@@ -242,6 +353,8 @@ PENG.serialize = function(id, d){
             ', hx:'+n(b.hx)+', hy:'+n(b.hy)+', hz:'+n(b.hz)+
             ", col:'"+(b.col||'#5a7bb0')+"'";
     if(b.deco) s += ', deco:true';
+    if(b.plate) s += ", plate:'"+String(b.plate).replace(/'/g,"\\'")+"'";  // 협동 채널
+    if(b.link)  s += ", link:'"+String(b.link).replace(/'/g,"\\'")+"'";
     if(b.g) s += ", g:'"+String(b.g).replace(/'/g,"\\'")+"'";   // 에디터 그룹(게임은 무시)
     s += '}';
     return s + (b.note ? '  // '+b.note : '');
@@ -256,7 +369,9 @@ PENG.serialize = function(id, d){
   L.push('  ],');
   L.push('  goal: {cx:'+n(d.goal.cx)+', cy:'+n(d.goal.cy)+', cz:'+n(d.goal.cz)+', r:'+n(d.goal.r)+'},');
   L.push('  checkpoints: [');
-  L.push(d.checkpoints.map(function(c){ return '    {x:'+n(c.x)+', y:'+n(c.y)+', z:'+n(c.z)+'}'; }).join(',\n'));
+  // gate:true = 여기까지만 되돌린다(리스폰 지점). 없으면 예전대로 마지막 체크포인트로 돌아간다.
+  L.push(d.checkpoints.map(function(c){ return '    {x:'+n(c.x)+', y:'+n(c.y)+', z:'+n(c.z)+
+    (c.gate?', gate:true':'')+'}'; }).join(',\n'));
   L.push('  ],');
   L.push('  killY: '+n(d.killY)+', start: {x:'+n(d.start.x)+', y:'+n(d.start.y)+', z:'+n(d.start.z)+'}'+
          ((d.hints&&d.hints.length)?',':''));

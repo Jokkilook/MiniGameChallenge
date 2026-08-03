@@ -64,6 +64,8 @@
   .k-jump{background:#2f6b46;color:#b6ffd4}
   .k-rocket{background:#7a5220;color:#ffd9a0}
   .k-coop{background:#2b5c8a;color:#b8e4ff}
+  .k-gate{background:#1f6b6b;color:#a8f0ee}
+  .k-noswitch{background:#7a2626;color:#ffc0c0}
   .k-impossible{background:#7a2626;color:#ffc0c0}
   .k-touch{background:#3a3f52;color:#aab6dd}
   #verdict{margin-top:9px;padding:9px 10px;border-radius:8px;font-size:12px;line-height:1.6;font-weight:700}
@@ -144,6 +146,9 @@
       <div class="row"><label>Z</label><input type="number" id="pcz" step="0.5" /><label>D</label><input type="number" id="phz" step="0.1" /></div>
       <div class="row"><input type="color" id="pcol" /></div>
       <label class="chk"><input type="checkbox" id="pdeco" /> 장식 (충돌·분석 제외)</label>
+      <div class="row"><label>채널</label>
+        <select id="pch"><option>a</option><option>b</option><option>c</option><option>d</option><option>e</option><option>f</option></select>
+        <span id="pchRole" style="font-size:11px;color:#7f8aa8">—</span></div>
     </div>
   </div>
 
@@ -175,6 +180,7 @@
     <div class="btns"><button id="btnSide">옆에서 보기</button><button id="btnTop">위에서 보기</button></div>
     <label class="chk"><input type="checkbox" id="optArc" checked /> 도달 궤적</label>
     <label class="chk"><input type="checkbox" id="optGhost" checked /> 플레이어 크기 표시</label>
+    <label class="chk"><input type="checkbox" id="optMark" checked /> 협동 관문 표식</label>
     <label class="chk"><input type="checkbox" id="optGrid" checked /> 바닥 격자</label>
     <label class="chk"><input type="checkbox" id="optSnap" checked /> 0.5m 격자에 맞추기</label>
   </div>
@@ -384,6 +390,16 @@ function arcs(){
     if(prev) boxWire({cx:prev[0],cy:prev[1],cz:prev[2],hx:0.22,hy:0.22,hz:0.22}, col);
   }
 }
+/* 협동 관문 표식 — 게임이 그리는 것과 같은 물건이다. 같은 함수(PENG.coopMarkers)에서
+   나오므로 여기서 본 모습이 곧 플레이어가 볼 모습이다. 발판을 끌어 옮기다 표식이 사라지면
+   그 구간이 더는 협동 전용이 아니라는 뜻이라, 옆의 구간 라벨을 읽기 전에 눈으로 먼저 안다.
+   매 프레임 새로 만든다 — 드래그 중에도 따라와야 하고, LV.boxes 에 섞으면 저장 파일에
+   딸려 들어가기 때문이다(장면은 어차피 프레임마다 통째로 다시 쌓는다). */
+function coopMarks(){
+  if(!document.getElementById('optMark').checked) return;
+  var m=PENG.coopMarkers(LV);
+  for(var i=0;i<m.length;i++) boxTris(m[i], m[i].col, 0.92);
+}
 /* 플레이어 실제 크기 — 발판이 좁은지 넓은지 감을 잡기 위한 기준자 */
 function playerGhost(){
   if(!document.getElementById('optGhost').checked) return;
@@ -574,6 +590,7 @@ function buildScene(){
   lv([-kx,LV.killY,160],[kx,LV.killY,160],[1,0.35,0.35,0.45]);
   lv([-kx,LV.killY,-40],[-kx,LV.killY,160],[1,0.35,0.35,0.45]);
   lv([kx,LV.killY,-40],[kx,LV.killY,160],[1,0.35,0.35,0.45]);
+  coopMarks();
   arcs(); playerGhost();
   if(palPreview && palDrag){                       // 배치 미리보기
     var prev=PENG.placeProp(palDrag.id, palPreview.x, palPreview.y, palPreview.z);
@@ -763,7 +780,8 @@ function autoPlace(kind){
 }
 
 /* ---------- 패널 ---------- */
-var KIND={jump:'점프', rocket:'로켓점프', coop:'협동 전용', impossible:'불가능', touch:'붙어 있음'};
+var KIND={jump:'점프', rocket:'로켓점프', coop:'협동 전용', impossible:'불가능', touch:'붙어 있음',
+          gate:'협동 관문', noswitch:'스위치 없음'};
 function refreshAll(){ refreshPanel(); refreshAnalysis(); refreshCps(); refreshHints(); }
 function onEdit(){ refreshPanel(); refreshAnalysis(); refreshCps(); }
 function refreshPanel(){
@@ -771,6 +789,11 @@ function refreshPanel(){
   var one = (SEL.t==='box') ? LV.boxes[SEL.i] : null;
   ['pcx','pcy','pcz','phx','phy','phz','pcol','pdeco'].forEach(function(id){
     document.getElementById(id).disabled=!one; });
+  // 협동 채널은 압력판·연동 발판일 때만 의미가 있다(그 역할은 프롭을 놓을 때 정해진다)
+  var role = one ? (one.plate ? 'plate' : (one.link ? 'link' : '')) : '';
+  document.getElementById('pch').disabled = !role;
+  document.getElementById('pchRole').textContent = role==='plate' ? '압력판' : (role==='link' ? '연동 발판' : '—');
+  if(role) document.getElementById('pch').value = one[role];
   if(!one) return;
   document.getElementById('pcx').value=one.cx; document.getElementById('pcy').value=one.cy; document.getElementById('pcz').value=one.cz;
   document.getElementById('phx').value=one.hx; document.getElementById('phy').value=one.hy; document.getElementById('phz').value=one.hz;
@@ -853,11 +876,15 @@ function refreshAnalysis(){
   });
   var v=document.getElementById('verdict');
   var bad=segs.filter(function(s){ return s.kind==='impossible'; });
-  var coop=segs.filter(function(s){ return s.kind==='coop'; });
+  var noSw=segs.filter(function(s){ return s.kind==='noswitch'; });
+  // 협동 전용 구간(간격이 커서) 과 협동 관문(압력판 다리) 은 둘 다 "2인이어야 넘는다"
+  var coop=segs.filter(function(s){ return s.kind==='coop' || s.kind==='gate'; });
   if(!PENG.goalAtEnd(LV)){ v.className='v-no';
     v.textContent='⚠ 결승이 코스 끝에 있지 않습니다. 마지막 발판을 선택하고 [결승을 여기로] 를 누르세요.'; }
   else if(bad.length){ v.className='v-no';
     v.textContent='⚠ 넘을 수 없는 구간 '+bad.length+'개 (구간 '+bad.map(function(s){return s.from+'→'+s.to;}).join(', ')+'). 클리어 불가 맵입니다.'; }
+  else if(noSw.length){ v.className='v-no';
+    v.textContent='⚠ 압력판 없는 연동 발판 '+noSw.length+'개 (구간 '+noSw.map(function(s){return s.from+'→'+s.to;}).join(', ')+'). 그 다리는 영영 열리지 않습니다 — 같은 채널의 압력판을 놓으세요.'; }
   else if(coop.length){ v.className='v-ok';
     v.textContent='✔ 협동 전용 구간 '+coop.length+'개 — 2인이어야 클리어됩니다.'; }
   else { v.className='v-no';
@@ -879,6 +906,10 @@ document.getElementById('pcol').addEventListener('input',function(){ if(LV.boxes
 document.getElementById('pdeco').addEventListener('change',function(){
   pushUndo(); var b=LV.boxes[SEL.i]; if(!b)return;
   if(this.checked) b.deco=true; else delete b.deco; onEdit(); });
+document.getElementById('pch').addEventListener('change',function(){
+  pushUndo(); var b=LV.boxes[SEL.i]; if(!b)return;
+  if(b.plate) b.plate=this.value; else if(b.link) b.link=this.value;
+  onEdit(); });
 
 /* ---------- 뷰 프리셋 ---------- */
 function sideView(a,b){
