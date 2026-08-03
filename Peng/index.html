@@ -761,8 +761,13 @@ function setCamera(s){ var f=forwardVec(s);
    그 텍스처를 '중심 쪽으로 끌어당겨' 샘플링하는 전체화면 패스를 덧씌운다.
    왜곡원이 하나도 없으면 FBO 를 건너뛰고 바로 그린다(평소엔 비용 0). */
 var LENS_MAX=4;                 // 셰이더 루프 상한(WebGL1 은 상수여야 한다)
-var LENS_STRENGTH=0.16;         // 끌어당기는 세기(화면 비율 단위)
-var LENS_RADIUS=0.28;           // 영향 반경(화면 높이 기준)
+var LENS_STRENGTH=0.57;         // 끌어당기는 세기 — 렌즈 반경 대비 비율
+var LENS_WORLD_R=4.2;           // 영향 반경(m). 화면 크기는 거리에 따라 줄어든다
+var LENS_MAXSCR=0.85;           // 코앞에서 화면을 통째로 덮지 않도록 하는 상한(화면 높이 비율)
+/* 끌어당기는 양의 절대 상한. 반경이 거리에 반비례해 커진 뒤로는 발밑에서 터지는
+   로켓점프마다 화면 높이의 30% 가까이 밀려 속이 울렁거린다. 반경은 커지되
+   실제 변위는 예전 최대치 근처에서 묶어 둔다. */
+var LENS_KMAX=0.18;
 var LENS_ON=1;                  // 0 이면 완전히 끔
 var FBO=null, lensList=[];
 var VS_POST='attribute vec2 aP;varying vec2 vUV;'+
@@ -802,17 +807,59 @@ function ensureFBO(){
   if(FBO){ gl.deleteFramebuffer(FBO.fb); gl.deleteTexture(FBO.tex); gl.deleteRenderbuffer(FBO.rb); }
   FBO=makeFBO(w,h); return FBO;
 }
+/* 벽 뒤에서 터진 폭발이 화면을 휘게 하면 안 된다 — 그러면 어디서 터졌는지
+   거리감·차폐감이 통째로 사라진다(왜곡이 지형을 뚫고 보인다).
+   카메라에서 폭발 지점과 그 둘레 네 점으로 광선을 쏴 몇 개나 지형에 막히는지 센다.
+   전부 막히면 렌즈를 버리고, 일부만 막히면(모서리 너머로 빼꼼) 그만큼 약해진다 —
+   켜지고 꺼지는 게 뚝뚝 끊기지 않는다. */
+var LENS_SAMP=[[0,0],[1,0],[-1,0],[0,1],[0,-1]];
+function lensVisibility(b, wr, dist){
+  if(!LEVEL || !LEVEL.boxes || !LEVEL.boxes.length) return 1;
+  var o=CAMPOS;
+  var fx=(b.x-o.x)/dist, fy=(b.y-o.y)/dist, fz=(b.z-o.z)/dist;   // 카메라 → 폭발
+  // 중심에 절반, 둘레 네 점이 나머지 절반. 왜곡은 중심이 가장 세므로
+  // "한가운데가 벽 뒤"인 경우가 제일 티나게 뚫려 보인다 — 그쪽에 무게를 준다.
+  var off=wr*0.6, seen=0;
+  for(var i=0;i<LENS_SAMP.length;i++){
+    var w=(i===0)?0.5:0.125;
+    var sx=LENS_SAMP[i][0]*off, sy=LENS_SAMP[i][1]*off;
+    // 시선에 수직인 평면(카메라 오른쪽·위)에 표본을 흩고, 살짝 카메라 쪽으로 당긴다.
+    // 안 당기면 표본이 폭발이 붙은 벽면 속에 박혀 스스로를 가린 것으로 세어진다.
+    var px=b.x+CAMR.x*sx+CAMU.x*sy-fx*0.05,
+        py=b.y+CAMR.y*sx+CAMU.y*sy-fy*0.05,
+        pz=b.z+CAMR.z*sx+CAMU.z*sy-fz*0.05;
+    var dx=px-o.x, dy=py-o.y, dz=pz-o.z, mt=Math.hypot(dx,dy,dz);
+    if(mt<1e-4){ seen+=w; continue; }
+    var d={x:dx/mt,y:dy/mt,z:dz/mt}, lim=mt-0.2, blocked=false;   // 0.2m 여유
+    for(var j=0;j<LEVEL.boxes.length;j++){ var bx=LEVEL.boxes[j];
+      if(bx.deco) continue;                    // 장식(나무·풀)은 폭발을 가리지 않는다
+      if(rayBox(o,d,bx)<lim){ blocked=true; break; } }
+    if(!blocked) seen+=w;
+  }
+  return seen;
+}
 // 이번 프레임의 왜곡원 모으기 — 폭발이 터질 때 그 지점이 공간을 휘게 한다
 function collectLenses(s){
   lensList.length=0;
   if(!LENS_ON || !s) return;
+  var tanHalf=Math.tan(FOV*0.5);
   for(var i=0;i<s.blasts.length && lensList.length<LENS_MAX;i++){
     var b=s.blasts[i];
-    var sp=projectWorld([b.x,b.y,b.z]); if(!sp) continue;
     var fade=1-b.t;                          // 터진 직후 가장 강하고 서서히 사라짐
     if(fade<=0.02) continue;
+    var sp=projectWorld([b.x,b.y,b.z]); if(!sp) continue;
+    var dist=Math.hypot(b.x-CAMPOS.x, b.y-CAMPOS.y, b.z-CAMPOS.z);
+    if(dist<0.2) continue;
+    var wr=LENS_WORLD_R*(0.35+0.65*b.t);     // 폭발이 퍼지며 반경도 커진다
+    var vis=lensVisibility(b, wr, dist);     // 가려진 만큼 약해진다
+    if(vis<=0.01) continue;                  // 완전히 벽 뒤 → 아예 왜곡하지 않는다
+    // 원근: 거리 d 에서 반지름 wr 은 화면 높이의 0.5*wr/(d*tan(fov/2)) 를 덮는다.
+    // 예전엔 거리와 무관한 고정 화면 반경이라 40m 밖 폭발도 코앞처럼 크게 휘었다.
+    var r=Math.min(LENS_MAXSCR, 0.5*wr/(dist*tanHalf));
+    // 세기도 반경에 비례해야 한다. 고정 세기면 멀어서 작아진 렌즈가
+    // 좁은 영역을 그대로 끌어당겨 점처럼 콱 찌그러진다.
     lensList.push({ u:sp.x/W, v:1-sp.y/H,    // 셰이더 UV 는 아래가 0
-      k:LENS_STRENGTH*fade, r:LENS_RADIUS*(0.35+0.65*b.t) });   // 반경은 퍼져나감
+      k:Math.min(LENS_KMAX, r*LENS_STRENGTH*fade*vis), r:r });
   }
 }
 function drawPost(){
@@ -1503,8 +1550,10 @@ var DBG_SPEC=[
   ['윤곽선 두께',   0,   0.05,0.001,function(){return GM().outlineW;},function(v){GM().outlineW=v;}],
   ['sec','중력 렌즈(폭발 왜곡)'],
   ['켜기(0/1)',     0,   1,   1,    function(){return LENS_ON;},       function(v){LENS_ON=v?1:0;}],
-  ['왜곡 세기',     0,   0.6, 0.01, function(){return LENS_STRENGTH;}, function(v){LENS_STRENGTH=v;}],
-  ['왜곡 반경',     0.02,0.9, 0.02, function(){return LENS_RADIUS;},   function(v){LENS_RADIUS=v;}],
+  ['세기(반경 대비)',0,  1.5, 0.01, function(){return LENS_STRENGTH;}, function(v){LENS_STRENGTH=v;}],
+  ['왜곡 반경(m)',  0.2, 12,  0.1,  function(){return LENS_WORLD_R;},  function(v){LENS_WORLD_R=v;}],
+  ['화면 반경 상한',0.05,1.5, 0.05, function(){return LENS_MAXSCR;},   function(v){LENS_MAXSCR=v;}],
+  ['변위 상한',     0,   0.6, 0.01, function(){return LENS_KMAX;},     function(v){LENS_KMAX=v;}],
   ['sec','멀티'],
   ['보간 지연(ms)', 0,   400, 5,    function(){return INTERP_MS;},  function(v){INTERP_MS=v;}],
   ['몸통 충돌 반경(경쟁)', 0, 1.2, 0.01, function(){return PEER_R;},  function(v){PEER_R=v;}]
@@ -1760,6 +1809,10 @@ window.__peng={ makeSim:makeSim, stepSim:stepSim, doFire:doFire,
   get LEVEL(){ return LEVEL; },
   setLevel:setLevel, get level(){ return CURLEVEL; }, levels:function(){ return PENG.order.slice(); },
   get sim(){ return sim; }, get MP(){ return MP; },   // 실시간 검증용(멀티 상호작용 확인)
+  // 중력 렌즈 검증용: 이번 프레임에 실제로 화면을 휘게 한 왜곡원 목록
+  get lenses(){ return lensList; },
+  // 프레임 강제 실행 — 검증 환경(탭이 숨겨진 상태)에선 rAF 가 멈춰 렌더가 안 돈다
+  frame:function(now){ loop(now!=null?now:performance.now()); },
   // 협동 기믹 검증용 — 리프트 샷(방사형 vs 순수 상승)과 연동 압력판의 켜짐 상태
   applyBlast:applyBlast, respawn:respawn, updateLinks:updateLinks,
   get LINK_ON(){ return LINK_ON; }, boxSolid:boxSolid,
