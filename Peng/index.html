@@ -374,6 +374,16 @@ var PADS=[];
    선언이 여기 있어야 한다 — setLevel 이 로드 시점에 buildCollapseFloor 를 부른다. */
 var MATCH_SEED=1, FLOOR_SEED=1;
 function roundSeed(n){ return ((MATCH_SEED>>>0) ^ Math.imul(n+1, 0x9E3779B1)) >>> 0; }
+function newSeed(){ return (Math.random()*0xFFFFFFFF)>>>0; }
+/* 대기방 연습장 시드는 방 코드에서 뽑는다. 대기방에서도 서로가 보이므로 지형이
+   같아야 하는데(안 그러면 상대가 허공에 서 있다), 방마다는 달라야 한다.
+   방 코드는 이미 전원이 공유하고 있어서 새 메시지 없이 이게 성립한다. */
+function seedFromStr(str){
+  var h=0x811C9DC5>>>0;
+  for(var i=0;i<str.length;i++){ h^=str.charCodeAt(i); h=Math.imul(h,0x01000193); }
+  return h>>>0;
+}
+function lobbySeed(){ return (MP&&MP.room) ? seedFromStr(MP.room) : newSeed(); }
 /* 등록된 레벨 데이터는 원본 그대로 둬야 한다 — 무너지는 아레나가 boxes 를 실시간으로
    고치기 때문에, 예전처럼 LEVEL 이 원본을 그대로 가리키면 한 판 하고 나면 맵이
    영구히 부서진 채로 남는다. 얕은 복사 + 박스만 복사하면 충분하다(박스 ≤ 100). */
@@ -2000,7 +2010,9 @@ function renderLobby(){
   syncMapPickers();
 }
 document.getElementById('soloBtn').addEventListener('click',function(){
-  ensureAudio(); mpDisconnect(); startGame(SOLO_LEVEL); });
+  ensureAudio(); mpDisconnect();
+  MATCH_SEED=newSeed();            // 혼자 플레이도 시작할 때마다 새 지형
+  startGame(SOLO_LEVEL); });
 document.getElementById('hostBtn').addEventListener('click',function(){ ensureAudio(); setWarn('서버에 연결 중…');
   mpConnect(mpCode(), function(){ setWarn(''); enterLobby(); mpSend({t:'lvl', level:CURLEVEL}); },
     function(){ setWarn(noServerMsg()); }); });
@@ -2031,7 +2043,7 @@ function doJoin(){ ensureAudio();
 document.getElementById('lobbyStartBtn').addEventListener('click',function(){
   if(!mpIsHost()||MP.players.length<2)return; mpSend({t:'gm', mode:GAMEMODE});
   // 패드 개수는 맵마다 다르다 — 서버가 내용물을 채우려면 몇 개인지 알아야 한다
-  MATCH_SEED=(Math.random()*0xFFFFFFFF)>>>0;   // 경기 시드 — 전원이 같은 지형을 만든다
+  MATCH_SEED=newSeed();                       // 경기 시드 — 전원이 같은 지형을 만든다
   mpSend({t:'start', level:CURLEVEL, pads:(LEVEL.pads||[]).length, seed:MATCH_SEED});
   startGame(CURLEVEL); });
 document.getElementById('lobbyLeaveBtn').addEventListener('click',function(){ mpDisconnect(); showScreen('title'); });
@@ -2152,11 +2164,14 @@ var keys={}, locked=false, jumpEdge=false, lastFell=0;
 // 맵이 바뀌면 대기방 연습 캐릭터를 새 맵 시작점으로 옮긴다(예전 맵 좌표에 남으면 허공에 뜬다)
 function applyLevelToPractice(){
   if(mode!=='lobbyScr') return;
+  FLOOR_SEED=lobbySeed(); buildCollapseFloor(); buildPads();
   sim=makeSim(); sim.practice=true; acc=0; last=0;
 }
 // 대기방 = 연습장. 기다리는 동안 실제로 움직이고 쏴볼 수 있다(기록은 세지 않음).
 function enterLobby(levelId){
   if(levelId) setLevel(levelId);
+  // 방마다 다른 연습장 — 예전엔 로드 시 시드(1) 그대로라 어느 방을 만들어도 똑같았다
+  FLOOR_SEED=lobbySeed(); buildCollapseFloor(); buildPads();
   if(!sim || !sim.practice){ sim=makeSim(); sim.practice=true; }
   acc=0; last=0; showScreen('lobbyScr'); renderLobby();
 }
@@ -2178,7 +2193,8 @@ function startGame(levelId){
 }
 // 다시하기: 멀티면 대기방으로, 솔로면 바로 재시작
 document.getElementById('retryBtn').addEventListener('click',function(){ ensureAudio();
-  if(MP.connected){ sim=makeSim(); sim.practice=true; enterLobby(); } else startGame(); });
+  if(MP.connected){ sim=makeSim(); sim.practice=true; enterLobby(); }
+  else { MATCH_SEED=newSeed(); startGame(); } });
 document.getElementById('menuBtn').addEventListener('click',function(){ mpDisconnect(); showScreen('title'); setWarn(''); });
 var CURVP=null;
 function projectWorld(p){                 // 월드 → 논리 화면(W,H) 좌표. 카메라 뒤면 null
