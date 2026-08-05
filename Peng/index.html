@@ -301,11 +301,12 @@
      맵을 추가해도 이 파일을 고칠 필요가 없다. -->
 <script src="level.js"></script>
 <script src="levels/_all.js"></script>
-<!-- 총 3D 메시. gunbaked.js 는 Mesh/*.glb 를 미리 구워둔 정점 데이터(190KB)로,
-     tools/bake.html 이 만든다 — 모델을 바꿨을 때만 다시 구우면 된다.
-     둘 다 없으면 기본 박스 총으로 그린다. -->
+<!-- 총·투사체 3D 메시(Kenney Blaster Kit, CC0). *baked.js 는 Mesh/*.glb 를
+     미리 구워둔 정점 데이터로 tools/bake.html 이 만든다 — 모델을 바꿨을 때만 다시 굽는다.
+     없으면 총은 기본 박스로, 투사체는 기존 빌보드로 폴백한다. -->
 <script src="gunmesh.js"></script>
 <script src="gunbaked.js"></script>
+<script src="bulletbaked.js"></script>
 
 <script>
 "use strict";
@@ -1572,6 +1573,34 @@ function quadGL(v,c,outline){
       LINE.push(a[0],a[1],a[2],e[0],e[1],e[2], b[0],b[1],b[2],e[0],e[1],e[2]); } }
 }
 // 빌보드 1개: 중심/반지름/색+알파
+/* ---------- 투사체 메시 ----------
+   총과 달리 탄환은 월드 공간에 여러 개가 동시에 뜬다. GL 버퍼를 따로 두는 대신
+   삼각형 44개짜리 작은 메시를 CPU 로 변환해 기존 TRI 파이프라인에 밀어 넣는다
+   (화면에 있어야 서너 개라 비용이 무시할 수준이고, 셰이더·버퍼를 안 늘려도 된다).
+   메시는 로컬 +Z 로 서 있으므로(굽기 때 축을 그렇게 맞췄다) 비행 방향을 +Z 로 두는
+   기저만 만들면 된다. */
+var BULLET=null, BULLET_SCALE=4.5;
+try{
+  if(window.BULLET_BAKED && window.GunMesh && GunMesh.decodeBaked)
+    BULLET=GunMesh.decodeBaked(window.BULLET_BAKED);
+}catch(e){ BULLET=null; }
+function drawBullet(x,y,z, dx,dy,dz, scale){
+  if(!BULLET) return false;
+  // 비행 방향을 +Z 로 두는 정규 직교 기저
+  var L=Math.hypot(dx,dy,dz)||1; var fx=dx/L, fy=dy/L, fz=dz/L;
+  var ux=0, uy=1, uz=0;
+  if(Math.abs(fy)>0.99){ ux=1; uy=0; }                 // 수직으로 날 때 축 퇴화 방지
+  var rx=uy*fz-uz*fy, ry=uz*fx-ux*fz, rz=ux*fy-uy*fx;
+  var rl=Math.hypot(rx,ry,rz)||1; rx/=rl; ry/=rl; rz/=rl;
+  var vx=fy*rz-fz*ry, vy=fz*rx-fx*rz, vz=fx*ry-fy*rx;  // 진짜 up = f x r
+  var P=BULLET.pos, C=BULLET.col, I=BULLET.idx, s=scale||BULLET_SCALE;
+  for(var k=0;k<I.length;k++){
+    var v=I[k], px=P[v*3]*s, py=P[v*3+1]*s, pz=P[v*3+2]*s;
+    TRI.push(x+rx*px+vx*py+fx*pz, y+ry*px+vy*py+fy*pz, z+rz*px+vz*py+fz*pz,
+             C[v*3], C[v*3+1], C[v*3+2]);
+  }
+  return true;
+}
 /* 위를 보는 원판 — 아이템 패드용. quadGL 은 사각형만 받으므로 삼각형 부채꼴로 직접 깐다.
    CCW(위에서 볼 때)로 감아야 백페이스 컬링에 안 잘린다. */
 function discGL(cx,cy,cz,r,col,bright){
@@ -1696,9 +1725,10 @@ function render(dt){
   var FXS=[sim];
   for(var _fb=0;_fb<BOTS.length;_fb++) FXS.push(BOTS[_fb].sim);
   for(var fi=0; fi<FXS.length; fi++){ var fs=FXS[fi];
-    // 발사체: 밝은 코어 + 뒤로 늘어지는 트레일
+    // 발사체: 탄환 메시(없으면 밝은 코어) + 뒤로 늘어지는 트레일
     for(var pj=0;pj<fs.projectiles.length;pj++){ var pr=fs.projectiles[pj];
-      bbPush(pr.x,pr.y,pr.z, 0.30, 0.95,1.0,1.0, 0.95);
+      if(!drawBullet(pr.x,pr.y,pr.z, pr.dx,pr.dy,pr.dz))
+        bbPush(pr.x,pr.y,pr.z, 0.30, 0.95,1.0,1.0, 0.95);
       for(var tt=1;tt<=4;tt++){ var f2=tt/4;
         bbPush(pr.x-pr.dx*f2*1.1, pr.y-pr.dy*f2*1.1, pr.z-pr.dz*f2*1.1, 0.24*(1-f2*0.5), 0.55,0.82,1.0, 0.45*(1-f2)); } }
     // 폭발 구
@@ -2371,6 +2401,7 @@ var DBG_SPEC=[
   ['왜곡 반경(m)',  0.2, 12,  0.1,  function(){return LENS_WORLD_R;},  function(v){LENS_WORLD_R=v;}],
   ['화면 반경 상한',0.05,1.5, 0.05, function(){return LENS_MAXSCR;},   function(v){LENS_MAXSCR=v;}],
   ['변위 상한',     0,   0.6, 0.01, function(){return LENS_KMAX;},     function(v){LENS_KMAX=v;}],
+  ['탄환 크기',     0.5, 12,  0.1,  function(){return BULLET_SCALE;}, function(v){BULLET_SCALE=v;}],
   ['sec','아이템'],
   ['패드 판정 반경',  0.2, 3,   0.05, function(){return PAD_R;},      function(v){PAD_R=v;}],
   ['패드 원판 반경',  0.1, 2,   0.05, function(){return PAD_VIS_R;},  function(v){PAD_VIS_R=v;}],

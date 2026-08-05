@@ -8,11 +8,13 @@
  * 필요가 없고, 툰 윤곽선도 같은 방식(법선으로 부풀린 껍질)으로 붙는다.
  *
  * 좌표계: glTF 는 오른손(+X 오른쪽, +Y 위, +Z 뒤), 이 게임은 왼손(+Z 앞)이다.
- * ShockWave_Gun 은 총구가 -X 를 향하고 +Y 가 위이므로
- *     local = (-z, y, -x)
- * 로 옮기면 게임 기저(x=오른쪽, y=위, z=앞)에 좌우 반전 없이 들어맞는다.
- * (행렬식이 -1 이라 감기 방향이 뒤집힌다 → 바깥면이 CW 가 되고,
- *  이는 윤곽선 껍질이 기대하는 방향과 같다. 본체는 컬링을 안 쓰므로 무관.)
+ * 모델마다 총구가 보는 축이 달라서 AXES 로 골라 쓴다. 아래 매핑은 전부 행렬식이 -1 이라
+ * (거울) 감기 방향이 한 번 뒤집히고, 인덱스 단계에서 한 번 더 뒤집어 규약을 맞춘다.
+ * 좌우가 거울로 바뀌지만 총은 좌우 대칭이라 눈에 띄지 않는다.
+ *
+ *   shockwave : 총구가 -X   →  local = (-z,  y, -x)
+ *   kenney    : 총구가 -Z   →  local = ( x,  y, -z)   (Kenney Blaster Kit 계열)
+ *   bullet    : 끝이  +Y   →  local = ( x,  z,  y)   (탄환 — 긴 축을 +Z 로 세운다)
  *
  * 실패하면 조용히 ready=false 로 남는다. 호출부는 기존 박스 총으로 폴백한다
  * (file:// 로 직접 열면 fetch 가 막히므로 이 경로가 실제로 쓰인다).
@@ -24,8 +26,12 @@ var GunMesh = {
   ready:false, loading:false, err:null,
   // --- 배치(조준 기저 기준: x=오른쪽, y=위, z=앞). 디버그 패널에서 조절한다 ---
   // 원본 메시는 총열 방향 길이가 2유닛이라 0.22 를 곱하면 약 0.44m — 박스 총과 비슷한 화면 비중이 된다.
-  scale:0.22,
-  ox:0.26, oy:-0.23, oz:0.50,
+  /* 축 매핑 이름. 모델을 갈아끼울 때 여기만 바꾸면 된다(굽기 전에 정해야 한다). */
+  axes:'kenney',
+  /* blaster-h 는 총열 방향 길이가 0.648 유닛이다. 0.68 을 곱하면 약 0.44m —
+     예전 박스 총·ShockWave 와 화면 비중이 비슷해진다. */
+  scale:0.68,
+  ox:0.26, oy:-0.20, oz:0.42,
   outlineW:0.006,          // 윤곽선 두께(월드 단위)
   muzzle:[0,0,0],          // 총구 위치(로컬, scale 적용 전) — 섬광·발사 원점에 쓴다
   info:''                  // 로드 결과 요약(디버그용)
@@ -156,14 +162,21 @@ function build(g, img){
   var mn=[1e9,1e9,1e9], mx=[-1e9,-1e9,-1e9];
   for(var v=0;v<n;v++){
     var q=xformPoint(nm, P[v*3], P[v*3+1], P[v*3+2]);
-    // glTF(오른손) → 게임 기저(왼손): local = (-z, y, -x)
-    var lx=-q[2], ly=q[1], lz=-q[0];
+    // glTF(오른손) → 게임 기저(왼손). 매핑은 GunMesh.axes 가 고른다(맨 위 주석 참고).
+    var lx,ly,lz;
+    if(GunMesh.axes==='kenney'){ lx=q[0];  ly=q[1]; lz=-q[2]; }
+    else if(GunMesh.axes==='bullet'){ lx=q[0]; ly=q[2]; lz=q[1]; }
+    else                       { lx=-q[2]; ly=q[1]; lz=-q[0]; }
     pos[v*3]=lx; pos[v*3+1]=ly; pos[v*3+2]=lz;
     if(lx<mn[0])mn[0]=lx; if(ly<mn[1])mn[1]=ly; if(lz<mn[2])mn[2]=lz;
     if(lx>mx[0])mx[0]=lx; if(ly>mx[1])mx[1]=ly; if(lz>mx[2])mx[2]=lz;
     if(N){
       var d=xformDir(nm, N[v*3], N[v*3+1], N[v*3+2]);
-      var nx=-d[2], ny=d[1], nz=-d[0], nl=Math.hypot(nx,ny,nz)||1;
+      var nx,ny,nz;
+      if(GunMesh.axes==='kenney'){ nx=d[0];  ny=d[1]; nz=-d[2]; }
+      else if(GunMesh.axes==='bullet'){ nx=d[0]; ny=d[2]; nz=d[1]; }
+      else                       { nx=-d[2]; ny=d[1]; nz=-d[0]; }
+      var nl=Math.hypot(nx,ny,nz)||1;
       rawN[v*3]=nx/nl; rawN[v*3+1]=ny/nl; rawN[v*3+2]=nz/nl;
     }
   }
@@ -241,7 +254,7 @@ function b64dec(str){
   return u8;
 }
 // gunbaked.js 의 내용을 문자열로 만든다(tools/bake.html 이 서버에 보내 파일로 쓴다)
-GunMesh.serialize=function(){
+GunMesh.serialize=function(globalName){
   if(!M) throw new Error('아직 구운 메시가 없습니다');
   var n=M.n, mn=M.min, mx=M.max, sc=[mx[0]-mn[0], mx[1]-mn[1], mx[2]-mn[2]];
   var P=new Uint16Array(n*3), C=new Uint8Array(n*3), N=new Int8Array(n*3);
@@ -257,7 +270,21 @@ GunMesh.serialize=function(){
   return '/* 자동 생성 파일 — 직접 고치지 마세요.\n'+
          '   tools/bake.html 이 .glb 를 구워 만든 정점 데이터입니다(위치·색·법선·인덱스).\n'+
          '   모델을 바꾸면 그 페이지를 열어 [굽기] 를 다시 누르세요. */\n'+
-         'window.GUN_BAKED='+JSON.stringify(o)+';\n';
+         'window.'+(globalName||'GUN_BAKED')+'='+JSON.stringify(o)+';\n';
+};
+/* 구운 데이터 → 정점 배열. GunMesh 의 현재 메시를 건드리지 않는 순수 함수라
+   탄환처럼 다른 메시를 읽는 쪽에서도 그대로 쓴다. */
+GunMesh.decodeBaked=function(o){
+  if(!o || o.v!==BAKE_VER) throw new Error('구운 데이터의 형식 버전이 다릅니다');
+  var n=o.n, mn=o.mn, mx=o.mx;
+  var P=new Uint16Array(b64dec(o.p).buffer), C=b64dec(o.c),
+      idx=new Uint16Array(b64dec(o.i).buffer);
+  if(P.length!==n*3 || C.length!==n*3) throw new Error('구운 데이터의 길이가 안 맞습니다');
+  var pos=new Float32Array(n*3), col=new Float32Array(n*3);
+  var sc=[(mx[0]-mn[0])/65535, (mx[1]-mn[1])/65535, (mx[2]-mn[2])/65535];
+  for(var v=0;v<n;v++) for(var a=0;a<3;a++){
+    pos[v*3+a]=mn[a]+P[v*3+a]*sc[a]; col[v*3+a]=C[v*3+a]/255; }
+  return {pos:pos, col:col, idx:idx, n:n, min:mn, max:mx, tip:o.mz.slice()};
 };
 function applyBaked(o){
   if(!o || o.v!==BAKE_VER) throw new Error('구운 데이터의 형식 버전이 다릅니다');

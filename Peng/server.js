@@ -110,12 +110,17 @@ function handleBake(req, res){
   });
   req.on('end', function(){
     if(tooBig) return;
-    if(!body || body.indexOf('window.GUN_BAKED=') < 0) return fail(400, '구운 데이터가 아닙니다.');
-    fs.writeFile(BAKED_FILE, body, function(err){
+    /* 파일명은 클라이언트가 못 정한다 — 내용에 박힌 전역 이름으로만 고른다.
+       경로가 고정이라 탈출 여지가 없다. */
+    var name = null;
+    if(body.indexOf('window.GUN_BAKED=') >= 0) name = 'gunbaked.js';
+    else if(body.indexOf('window.BULLET_BAKED=') >= 0) name = 'bulletbaked.js';
+    if(!name) return fail(400, '구운 데이터가 아닙니다.');
+    fs.writeFile(path.join(ROOT, name), body, function(err){
       if(err) return fail(500, '저장 실패: ' + err.message);
-      log('bake', 'gunbaked.js (' + Math.round(body.length/1024) + 'KB)');
+      log('bake', name + ' (' + Math.round(body.length/1024) + 'KB)');
       res.writeHead(200, {'Content-Type':'application/json'});
-      res.end(JSON.stringify({ ok:true, path:'gunbaked.js', bytes:body.length }));
+      res.end(JSON.stringify({ ok:true, path:name, bytes:body.length }));
     });
   });
 }
