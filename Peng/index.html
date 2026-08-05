@@ -676,6 +676,9 @@ var IT_PULSE_F=2.0, IT_PULSE_R=1.6;
 /* 원판 반지름은 플레이어 반지름과 같다 → 지름 0.7m = 캐릭터 지름.
    집는 판정은 '몸이 원판에 닿으면'이라 거기에 몸 반지름을 더한다. */
 var PAD_VIS_R=PH_HX, PAD_R=PH_HX*2, PAD_CD=12;
+/* 패드 3색 — 기본 바탕 / 빈 링 트랙 / 차오른 링. 바탕과 트랙이 확실히 달라야
+   "링이 어디까지 찼는지"가 보인다(같은 색이면 빈 구간이 바탕에 묻힌다). */
+var PAD_COL_BASE='#16222f', PAD_COL_TRACK='#44607d', PAD_COL_FILL='#3fe0b4';
 function randItem(){ return ITEM_IDS[Math.floor(Math.random()*ITEM_IDS.length)]; }
 function buildPads(){
   PADS.length=0;
@@ -1338,11 +1341,17 @@ function render(){
   for(var mi=0;mi<MARKS.length;mi++) meshGL(boxFaces(MARKS[mi]), MARKS[mi].col, true);
   /* 아이템 패드 — 충돌 박스가 아니라 그리기만 한다(LEVEL.boxes 에 넣으면 밟고 올라서게 된다).
      원판은 어느 패드든 똑같은 색이다 — 무작위인 건 위에 떠 있는 '내용물 표식'뿐이다.
-     집어가면 표식이 사라지고, 원판 위에서 링 게이지가 한 바퀴 차오르며 재생성을 알린다
-     (숫자 없이도 "언제 다시 오면 되는지"가 멀리서 읽힌다). */
+     세 겹으로 그린다: 기본 바탕 원판 / 빈 링 트랙(항상 한 바퀴) / 차오른 링.
+     준비 상태 = 링이 100% 찬 모습이고, 집어가면 표식이 사라지면서 0 부터 다시 찬다.
+     숫자 없이도 "지금 집을 수 있나 · 언제 다시 오면 되나"가 멀리서 읽힌다.
+     세 겹이 같은 높이면 z-파이팅이 나므로 조금씩 띄워 얹는다. */
   var padT=performance.now()*0.001;
+  var PAD_R0=PAD_VIS_R*0.58, PAD_R1=PAD_VIS_R*0.88;
   for(var pdi=0;pdi<PADS.length;pdi++){ var pd=PADS[pdi], rdy=pd.cd<=0;
-    discGL(pd.x, pd.y+0.035, pd.z, PAD_VIS_R, rdy?'#3fe0b4':'#22303f', 1);
+    discGL(pd.x, pd.y+0.035, pd.z, PAD_VIS_R, PAD_COL_BASE, 1);          // 기본 바탕
+    ringGL(pd.x, pd.y+0.045, pd.z, PAD_R0, PAD_R1, 1, PAD_COL_TRACK, 1); // 빈 링 트랙
+    var frac=rdy ? 1 : 1-pd.cd/Math.max(0.001,PAD_CD);
+    ringGL(pd.x, pd.y+0.052, pd.z, PAD_R0, PAD_R1, frac, PAD_COL_FILL, 1);
     if(rdy){
       var def=ITEMS[pd.item];
       if(def){
@@ -1350,10 +1359,6 @@ function render(){
         var ang=(def.spin===false)?0:padT*1.4+pdi;
         drawGlyph(def, pd.x, pd.y+bob, pd.z, ang, 1);
       }
-    } else {
-      // 0 → 1 로 차오른다. 다 차면 아이템이 돌아온다.
-      ringGL(pd.x, pd.y+0.05, pd.z, PAD_VIS_R*0.5, PAD_VIS_R*0.86,
-        1-pd.cd/Math.max(0.001,PAD_CD), '#3fe0b4', 1);
     }
   }
   // 원격 플레이어 — 보간된 위치
