@@ -441,7 +441,8 @@ function buildCollapseFloor(){
     ST.colliders.forEach(function(cl){
       LEVEL.boxes.push({ cx:cl.i*U, cy:cl.cy*U, cz:cl.j*U,
         hx:cl.hx*U, hy:cl.hy*U, hz:cl.hz*U,
-        col:C.col, _tile:true, _ring:cl.order, _col0:C.col });
+        col:C.col, _tile:true, _ring:cl.order, _col0:C.col,
+        _hide:true });          // 보이는 건 킷 조각 쪽이다 — 이건 충돌 전용
       if(cl.order>maxR) maxR=cl.order;
     });
     LEVEL._pieces = ST.pieces;
@@ -1746,6 +1747,16 @@ function render(dt){
   /* 레벨 — 꺼진 연동 발판은 지우지 말고 어둡게 남긴다. "여기에 다리가 생길 수 있다"가
      보여야 퍼즐이 성립한다(안 보이면 그냥 못 넘는 협곡으로 읽힌다). */
   for(var i=0;i<LEVEL.boxes.length;i++){ var bx=LEVEL.boxes[i], bcol=bx.col;
+    /* _hide = 충돌 전용 박스. 정거장은 킷 조각을 정적 VBO 로 그리므로, 여기서까지
+       그리면 같은 자리에 상자가 한 겹 더 얹혀 조각을 뚫고 나온다.
+       다만 '곧 분리된다'는 예고는 이 박스 색으로 표시되므로(collapseTick),
+       깜빡이는 동안만 윗면에 얇은 경고판을 깔아 준다 — 안 그러면 예고가 사라진다. */
+    if(bx._hide){
+      if(bx._col0 && bx.col!==bx._col0)
+        meshGL(boxFaces({cx:bx.cx, cy:bx.cy+bx.hy+0.03, cz:bx.cz,
+          hx:bx.hx*0.94, hy:0.03, hz:bx.hz*0.94}), bx.col, false);
+      continue;
+    }
     if(bx.link && !LINK_ON[bx.link])      bcol=dimCol(bx.col, 0.34);
     else if(bx.plate && LINK_ON[bx.plate]) bcol='#ffe066';   // 밟히는 중 — 발광
     meshGL(boxFaces(bx), bcol, true); }
