@@ -5,6 +5,8 @@
 Mesh/*
 !Mesh/blaster-h.glb
 !Mesh/bullet-foam-tip-thick.glb
+!Mesh/Textures/
+!Mesh/Textures/*.png
 
 # 미리보기 서버 실행 설정(개인 환경)
 .claude/

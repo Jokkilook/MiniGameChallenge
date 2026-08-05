@@ -435,14 +435,39 @@ GunMesh.load=function(url, done){
       }catch(e){ imgIdx = (json.images&&json.images.length) ? 0 : null; }
       if(imgIdx==null){ build(g,null); finish(); return; }
       var im=json.images[imgIdx];
-      if(im.bufferView==null){ build(g,null); finish(); return; }   // 외부 URI 이미지는 지원 안 함
-      var bv=json.bufferViews[im.bufferView];
-      var bytes=new Uint8Array(g.ab, g.binOff+(bv.byteOffset||0), bv.byteLength);
       // 이 콜백은 promise 밖(Image.onload)에서 불리므로 여기서 던지면 .catch 가 못 잡는다.
       // 정점이 65535 개를 넘는 등 build() 가 거부하는 경우가 여기로 온다.
-      decodeImage(bytes, im.mimeType,
-        function(img){ try{ build(g,img); finish(); }catch(e){ fail(e); } },
-        function(){ try{ build(g,null); finish(); }catch(e){ fail(e); } });  // 디코드 실패 → 무채색으로라도
+      function withBytes(bytes, mime){
+        decodeImage(bytes, mime,
+          function(img){ try{ build(g,img); finish(); }catch(e){ fail(e); } },
+          function(){ try{ build(g,null); finish(); }catch(e){ fail(e); } });  // 디코드 실패 → 무채색으로라도
+      }
+      if(im.bufferView!=null){
+        var bv=json.bufferViews[im.bufferView];
+        withBytes(new Uint8Array(g.ab, g.binOff+(bv.byteOffset||0), bv.byteLength), im.mimeType);
+      } else if(im.uri){
+        /* 외부 파일로 분리된 텍스처(Kenney 계열이 그렇다: Textures/colormap.png).
+           예전엔 여기서 그냥 포기해서 총이 통째로 무채색으로 구워졌다 —
+           팔레트 텍스처가 곧 그 모델의 생김새라 회색 덩어리로 보인다.
+           .glb 경로를 기준으로 상대 경로를 풀어 따로 받는다. */
+        if(/^data:/i.test(im.uri)){
+          var b64=im.uri.slice(im.uri.indexOf(',')+1), raw=atob(b64);
+          var u8=new Uint8Array(raw.length);
+          for(var q=0;q<raw.length;q++) u8[q]=raw.charCodeAt(q);
+          withBytes(u8, (/data:([^;]+)/i.exec(im.uri)||[])[1]);
+        } else {
+          var texUrl=url.replace(/[^\/]*$/, '') + im.uri;
+          fetch(texUrl).then(function(r){ if(!r.ok) throw new Error('HTTP '+r.status); return r.arrayBuffer(); })
+            .then(function(tb){
+              // Blob 타입을 확장자에서 잡아 준다(기본값이 image/jpeg 라 png 가 어긋날 수 있다)
+              var mm=/\.png(\?|$)/i.test(im.uri)?'image/png':(/\.webp(\?|$)/i.test(im.uri)?'image/webp':'image/jpeg');
+              withBytes(new Uint8Array(tb), mm); })
+            .catch(function(e){
+              if(console&&console.warn) console.warn('[gunmesh] 텍스처를 못 읽었습니다('+texUrl+') — 무채색으로 굽습니다');
+              try{ build(g,null); finish(); }catch(e2){ fail(e2); }
+            });
+        }
+      } else { build(g,null); finish(); }
       function finish(){ self.loading=false; self.ready=true;
         if(console&&console.log) console.log('[gunmesh] '+url+' — '+self.info);
         if(done) done(true); }
