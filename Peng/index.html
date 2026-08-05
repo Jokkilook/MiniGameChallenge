@@ -348,6 +348,7 @@ var CAM_DIST=4;      // 평소 카메라 거리
 var AIM_SIDE=1.25;   // 조준 시 오른쪽으로 비키는 양(캐릭터가 화면 왼쪽으로)
 var AIM_PULL=2.7;    // 조준 시 당겨지는 거리
 var AIM_RISE=0.58;   // 조준 시 올라가는 높이
+var CONV_MIN=1.2;    // 수렴 조준(aimRay) 목표의 최소 거리(m) — 벽에 붙었을 때의 하한
 var COYOTE=_P.COYOTE, JUMP_BUF=_P.JUMP_BUF, PITCH_LIM=_P.PITCH_LIM, FUSE_R=_P.FUSE_R, LIFT_V=_P.LIFT_V;
 var BJ_GRACE=_P.BLAST_JUMP_GRACE;
 
@@ -464,10 +465,42 @@ function resolvePeers(s){
     if(vn<0){ s.v.x-=vn*nx; s.v.z-=vn*nz; }
   }
 }
+/* ---- 수렴 조준 ----
+   3인칭 카메라는 눈 뒤(조준 중엔 오른쪽 옆)에 있다. 그래서 눈에서 정직하게 정면으로 쏘면
+   화면 정중앙과 탄착점이 '거리에 따라 다른 양'으로 어긋난다. 조준점을 탄착점에 붙여 두면
+   회전·이동으로 그 거리가 변할 때마다 조준점이 화면을 미끄러지고, 모서리를 스칠 땐
+   근거리↔원거리로 뚝 점프한다 — 조준선 전체가 흔들리는 것처럼 보인다.
+   그래서 반대로 맞춘다. 화면 정중앙(=카메라 중앙 광선)이 닿는 지점을 목표로 잡고,
+   탄은 눈에서 그 지점을 향해 쏜다. 목표는 카메라 중앙축 위에 있으므로 거리가 아무리
+   변해도 언제나 화면 정중앙에 투영된다 → 조준점이 못 박힌 듯 고정된다.
+   1인칭은 카메라가 곧 눈이라 결과가 forwardVec 과 같다(계산을 건너뛴다).
+   aimD 는 눈에서 그 목표까지의 거리 — 탄이 목표에 닿기 전에 막혔는지 판별하는 데 쓴다.
+   수렴을 안 쓰는 경로(1인칭·퇴화)는 '막힘'이라는 개념 자체가 없으므로 aimD=0 을 준다. */
+function aimRay(s){
+  var o=eyePos(s), f=forwardVec(s);
+  if(!s.tp) return {o:o, d:f, aimD:0};
+  setCamera(s);          // 마지막 렌더 뒤에 마우스가 더 움직였을 수 있다 — 지금 시점으로 다시 잡는다
+  /* 광선은 카메라 위치가 아니라 '카메라 중앙축 위에서 눈과 가장 가까운 점'(q)에서 쏜다.
+     축 위라서 "정중앙에 투영된다"는 성질은 그대로인데, 카메라와 플레이어 사이의 지형은
+     건너뛴다. 3인칭 카메라엔 충돌이 없어 위를 보면 바닥에 파묻히는데, 거기서부터 훑으면
+     "코앞 0.2m 에서 막힘"이 나와 조준이 통째로 엉킨다(파묻힌 프레임의 절반이 그랬다). */
+  var back=(o.x-CAMPOS.x)*CAMF.x + (o.y-CAMPOS.y)*CAMF.y + (o.z-CAMPOS.z)*CAMF.z;
+  var q={x:CAMPOS.x+CAMF.x*back, y:CAMPOS.y+CAMF.y*back, z:CAMPOS.z+CAMF.z*back};
+  var t=BLAST_RANGE;
+  for(var i=0;i<LEVEL.boxes.length;i++){ if(!boxSolid(LEVEL.boxes[i])) continue;
+    var h=rayBox(q,CAMF,LEVEL.boxes[i]); if(h<t)t=h; }
+  t=peerFuse(q, CAMF, t);             // 팀원 근접 신관도 "화면 중앙" 기준으로 본다
+  // 몸이 벽에 붙어 t 가 0 으로 무너지면 목표가 발밑으로 내려앉는다 — 하한을 건다
+  if(t<CONV_MIN) t=CONV_MIN;
+  var dx=q.x+CAMF.x*t-o.x, dy=q.y+CAMF.y*t-o.y, dz=q.z+CAMF.z*t-o.z;
+  var L=Math.hypot(dx,dy,dz);
+  if(!(L>1e-4)) return {o:o, d:f, aimD:0};
+  return {o:o, d:{x:dx/L, y:dy/L, z:dz/L}, aimD:L};
+}
 function doFire(s){
   if(s.win || s.ammo<=0 || s._fireCd>0) return false;
   s.ammo--; s._fireCd=0.12;
-  var o=eyePos(s), d=forwardVec(s);
+  var _ar=aimRay(s), o=_ar.o, d=_ar.d;
   var tHit=BLAST_RANGE;
   // deco 는 시각 전용(나무·풀 등) — 탄이 통과한다. 안 그러면 나뭇잎에 폭발이 막힌다.
   for(var i=0;i<LEVEL.boxes.length;i++){ if(!boxSolid(LEVEL.boxes[i])) continue;
@@ -936,7 +969,7 @@ function render(){
     if(sim.shake>0.01){ var k=sim.shake*0.06;   // 화면 흔들림: 카메라를 미세하게 흔든다
       cpos={ x:CAMPOS.x+(Math.random()*2-1)*k, y:CAMPOS.y+(Math.random()*2-1)*k, z:CAMPOS.z+(Math.random()*2-1)*k }; }
     VP=mat4Mul(mat4Perspective(FOV, W/H, NEAR, FAR), mat4View(cpos,CAMR,CAMU,CAMF));
-    CURVP=VP;                     // 조준점 투영에도 쓴다
+    CURVP=VP;                     // 중력 렌즈 화면 위치 계산에 쓴다(셰이크 포함이라야 장면과 맞는다)
     collectLenses(sim);
     usePost = lensList.length>0 && !!ensureFBO();
   }
@@ -1621,9 +1654,6 @@ function startGame(levelId){
 document.getElementById('retryBtn').addEventListener('click',function(){ ensureAudio();
   if(MP.connected){ sim=makeSim(); sim.practice=true; enterLobby(); } else startGame(); });
 document.getElementById('menuBtn').addEventListener('click',function(){ mpDisconnect(); showScreen('title'); setWarn(''); });
-/* 조준점을 '실제로 맞는 지점'에 붙인다.
-   3인칭은 카메라가 몸 뒤(조준 시엔 옆)에 있어 화면 정중앙이 탄착점과 어긋난다.
-   doFire 와 같은 광선(지형 deco 제외 + 팀원 퓨즈)으로 폭발이 생길 자리를 구해 표시한다. */
 var CURVP=null;
 function projectWorld(p){                 // 월드 → 논리 화면(W,H) 좌표. 카메라 뒤면 null
   var V=CURVP; if(!V) return null;
@@ -1634,17 +1664,23 @@ function projectWorld(p){                 // 월드 → 논리 화면(W,H) 좌�
   if(cw<=0.0001) return null;
   return { x:(cx/cw*0.5+0.5)*W, y:(1-(cy/cw*0.5+0.5))*H };
 }
+/* 조준점은 화면 정중앙에 못 박는다. 수렴 조준(aimRay)이 "정중앙이 가리키는 곳"으로
+   쏘도록 방향을 맞춰 주므로, 여기서 탄착점을 다시 투영해 옮길 필요가 없다 —
+   예전엔 그 투영값을 그대로 썼고, 거리가 바뀔 때마다 조준점이 화면을 미끄러졌다.
+   단 하나 남는 예외: 눈과 목표 사이가 막혀 탄이 먼저 터지는 경우(몸은 화면 중앙보다
+   1.25m 옆에 있으니 모서리에 걸린다). 그때 조준점을 옮기면 다시 튀므로,
+   위치는 그대로 두고 흐리게만 해서 "지금은 보이는 데를 못 쏜다"를 알린다. */
 function updateCrosshair(s){
   var el=document.getElementById('crosshair'); if(!el) return;
-  var o=eyePos(s), d=forwardVec(s), tHit=BLAST_RANGE;
+  var rect=cv.getBoundingClientRect();
+  if(rect.width<1 || rect.height<1){ el.style.left='50%'; el.style.top='50%'; return; }
+  el.style.left=(rect.left + rect.width*0.5)+'px';
+  el.style.top =(rect.top  + rect.height*0.5)+'px';
+  var _ar=aimRay(s), o=_ar.o, d=_ar.d, tHit=BLAST_RANGE;   // doFire 와 완전히 같은 광선
   for(var i=0;i<LEVEL.boxes.length;i++){ if(!boxSolid(LEVEL.boxes[i])) continue;
     var t=rayBox(o,d,LEVEL.boxes[i]); if(t<tHit)tHit=t; }
   tHit = peerFuse(o, d, tHit);
-  var sp=projectWorld([o.x+d.x*tHit, o.y+d.y*tHit, o.z+d.z*tHit]);
-  var rect=cv.getBoundingClientRect();
-  if(!sp || rect.width<1 || rect.height<1){ el.style.left='50%'; el.style.top='50%'; return; }
-  el.style.left=(rect.left + sp.x/W*rect.width)+'px';
-  el.style.top =(rect.top  + sp.y/H*rect.height)+'px';
+  el.style.opacity = (tHit < _ar.aimD-0.05) ? '0.3' : '0.9';
 }
 function requestLock(){ try{ cv.requestPointerLock(); }catch(e){} }
 // 잠기지 않은 상태에서 화면을 클릭하면 마우스를 잠근다(발사는 아래 mousedown 이 담당)
