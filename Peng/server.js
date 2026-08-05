@@ -259,10 +259,21 @@ server.on('upgrade', function(req, socket){
         var o = r0[k];
         if(o.id !== id && o.col) send(socket, JSON.stringify({ t:'col', id:o.id, c:o.col }));
       });
+      botsOf(room).forEach(function(b){
+        if(b.col) send(socket, JSON.stringify({ t:'col', id:b.id, c:b.col }));
+      });
       return;
     }
     if(m.t === 'col'){          // 몸통 색 — #rrggbb 만 통과, 방에 저장해 새 참가자에게도 전달
       if(typeof m.c !== 'string' || !/^#[0-9a-fA-F]{6}$/.test(m.c)) return;
+      // 봇 색은 방장이 대신 정한다(그 봇을 소유한 연결일 때만)
+      if(m.bot != null){
+        var cb = ownsBot(room, id, m.bot|0); if(!cb) return;
+        cb.col = m.c;
+        var cl = JSON.stringify({ t:'col', id:cb.id, c:m.c });
+        broadcast(room, id, cl); send(socket, cl);
+        return;
+      }
       client.col = m.c;
       broadcast(room, id, JSON.stringify({ t:'col', id:id, c:m.c }));
       return;

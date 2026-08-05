@@ -824,11 +824,9 @@ function botStep(dt, now){
   if(!BOTS.length) return;
   for(var i=0;i<BOTS.length;i++){
     var bot=BOTS[i], s=bot.sim;
-    var frozen = (GAMEMODE==='versus' && ROUND.phase!=='live');
-    var inp = frozen ? {mf:false,mb:false,ml:false,mr:false,jump:false} : botThink(bot, dt);
-    if(!frozen) stepSim(s, Math.min(0.05,dt), inp);
+    stepSim(s, Math.min(0.05,dt), botThink(bot, dt));
     // 떨어졌으면 방장이 대신 신고한다
-    if(GAMEMODE==='versus' && (s.fell||0)>(bot.lastFell||0) && ROUND.phase==='live'){
+    if(GAMEMODE==='versus' && (s.fell||0)>(bot.lastFell||0)){
       bot.lastFell=s.fell; mpSend({t:'fell', bot:bot.id}); scoreFall(bot.id);
     }
     // 봇 상태를 '피어'로 넣어 두면 렌더·충돌·근접신관이 전부 그대로 동작한다
@@ -843,6 +841,15 @@ function botStep(dt, now){
   }
 }
 // 봇 명단을 로스터에 맞춘다(서버가 슬롯의 주인이다)
+/* AI 몸통 색 — 서로, 그리고 사람과 구별돼야 한다. 무작위 색상(HSL)에서 뽑되
+   채도·명도를 묶어 배경(어두운 남색)에 묻히지 않게 한다. */
+function randBotColor(){
+  var h=Math.random()*360, sat=0.62, lig=0.58;
+  function f(n){ var k=(n+h/30)%12, a=sat*Math.min(lig,1-lig);
+    var v=lig-a*Math.max(-1,Math.min(k-3,Math.min(9-k,1)));
+    return ('0'+Math.round(v*255).toString(16)).slice(-2); }
+  return '#'+f(0)+f(8)+f(4);
+}
 function syncBots(){
   if(!mpIsHost()){ BOTS.length=0; return; }
   var want=MP.players.filter(function(p){ return p.bot; });
@@ -850,7 +857,11 @@ function syncBots(){
   want.forEach(function(p){
     if(BOTS.some(function(b){ return b.id===p.id; })) return;
     var s=makeSim(); s.tp=false;
-    BOTS.push({ id:p.id, name:p.name, sim:s, cd:0, lastFell:0, lastSend:0 });
+    var col=randBotColor();
+    BOTS.push({ id:p.id, name:p.name, sim:s, cd:0, lastFell:0, lastSend:0, col:col });
+    // 내 화면과 팀원 화면 양쪽에 같은 색이 적용되게
+    var pc=MP.peers[p.id]||(MP.peers[p.id]={buf:[]}); pc.col=col;
+    if(MP.connected) mpSend({t:'col', bot:p.id, c:col});
   });
 }
 function botsRespawn(){
@@ -1092,7 +1103,15 @@ function blastFx(s,x,y,z,lift){ // 착탄 폭발 연출(구+파편+흔들림+소
 function respawn(s){
   var cp;
   if(GAMEMODE==='versus' && LEVEL.spawns && LEVEL.spawns.length){
-    cp=LEVEL.spawns[(s.fell||0)%LEVEL.spawns.length];      // 라운드마다 다른 자리에서 재시작
+    /* 발밑이 남아 있는 스폰만 고른다. 바깥 고리가 무너진 뒤에도 원래 자리로 보내면
+       허공에 떨어져 무한히 실점한다. 전부 사라졌으면 가운데(항상 남는 고리)로. */
+    var N=LEVEL.spawns.length, k0=(s.fell||0)%N;
+    cp=null;
+    for(var si=0; si<N; si++){
+      var c2=LEVEL.spawns[(k0+si)%N];
+      if(groundAt(c2.x, c2.z, c2.y+0.5)!==null){ cp=c2; break; }
+    }
+    if(!cp){ var gy=groundAt(0,0,2); cp={x:0, y:(gy==null?0:gy), z:0}; }
   } else {
     /* gate:true 체크포인트가 있는 맵은 거기까지만 되돌린다 — 떨어지면 한 덩어리를
        다시 올라가게 하는 손실감을 주면서도, 체크포인트 자체는 발판마다 둘 수 있다
@@ -1871,19 +1890,18 @@ function scoreFall(fallerId){
     showScreen('win'); sndWin(); if(locked)document.exitPointerLock();
     return;                                    // 경기가 끝났으면 다음 라운드는 없다
   }
-  /* 점수는 낙하마다 무조건 준다(라운드가 끝난 뒤 도착한 신고도 포함). 둘이 거의
-     동시에 떨어지면 각자 자기 낙하를 먼저 처리하는데, 여기서 늦게 온 쪽을 버리면
-     A 는 1:0, B 는 0:1 로 점수가 갈린다. 무조건 주면 양쪽 다 1:1 로 일치한다.
-     라운드 재시작만 한 번으로 묶는다. */
-  roundEnd(fallerId);
 }
 function resetScores(){ SCORES={}; }
 /* ---------- 라운드 ----------
    예전엔 떨어지면 그 자리에서 즉시 리스폰이라 '라운드'라는 게 없었다. 이긴 쪽은
    위치와 속도를 그대로 쥔 채 다시 밀어버릴 수 있어 눈덩이가 굴렀고, 한 킬이
    성취로 느껴지지도 않았다. 떨어뜨리면 잠깐 멈췄다가 전원을 스폰으로 되돌린다. */
+/* 경기는 멈추지 않는다. 누가 떨어지면 점수만 오르고 그 자리에서 바로 부활하며,
+   먼저 VS_WIN 점을 낸 사람이 이긴다. ROUND 는 이제 '판이 몇 번 갈렸나'만 센다 —
+   판은 다 무너지고 잠깐 뒤에 통째로 새로 깔린다(그때도 조작은 멈추지 않는다). */
 var ROUND={phase:'live', t:0, n:0, pause:0};
-var ROUND_PAUSE=2.4;                 // 라운드 사이 정산 시간(초)
+var ARENA_HOLD=5;                    // 판이 다 무너진 뒤 새 판이 깔리기까지(초)
+var arenaMsgT=0;
 function roundBanner(txt){
   var el=document.getElementById('roundMsg'); if(!el) return;
   el.textContent=txt||''; el.classList.toggle('on', !!txt);
@@ -1895,32 +1913,24 @@ function myIdx(){
   var ids=MP.players.map(function(p){return p.id;}).sort(function(a,b){return a-b;});
   var i=ids.indexOf(MP.id); return i<0?0:i;
 }
-function roundStart(){
-  ROUND.n++; ROUND.t=0; ROUND.pause=0; ROUND.phase='live';
-  FLOOR_SEED=roundSeed(ROUND.n);              // 라운드마다 새 지형
-  buildCollapseFloor();                       // 무너진 바닥을 되돌린다
-  buildPads();                                // 생성 결과에 맞춰 패드도 옮긴다
-  if(sim){
+/* 판 갈아엎기 — 다 무너진 판 위에서는 싸울 수가 없으므로 새로 깐다.
+   멈추지도 않고 점수도 건드리지 않는다. 다만 옛 발판이 사라지므로 위치는 옮겨 준다. */
+function newArena(){
+  ROUND.n++; ROUND.t=0;
+  FLOOR_SEED=roundSeed(ROUND.n);
+  buildCollapseFloor(); buildPads();
+  if(sim && !sim.practice){
     var sp=(LEVEL.spawns&&LEVEL.spawns.length)
-      ? LEVEL.spawns[(ROUND.n+myIdx())%LEVEL.spawns.length] : LEVEL.start;
-    sim.p={x:sp.x,y:sp.y,z:sp.z}; sim.v={x:0,y:0,z:0};
-    sim.blasts.length=0; sim.projectiles.length=0; sim.particles.length=0;
-    sim.ammo=AMMO_MAX; sim.ammoT=0; sim.onGround=false;
-    sim.kb=0; sim.recoil=0; sim.shake=0; sim.aim=0; sim.aimHold=false; sim._fireCd=0;
-    sim.items={}; sim.charges={}; sim.glide=0; sim.glideLeft=0;   // 아이템은 라운드를 못 넘긴다
-    lastFell=sim.fell||0;                     // 리셋 중의 낙하는 신고하지 않는다
+      ? LEVEL.spawns[myIdx()%LEVEL.spawns.length] : LEVEL.start;
+    sim.p={x:sp.x,y:sp.y,z:sp.z}; sim.v={x:0,y:0,z:0}; sim.onGround=false;
+    sim.blasts.length=0; sim.projectiles.length=0; sim.ammo=AMMO_MAX;
+    lastFell=sim.fell||0;
   }
   botsRespawn();
-  roundBanner('');
+  arenaMsgT=1.6; roundBanner('새 아레나');
 }
-function roundEnd(fallerId){
-  if(ROUND.phase!=='live') return;
-  ROUND.phase='over'; ROUND.pause=ROUND_PAUSE;
-  // 솔로에서는 MP.id 가 null 이고 신고자 id 가 -1 로 들어온다 — 그것도 '나'다
-  var mine = (fallerId===MP.id) || (MP.id==null && fallerId===-1);
-  roundBanner((mine?'내가 떨어졌다':nameOf(fallerId)+' 탈락')+' — 다음 라운드');
-}
-function resetRound(){ ROUND.n=0; ROUND.t=0; ROUND.pause=0; ROUND.phase='live'; roundBanner(''); }
+function resetRound(){ ROUND.n=0; ROUND.t=0; ROUND.pause=0; ROUND.phase='live';
+  arenaMsgT=0; roundBanner(''); }
 // 1인칭 PoofGun 3D 모델(카메라 로컬: x=오른쪽, y=위, z=앞)
 // 1·3인칭 공통 손 위치(몸에 붙게 자연스럽게). x=오른쪽, y=위, z=앞(조준 기저).
 var GUN=[
@@ -2410,7 +2420,7 @@ function startGame(levelId){
   if(levelId) setLevel(levelId);
   sim=makeSim(); MP.peers={}; resetScores(); resetRound(); lastFell=0; CAM_LEN=null;
   // 경쟁은 1라운드부터 각자 다른 스폰에서 시작한다(둘 다 LEVEL.start 면 겹쳐서 시작한다)
-  if(GAMEMODE==='versus' && !sim.practice) roundStart();
+  if(GAMEMODE==='versus' && !sim.practice) newArena();
   showScreen('play'); acc=0; last=0; requestLock();
   if(missing){
     var warn='⚠ 내 컴퓨터에 "'+levelId+'" 맵이 없어 "'+(LEVEL.name||CURLEVEL)+'" 로 시작했습니다 — 서로 다른 코스를 달리는 중입니다. levels/ 폴더를 받아주세요.';
@@ -2494,8 +2504,6 @@ window.addEventListener('mousedown',function(e){
   if(e.target && e.target.closest && e.target.closest('#dbgPanel,#dbgBtn')) return;
   if(e.button===2){ sim.aimHold=true; return; }
   if(e.button===0 && locked && (mode==='play'||mode==='lobbyScr')){
-    // 라운드 정산 중에는 못 쏜다 — 스폰으로 돌아가기 전에 미리 밀어두는 걸 막는다
-    if(GAMEMODE==='versus' && !sim.practice && ROUND.phase!=='live') return;
     ensureAudio(); doFire(sim); }
 });
 window.addEventListener('mouseup',function(e){ if(e.button===2 && sim) sim.aimHold=false; });
@@ -2543,11 +2551,16 @@ function loop(now){ if(!last)last=now; var dt=Math.min(0.05,(now-last)/1000); la
        다음 라운드 시작 위치를 뺏는 걸 방지). 물리는 계속 돌려 몸이 자연스럽게 안착한다. */
     var vsLive = (GAMEMODE==='versus' && !sim.practice);
     if(vsLive){
-      if(ROUND.phase==='live') ROUND.t+=dt;
-      else if((ROUND.pause-=dt)<=0) roundStart();
+      ROUND.t+=dt;
       collapseTick(dt);
+      // 판이 바닥까지 무너지고 잠깐 지나면 새 판으로 갈아엎는다(조작은 안 멈춘다)
+      var _C=LEVEL.collapse;
+      if(_C && LEVEL._maxRing!=null &&
+         LEVEL._maxRing-(LEVEL._gone||0) < (_C.keepRings||1) &&
+         ROUND.t > _C.first + (LEVEL._gone||0)*_C.every + ARENA_HOLD) newArena();
+      if(arenaMsgT>0 && (arenaMsgT-=dt)<=0) roundBanner('');
     }
-    var frozen = PAUSED || (vsLive && ROUND.phase!=='live');
+    var frozen = PAUSED;
     if(!frozen) padTick(dt);               // 정산·일시정지 중에는 패드를 안 먹는다
     var inp = frozen ? {mf:false,mb:false,ml:false,mr:false,jump:false}
                      : { mf:keys['w'], mb:keys['s'], ml:keys['a'], mr:keys['d'], jump:false };
