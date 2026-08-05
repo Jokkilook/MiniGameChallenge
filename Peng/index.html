@@ -308,6 +308,7 @@
 <script src="gunbaked.js"></script>
 <script src="bulletbaked.js"></script>
 <script src="stationbaked.js"></script>
+<script src="playerbaked.js"></script>
 
 <script>
 "use strict";
@@ -445,8 +446,9 @@ function buildCollapseFloor(){
       if(pc.deco) return;                       // 순수 장식(지금은 없다)
       var m=PP[pc.t]; if(!m) return;
       var bs=pieceBoxes(m, pc.t), r=pc.rot&3;
+      var po=PIECE_OFF[pc.t], pox=po?po[0]:0, poz=po?po[1]:0;
       for(var q=0;q<bs.length;q++){
-        var b=bs[q], x=b.cx, z=b.cz, hx=b.hx, hz=b.hz;
+        var b=bs[q], x=b.cx+pox, z=b.cz+poz, hx=b.hx, hz=b.hz;
         for(var t=0;t<r;t++){ var tx=z; z=-x; x=tx; var th=hz; hz=hx; hx=th; }
         LEVEL.boxes.push({ cx:(pc.i+x)*U, cy:(pc.y+b.cy)*U, cz:(pc.j+z)*U,
           hx:hx*U, hy:b.hy*U, hz:hz*U,
@@ -1313,9 +1315,13 @@ function boxFaces(b){ var x0=b.cx-b.hx,x1=b.cx+b.hx,y0=b.cy-b.hy,y1=b.cy+b.hy,z0
   ];
 }
 /* --- 셰이더 --- */
+/* uTint: 정점색에 곱하는 색조. 평소엔 (1,1,1) 이고 캐릭터를 그릴 때만 몸통 색으로 바꾼다.
+   캐릭터 메시(1만 삼각형)를 사람마다 CPU 로 옮기면 4명에 14만 정점이라 프레임이 6ms 를
+   넘긴다 — 정적 VBO 하나를 모델행렬만 바꿔 여러 번 그리려면 색을 유니폼으로 줘야 한다. */
 var VS_MAIN='attribute vec3 aPos;attribute vec3 aCol;uniform mat4 uVP;varying vec3 vCol;'+
   'void main(){vCol=aCol;gl_Position=uVP*vec4(aPos,1.0);}';
-var FS_MAIN='precision mediump float;varying vec3 vCol;void main(){gl_FragColor=vec4(vCol,1.0);}';
+var FS_MAIN='precision mediump float;varying vec3 vCol;uniform vec3 uTint;'+
+  'void main(){gl_FragColor=vec4(vCol*uTint,1.0);}';
 // 빌보드(발사체·파티클·폭발·총구섬광): 뷰공간에서 카메라를 향해 펼치고, 중심에서 멀수록 감쇠
 var VS_BB='attribute vec3 aCenter;attribute vec2 aOff;attribute vec4 aCol;attribute float aSize;'+
   'uniform mat4 uVP;uniform vec3 uRight;uniform vec3 uUp;varying vec4 vCol;varying vec2 vOff;'+
@@ -1345,6 +1351,7 @@ function glInit(){
   PROG.main.aPos=gl.getAttribLocation(PROG.main,'aPos');
   PROG.main.aCol=gl.getAttribLocation(PROG.main,'aCol');
   PROG.main.uVP =gl.getUniformLocation(PROG.main,'uVP');
+  PROG.main.uTint=gl.getUniformLocation(PROG.main,'uTint');
   PROG.bb=glProgram(VS_BB,FS_BB);
   PROG.bb.aCenter=gl.getAttribLocation(PROG.bb,'aCenter');
   PROG.bb.aOff   =gl.getAttribLocation(PROG.bb,'aOff');
@@ -1636,6 +1643,11 @@ var PIECE_FLAT={ 'floor':0.3, 'floor-detail':0.3, 'floor-panel':0.3 };
 /* 난간은 기둥과 가로대뿐이라 기둥 방식으로 뽑으면 사이가 숭숭 빈다.
    막을 거면 통짜 한 장이어야 몸이 새지 않는다(높이는 원본 그대로 0.4유닛). */
 var PIECE_SOLID={ 'rail':1 };
+/* 조각 자체의 원점이 어긋난 것들을 로컬에서 보정한다(회전 전에 더한다).
+   wall 의 슬래브는 칸 중심선(z=0)에 있는데 wall-corner 의 두 팔은 ±0.25 에 있어서
+   그냥 놓으면 벽과 0.25 만큼 어긋나 틈이 벌어진다. 두께는 둘 다 0.3 으로 같으므로
+   (-0.25,-0.25) 옮기면 팔이 이웃 벽의 슬래브와 정확히 한 줄이 된다. */
+var PIECE_OFF={ 'wall-corner':[-0.25,-0.25] };
 var RAIL_SOLID=1;                      // 0 이면 난간을 장식으로(통과) 되돌린다
 function pieceBoxes(m, name){
   if(m._boxes) return m._boxes;
@@ -1723,8 +1735,9 @@ function buildStation(pieces){
     var pc=pieces[p]; if(pc._gone) continue;
     var m=P[pc.t]; if(!m) continue;
     var r=pc.rot&3, ox=pc.i*S, oy=pc.y*S, oz=pc.j*S;
+    var off=PIECE_OFF[pc.t], offx=off?off[0]:0, offz=off?off[1]:0;
     for(var k=0;k<m.idx.length;k++){
-      var v=m.idx[k], x=m.pos[v*3]*S, y=m.pos[v*3+1]*S, z=m.pos[v*3+2]*S;
+      var v=m.idx[k], x=(m.pos[v*3]+offx)*S, y=m.pos[v*3+1]*S, z=(m.pos[v*3+2]+offz)*S;
       var nx=m.nrm?m.nrm[v*3]:0, ny=m.nrm?m.nrm[v*3+1]:1, nz=m.nrm?m.nrm[v*3+2]:0;
       for(var t=0;t<r;t++){ var tx=z; z=-x; x=tx; var tn=nz; nz=-nx; nx=tn; }
       var sh=0.62+0.38*Math.max(0,(nx*L[0]+ny*L[1]+nz*L[2])/ll);
@@ -1737,6 +1750,69 @@ function buildStation(pieces){
   gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(arr), gl.STATIC_DRAW);
   STATION.count=arr.length/6;
   STATION.pending=null;
+}
+/* ---------- 캐릭터 메시 ----------
+   캡슐 대신 SK_Player 를 그린다. 스킨드 메시지만 애니메이션은 쓰지 않고 바인드 포즈로
+   굳혀 굽는다(게임이 원래 정지 캡슐이었으므로 손해가 없다).
+   모델은 y -1..+1(발이 -1), +Z 를 본다. 게임 키 1.8m 에 맞추려 0.9 배로 줄이고
+   발이 p.y 에 오도록 +0.9 올린다. 캐릭터는 매 프레임 움직여 정적 VBO 를 못 쓰므로
+   삼각형 1만개를 CPU 로 옮긴다 — 한 판에 사람+봇 몇 명이라 감당된다. */
+var PLAYER_MESH=null, PLAYER_SCALE=0.9, PLAYER_LIFT=0.9;
+try{
+  if(window.PLAYER_BAKED && window.GunMesh && GunMesh.decodeBaked)
+    PLAYER_MESH=GunMesh.decodeBaked(window.PLAYER_BAKED);
+}catch(e){ PLAYER_MESH=null; }
+/* 몸통 색은 플레이어마다 다르다. 구운 색을 그대로 쓰면 전부 같은 옷이 되므로,
+   밝기만 살리고 색조를 몸통 색으로 갈아끼운다(회색조 → 색조 적용). */
+/* 정적 VBO 한 벌을 만들어 두고, 캐릭터마다 모델행렬 + 색조만 바꿔 그린다.
+   음영은 구울 때 정점색에 미리 섞는다(로컬 법선 기준이라 yaw 로 돌아도 어색하지 않다). */
+var PLAYER_VBO=null, PLAYER_N=0;
+function ensurePlayerVBO(){
+  if(PLAYER_VBO || !PLAYER_MESH || !GLREADY) return;
+  var m=PLAYER_MESH, L=[0.42,0.80,0.43], ll=Math.hypot(L[0],L[1],L[2]);
+  var I=m.idx, arr=new Float32Array(I.length*6);
+  for(var k=0;k<I.length;k++){
+    var v=I[k];
+    var nx=m.nrm?m.nrm[v*3]:0, ny=m.nrm?m.nrm[v*3+1]:1, nz=m.nrm?m.nrm[v*3+2]:0;
+    var sh=0.55+0.45*Math.max(0,(nx*L[0]+ny*L[1]+nz*L[2])/ll);
+    var lum=(m.col[v*3]+m.col[v*3+1]+m.col[v*3+2])/3;   // 원본은 밝기만 남기고
+    var o=k*6;
+    arr[o]=m.pos[v*3]; arr[o+1]=m.pos[v*3+1]+PLAYER_LIFT; arr[o+2]=m.pos[v*3+2];
+    arr[o+3]=arr[o+4]=arr[o+5]=lum*sh*1.7;
+  }
+  PLAYER_VBO=gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER,PLAYER_VBO);
+  gl.bufferData(gl.ARRAY_BUFFER,arr,gl.STATIC_DRAW);
+  PLAYER_N=I.length;
+}
+var CHARQ=[];                                    // 이번 프레임에 그릴 캐릭터(위치·yaw·색)
+function drawPlayerMesh(px,py,pz,yaw,col){
+  if(!PLAYER_MESH) return false;
+  CHARQ.push({x:px,y:py,z:pz,yaw:yaw,col:col||'#ff8a3a'});
+  return true;
+}
+function flushChars(VP){
+  if(!CHARQ.length) return;
+  ensurePlayerVBO();
+  if(!PLAYER_VBO){ CHARQ.length=0; return; }
+  gl.bindBuffer(gl.ARRAY_BUFFER,PLAYER_VBO);
+  gl.enableVertexAttribArray(PROG.main.aPos);
+  gl.vertexAttribPointer(PROG.main.aPos,3,gl.FLOAT,false,24,0);
+  gl.enableVertexAttribArray(PROG.main.aCol);
+  gl.vertexAttribPointer(PROG.main.aCol,3,gl.FLOAT,false,24,12);
+  var s=PLAYER_SCALE;
+  for(var i=0;i<CHARQ.length;i++){
+    var q=CHARQ[i], ca=Math.cos(q.yaw)*s, sa=Math.sin(q.yaw)*s;
+    // 열 우선 4x4: x축=(ca,0,-sa), y축=(0,s,0), z축=(sa,0,ca)
+    var M=[ca,0,-sa,0,  0,s,0,0,  sa,0,ca,0,  q.x,q.y,q.z,1];
+    gl.uniformMatrix4fv(PROG.main.uVP,false,mat4Mul(VP,M));
+    var t=hexRGB(q.col);
+    gl.uniform3f(PROG.main.uTint,t[0],t[1],t[2]);
+    gl.drawArrays(gl.TRIANGLES,0,PLAYER_N);
+  }
+  gl.uniformMatrix4fv(PROG.main.uVP,false,VP);
+  gl.uniform3f(PROG.main.uTint,1,1,1);
+  CHARQ.length=0;
 }
 /* ---------- 투사체 메시 ----------
    총과 달리 탄환은 월드 공간에 여러 개가 동시에 뜬다. GL 버퍼를 따로 두는 대신
@@ -1838,7 +1914,7 @@ function render(dt){
   gl.depthMask(true); gl.enable(gl.DEPTH_TEST);
   if(!sim){ if(usePost) drawPost(); return; }
 
-  TRI.length=0; LINE.length=0; BB.length=0; OUTL.length=0; GUNQ.length=0;
+  TRI.length=0; LINE.length=0; BB.length=0; OUTL.length=0; GUNQ.length=0; CHARQ.length=0;
   /* 레벨 — 꺼진 연동 발판은 지우지 말고 어둡게 남긴다. "여기에 다리가 생길 수 있다"가
      보여야 퍼즐이 성립한다(안 보이면 그냥 못 넘는 협곡으로 읽힌다). */
   for(var i=0;i<LEVEL.boxes.length;i++){ var bx=LEVEL.boxes[i], bcol=bx.col;
@@ -1927,9 +2003,11 @@ function render(dt){
 
   // --- 그리기: 불투명 → 외곽선 → 발광(가산합성) ---
   gl.useProgram(PROG.main); gl.uniformMatrix4fv(PROG.main.uVP,false,VP);
+  gl.uniform3f(PROG.main.uTint,1,1,1);          // 기본은 색조 없음
   gl.disable(gl.BLEND);
   gl.enable(gl.POLYGON_OFFSET_FILL); gl.polygonOffset(1.0,1.0);  // 외곽선이 면에 묻히지 않게
   drawArr(BUF.tri, TRI, PROG.main, gl.TRIANGLES);
+  flushChars(VP);                               // 캐릭터 — 정적 VBO + 모델행렬
   // 정거장 조각 — 정적 VBO 라 매 프레임 옮기지 않는다(드로우콜 1)
   if(STATION.pending) buildStation(LEVEL._pieces||[]);
   if(STATION.buf && STATION.count){
@@ -2089,7 +2167,9 @@ function sphereGL(cx,cy,cz,r,col){
 /* 눈 배치·굴림 — 디버그 패널에서 조절할 수 있게 변수로 뺀다.
    주의: 눈 중심이 몸통 반지름(0.35) 안쪽이면 흰자가 몸에 파묻혀 눈동자만 검게 보인다.
    중심의 축 거리 = sqrt(EYE_X^2 + EYE_Z^2) 가 몸통 반지름보다 살짝 크도록 잡는다. */
-var EYE_Y=1.42, EYE_X=0.15, EYE_Z=0.33,  EYE_R=0.115, EYE_PUPIL_R=0.058, EYE_ROLL=0.85;
+/* 눈 위치. EYE_Z 는 눈높이에서의 몸통 반경보다 커야 흰자가 몸에 파묻히지 않는다.
+   SK_Player 는 눈높이(1.42m)에서 반경이 약 0.40m 라 0.33 이면 묻힌다 → 0.44. */
+var EYE_Y=1.42, EYE_X=0.16, EYE_Z=0.44,  EYE_R=0.115, EYE_PUPIL_R=0.058, EYE_ROLL=0.85;
 var OUTLINE_BODY=0.022, OUTLINE_EYE=0.012;   // 윤곽선 두께(월드 단위)
 var EYE_PUPIL_SINK=0.88;   // 눈동자가 흰자 안으로 얼마나 들어가는지(1에 가까울수록 깊이 박힘)
 /* 내 몸통 색 — 대기방에서 고르고 저장한다. 팀원에게도 전송해 각자 자기 색으로 보인다. */
@@ -2224,8 +2304,10 @@ function emitCharacter(px,py,pz,yaw,pitch,recoil,col){
   var R={x:Math.cos(yaw),y:0,z:-Math.sin(yaw)};
   var U={x:f.y*R.z-f.z*R.y, y:f.z*R.x-f.x*R.z, z:f.x*R.y-f.y*R.x};
   var eye={x:px,y:py+EYE,z:pz};
-  capsuleGL(px,py+0.9,pz,0.35,0.55,col);
-  capsuleOutlineGL(px,py+0.9,pz,0.35,0.55, OUTLINE_BODY);   // 몸통 실루엣   // 캡슐은 외곽선 없이 매끈하게(캐시 재사용)
+  if(!drawPlayerMesh(px,py,pz,yaw,col)){                    // 메시가 없으면 예전 캡슐로
+    capsuleGL(px,py+0.9,pz,0.35,0.55,col);
+    capsuleOutlineGL(px,py+0.9,pz,0.35,0.55, OUTLINE_BODY);
+  }
   // 눈 — 흰자는 고정, 눈동자가 시선(pitch)을 따라 흰자 표면 위를 굴러간다.
   // 몸이 yaw 를 따라 돌므로 좌우 성분은 이미 반영돼 있고, 여기서는 상하가 남는다.
   var HF={x:Math.sin(yaw),y:0,z:Math.cos(yaw)}, HU={x:0,y:1,z:0};
