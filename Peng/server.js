@@ -93,17 +93,12 @@ function handleSave(req, res){
   });
 }
 
-/* ---------- 메시 굽기 결과 저장 ----------
+/* ---------- 총 메시 굽기 결과 저장 ----------
  * Node 에는 JPEG 디코더가 없어서 굽는 일은 브라우저(tools/bake.html)가 하고,
- * 서버는 그 결과를 받아쓰기만 한다. 저장과 같은 이유로 로컬 전용이고,
- * 파일명은 클라이언트가 못 정한다 — **본문에 든 전역 이름으로** 고른다.
- * (총과 아이템 두 종류라 대상이 필요해졌는데, 이름을 그대로 받으면 경로 탈출이 열린다.)
+ * 서버는 그 결과를 gunbaked.js 로 받아쓰기만 한다. 저장과 같은 이유로 로컬 전용이고,
+ * 파일명은 클라이언트가 못 정한다(경로가 고정이라 탈출 여지가 없다).
  */
-var BAKE_TARGETS = [
-  { mark:'window.GUN_BAKED=',  file:'gunbaked.js'  },
-  { mark:'window.ITEM_BAKED=', file:'itembaked.js' },
-  { mark:'window.CHAR_BAKED=', file:'charbaked.js' }
-];
+var BAKED_FILE = path.join(ROOT, 'gunbaked.js');
 function handleBake(req, res){
   function fail(code, msg){ res.writeHead(code, {'Content-Type':'text/plain; charset=utf-8'}); res.end(msg); }
   if(!isLocal(req)) return fail(403, '이 서버를 돌리는 PC에서만 저장할 수 있습니다.');
@@ -115,15 +110,19 @@ function handleBake(req, res){
   });
   req.on('end', function(){
     if(tooBig) return;
-    var t = null;
-    for(var i = 0; i < BAKE_TARGETS.length; i++)
-      if(body && body.indexOf(BAKE_TARGETS[i].mark) >= 0){ t = BAKE_TARGETS[i]; break; }
-    if(!t) return fail(400, '구운 데이터가 아닙니다.');
-    fs.writeFile(path.join(ROOT, t.file), body, function(err){
+    /* 파일명은 클라이언트가 못 정한다 — 내용에 박힌 전역 이름으로만 고른다.
+       경로가 고정이라 탈출 여지가 없다. */
+    var name = null;
+    if(body.indexOf('window.GUN_BAKED=') >= 0) name = 'gunbaked.js';
+    else if(body.indexOf('window.BULLET_BAKED=') >= 0) name = 'bulletbaked.js';
+    else if(body.indexOf('window.STATION_BAKED=') >= 0) name = 'stationbaked.js';
+    else if(body.indexOf('window.PLAYER_BAKED=') >= 0) name = 'playerbaked.js';
+    if(!name) return fail(400, '구운 데이터가 아닙니다.');
+    fs.writeFile(path.join(ROOT, name), body, function(err){
       if(err) return fail(500, '저장 실패: ' + err.message);
-      log('bake', t.file + ' (' + Math.round(body.length/1024) + 'KB)');
+      log('bake', name + ' (' + Math.round(body.length/1024) + 'KB)');
       res.writeHead(200, {'Content-Type':'application/json'});
-      res.end(JSON.stringify({ ok:true, path:t.file, bytes:body.length }));
+      res.end(JSON.stringify({ ok:true, path:name, bytes:body.length }));
     });
   });
 }
@@ -358,9 +357,10 @@ server.on('upgrade', function(req, socket){
     if(m.t === 'fell'){         // 아레나 밖으로 떨어짐 — 떨어진 본인이 알린다
       var who = id;
       if(m.bot != null){ var mb = ownsBot(room, id, m.bot|0); if(!mb) return; who = mb.id; }
-      broadcast(room, id, JSON.stringify({ t:'fell', id:who }));
+      var by = (typeof m.by === 'number' && isFinite(m.by)) ? m.by : null;
+      broadcast(room, id, JSON.stringify({ t:'fell', id:who, by:by }));
       // 봇의 낙하는 방장 화면에서도 점수에 반영돼야 한다(자기 신고는 안 되돌아온다)
-      if(m.bot != null) send(socket, JSON.stringify({ t:'fell', id:who }));
+      if(m.bot != null) send(socket, JSON.stringify({ t:'fell', id:who, by:by }));
       return;
     }
     /* st·bl 은 원래 보낸 사람 id 로 덮어쓴다(남을 사칭하지 못하게). 봇은 예외로,

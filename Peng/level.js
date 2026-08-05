@@ -651,3 +651,152 @@ PENG.genArenaOnce = function(C, seed){
     used:    used
   };
 };
+
+/* ---------- 절차적 우주 정거장 (Kenney Space Station Kit) ----------
+ * 예전 아레나는 "원판을 깔고 구멍을 파는" 방식이라 아무리 손봐도 지형 덩어리였다.
+ * 이건 반대로 간다 — 실제 정거장처럼 코어에서 복도를 뻗고 끝에 포드를 붙여 '조립'한다.
+ * 그래서 실루엣이 허브+스포크로 읽히고, 조각이 킷의 1x1 격자에 그대로 얹힌다.
+ *
+ * 좌표는 킷 유닛(1칸=1)으로 낸다. 미터 환산은 부르는 쪽이 한다(1유닛 = 2.6m).
+ * 데크 윗면이 y=0 이 되도록 바닥 조각은 y=-0.3 에 놓는다.
+ *
+ * 4겹 회전 대칭은 그대로 지킨다: 한 사분면(+Z 방향 팔)만 굴리고 네 번 돌린다.
+ * 밀어 떨어뜨리는 경기에서 비대칭은 곧 불공정이다.
+ *
+ * 붕괴는 '고리'가 아니라 '모듈 분리'다. order 가 클수록 먼저 떨어져 나간다:
+ *   위성(가장 바깥) → 포드 → 복도(바깥→안) → 코어(안 떨어짐).
+ */
+PENG.genStation = function(seed){
+  var rnd = PENG.rng32(seed);
+  var ri = function(a,b){ return a + Math.floor(rnd()*(b-a+1)); };
+  var pick = function(a){ return a[Math.floor(rnd()*a.length)]; };
+
+  /* --- 1) 칸 배치(한 사분면) ---
+     킷의 벽은 슬래브가 '칸 중심선'에 있다(모서리가 아니라). 그래서 벽은 칸 단위로 놓고,
+     꺾이는 칸에는 wall-corner 를 쓴다 — 모서리에 두 벽을 놓으면 직각으로 교차해
+     서로를 뚫고 지나간다. 포드는 바닥 위에 '벽 칸 고리'를 둘러 방을 만든다. */
+  var armLen = ri(2,4);          // 코어에서 뻗는 복도 길이(칸)
+  var podR   = ri(1,2);          // 포드 안쪽 반경 → 안이 3x3 또는 5x5
+  var hasSat = rnd() < 0.6;      // 포드 너머 떨어진 위성 발판(로켓점프 표적)
+  var wallR  = podR + 1;         // 벽 고리는 안쪽 바로 바깥
+  var podC   = 2 + armLen + wallR;                // 포드 중심의 j
+  var satJ   = podC + wallR + ri(2,3);
+  var maxOrd = armLen + (hasSat?2:1);
+
+  var cells = {};                                  // "i,j" -> {i,j,order,kind}
+  function put(i,j,order,kind){
+    var k = i+','+j, c = cells[k];
+    if(c){ if(order < c.order){ c.order=order; c.kind=kind; } return; }
+    cells[k] = {i:i, j:j, order:order, kind:kind};
+  }
+  var q = [];
+  function q4(i,j,order,kind){ q.push({i:i,j:j,order:order,kind:kind}); }
+  for(var j=2; j<2+armLen; j++) q4(0, j, j-1, 'arm');
+  // 포드: 안쪽(바닥) + 바깥 한 겹(벽 칸). 벽 칸에도 바닥을 깐다 — 벽이 허공에 뜨면 안 된다
+  for(var pi=-wallR; pi<=wallR; pi++) for(var pj=-wallR; pj<=wallR; pj++){
+    var ring = (Math.abs(pi)===wallR || Math.abs(pj)===wallR);
+    q4(pi, podC+pj, armLen+0, ring?'podwall':'pod');
+  }
+  if(hasSat){ q4(0, satJ, armLen+1, 'sat'); q4(-1, satJ, armLen+1, 'sat'); }
+
+  for(var ci=-1; ci<=1; ci++) for(var cj=-1; cj<=1; cj++) put(ci,cj,0,'core');
+  for(var t=0; t<q.length; t++){
+    var e=q[t], x=e.i, z=e.j;
+    for(var r=0; r<4; r++){
+      put(x, z, e.order, e.kind);
+      var nx=z, nz=-x; x=nx; z=nz;
+    }
+  }
+
+  /* --- 2) 조각 얹기 ---
+     결정은 '회전 궤도당 한 번'만 내리고 네 칸에 똑같이 적용한다. 칸마다 굴리면
+     4겹 대칭이 깨진다(밀어 떨어뜨리는 경기에서 비대칭은 곧 불공정이다). */
+  var pieces=[], colliders=[];
+  function has(i,j){ return !!cells[i+','+j]; }
+
+  var orbits=[], seen={};
+  var keys=Object.keys(cells).sort();
+  for(var k=0;k<keys.length;k++){
+    var c0=cells[keys[k]];
+    var i2=c0.i, j2=c0.j, ring2=[];
+    for(var r2=0;r2<4;r2++){ ring2.push([i2,j2]); var ni=j2, nj=-i2; i2=ni; j2=nj; }
+    var best=ring2[0];
+    for(r2=1;r2<4;r2++) if(ring2[r2][0]<best[0] || (ring2[r2][0]===best[0] && ring2[r2][1]<best[1])) best=ring2[r2];
+    var ck=best[0]+','+best[1];
+    if(seen[ck]) continue;
+    seen[ck]=1;
+    orbits.push({rep:c0, ring:ring2});
+  }
+
+  var PROP={ 'container':[0.57,0.6,0.57], 'container-wide':[0.6,0.7,0.6], 'skip':[0.7,0.5,1.2],
+             'computer-system':[0.9,0.6,0.69], 'table':[1.1,0.4,0.6], 'pipe':[0.25,0.5,0.28] };
+  var PROPK=Object.keys(PROP);
+
+  /* 벽 칸의 모양·방향을 포드 중심 기준으로 정한다.
+     rot 0 기준 wall-corner 의 팔은 +X 와 +Z 를 향한다(형상 실측).
+       rot0 = +X,+Z  rot1 = +X,-Z  rot2 = -X,-Z  rot3 = -X,+Z
+     wall 은 rot 0 일 때 X 로 길고 Z 로 얇다 → 바깥이 ±Z 면 rot 0/2, ±X 면 rot 1/3. */
+  function wallOf(di, dj, R, doorSide){
+    var ex=(Math.abs(di)===R), ez=(Math.abs(dj)===R);
+    if(ex && ez){
+      var rr = (di>0 && dj>0) ? 0 : (di>0 ? 1 : (dj>0 ? 3 : 2));
+      return {t:'wall-corner', rot:rr};
+    }
+    if(ez) return {t:(doorSide&&dj<0&&di===0)?'wall-door':null, rot:(dj>0?0:2), straight:true};
+    return {t:null, rot:(di>0?1:3), straight:true};
+  }
+
+  for(var o=0;o<orbits.length;o++){
+    var ob=orbits[o], c=ob.rep;
+    var floorT = rnd()<0.18 ? 'floor-detail' : (rnd()<0.3 ? 'floor-panel' : 'floor');
+    var floorR = ri(0,3);
+    /* 벽 칸이면 어떤 벽인지. 궤도 대표는 네 회전본 중 아무거나이므로, 기준을
+       '+Z 쪽 포드에 속한 복사본'으로 잡아야 한다 — 그러지 않으면 포드 중심을
+       엉뚱하게 계산해서 문이 팔 반대쪽에 뚫리거나 아예 안 생긴다. */
+    var wallSpec=null, baseIdx=0;
+    if(c.kind==='podwall'){
+      for(var mm=0; mm<4; mm++){
+        var mi=ob.ring[mm][0], mj=ob.ring[mm][1];
+        if(Math.abs(mi)<=wallR && Math.abs(mj-podC)<=wallR){ baseIdx=mm; break; }
+      }
+      var bi=ob.ring[baseIdx][0], bj=ob.ring[baseIdx][1];
+      wallSpec=wallOf(bi, bj-podC, wallR, true);
+      /* 고리를 빈틈없이 두르면 포드가 닫힌 상자가 된다 — 밀려도 벽에 막혀
+         아무도 밖으로 안 날아간다(실측: 낙하 4/8 → 0/8, 평균 이동 1.6m).
+         직선 구간의 40% 는 비워 둔다. 모서리 기둥과 문은 남긴다. */
+      if(wallSpec.straight && !wallSpec.t)
+        wallSpec.t = (rnd()<0.60) ? pick(['wall','wall','wall','wall-window']) : null;
+    }
+    // 소품 — 벽 칸이 아닌 안쪽에만(벽과 겹치지 않게). 정중앙은 비워 둔다
+    var prop=null;
+    if((c.kind==='pod'||c.kind==='core') && !(c.i===0&&c.j===0) && rnd()<0.4){
+      var pt=pick(PROPK); prop={t:pt, sz:PROP[pt], rot:ri(0,3)};
+    }
+
+    /* 회전해도 제자리인 칸(정중앙 0,0)은 궤도가 4중으로 접힌다 —
+       그대로 돌리면 같은 자리에 조각이 네 장 겹쳐 쌓인다. */
+    var done={};
+    for(r2=0;r2<4;r2++){
+      var ci=ob.ring[r2][0], cj=ob.ring[r2][1];
+      var dk=ci+','+cj; if(done[dk]) continue; done[dk]=1;
+      var cell=cells[dk]; if(!cell) continue;
+      pieces.push({t:floorT, i:ci, j:cj, y:-0.3, rot:(floorR+r2)&3, order:cell.order});
+      if(wallSpec && wallSpec.t)
+        pieces.push({t:wallSpec.t, i:ci, j:cj, y:0,
+          rot:(wallSpec.rot + r2 - baseIdx + 8)&3, order:cell.order});
+      if(prop)
+        pieces.push({t:prop.t, i:ci, j:cj, y:0, rot:(prop.rot+r2)&3, order:cell.order});
+    }
+  }
+
+  /* --- 3) 스폰·패드 (전부 4겹) --- */
+  var spawns=[], pads=[{i:0,j:0}];
+  function ring4(i,j,out){ for(var t2=0;t2<4;t2++){ out.push({i:i,j:j}); var n1=j, n2=-i; i=n1; j=n2; } }
+  ring4(0, podC, spawns);            // 포드 안쪽 중심
+  ring4(0, 2, pads);                 // 복도 첫 칸 — 집으러 가려면 자리를 비워야 한다
+  ring4(0, podC+podR, pads);         // 포드 안쪽 가장자리(벽 고리 바로 안)
+
+  return { pieces:pieces, colliders:colliders, spawns:spawns, pads:pads,
+           maxOrder:maxOrd, cells:Object.keys(cells).length,
+           info:'팔'+armLen+' 포드'+(podR*2+1)+'x'+(podR*2+1)+(hasSat?' 위성':'') };
+};
