@@ -532,19 +532,32 @@ PENG.genArenaOnce = function(C, seed){
   full.sort(function(a, b){ return b.ring - a.ring; });
   var spawnG = full[0] || [cells[K(0,0)]];
   /* (8) 패드 — 스폰과 가운데 사이 고리에서 고른다. 집으러 가려면 자리를 비워야 한다.
-     가운데 하나 + 대칭 4개 = 항상 5개(서버가 패드 번호로 쿨다운을 재므로 개수가 고정이어야 한다). */
+     궤도를 '두 개' 고른다. 하나만 고르면 4겹 대칭에서 나올 수 있는 배치가 궤도 수
+     (약 17개)로 묶여 매번 같은 자리처럼 보인다 — 두 개면 조합이 100가지를 넘는다.
+     되도록 서로 다른 고리에서 뽑아 한쪽에 몰리지 않게 한다.
+     가운데 패드는 남긴다: 판이 3x3 까지 줄어들면 바깥 패드는 전부 무너져
+     막판에 아이템이 아예 없어진다. */
   var mid = full.filter(function(g){
     return g !== spawnG && g.ring >= 1 && g.ring < spawnG.ring;
   });
-  var padG = mid.length ? mid[Math.floor(rnd() * mid.length)] : spawnG;
+  var padGs = [];
+  if(mid.length){
+    var first = mid.splice(Math.floor(rnd() * mid.length), 1)[0];
+    padGs.push(first);
+    var other = mid.filter(function(g){ return g.ring !== first.ring; });
+    var pool = other.length ? other : mid;
+    if(pool.length) padGs.push(pool[Math.floor(rnd() * pool.length)]);
+  } else padGs.push(spawnG);
 
   return {
     cells:   liveList.filter(function(c){ return c.live; })
                      .map(function(c){ return { i:c.i, j:c.j, h:c.h, ring:c.ring }; }),
     pillars: pillars,
     spawns:  spawnG.map(function(c){ return { i:c.i, j:c.j, h:c.h }; }),
-    pads:    [{ i:0, j:0, h:(c0 ? c0.h : 0), center:true }]
-               .concat(padG.map(function(c){ return { i:c.i, j:c.j, h:c.h }; })),
+    pads:    [{ i:0, j:0, h:(c0 ? c0.h : 0), center:true }].concat(
+               padGs.reduce(function(acc, g){
+                 return acc.concat(g.map(function(c){ return { i:c.i, j:c.j, h:c.h }; }));
+               }, [])),
     maxRing: maxRing,
     used:    used
   };

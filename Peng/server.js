@@ -158,7 +158,7 @@ var GUID = '258EAFA5-E914-47DA-95CA-C5AB0DC85B11';
 var rooms = {};        // room -> { id -> client }
 var roomLevel = {};    // room -> 호스트가 고른 맵 id (대기방에서도 같은 코스를 보도록)
 var roomPads = {};     // room -> {패드번호: {ready:다시 밟을 수 있는 시각(ms), item:내용물}}
-var PAD_CD_MS = 12000; // 아이템 패드 재생성 대기 — index.html 의 PAD_CD 와 맞춘다
+var PAD_CD_MS = 20000; // 아이템 패드 재생성 대기 — index.html 의 PAD_CD 와 맞춘다
 /* 패드에 뭐가 들었는지는 표식으로 미리 보인다. 그래서 전원이 같은 걸 봐야 하고,
    내용물은 서버가 정해야 한다(예전엔 밟은 클라가 제안했는데, 보이는 것과
    받는 것이 어긋날 수 있다). index.html 의 ITEMS 키 목록과 맞춰야 한다. */
