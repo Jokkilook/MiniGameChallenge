@@ -717,12 +717,15 @@ function botClear(s){
     var h=rayBox(o,d,LEVEL.boxes[i]); if(h<t) t=h; }
   return t;
 }
-function botTarget(bs){
-  var best=null, bd=1e9;
-  // 사람
+/* 가장 가까운 상대를 고른다 — 사람이든 다른 AI 든 가리지 않는다.
+   예전엔 봇끼리 서로 무시해서 사람만 두들겨 맞는 난투가 됐다.
+   자기 자신은 MP.peers 에도 들어 있으므로(렌더·충돌 재사용) 반드시 빼야 한다. */
+function botTarget(bot){
+  var bs=bot.sim, best=null, bd=1e9;
   var now=(typeof performance!=='undefined')?performance.now():0;
-  for(var id in MP.peers){ var ps=peerSample(MP.peers[id], now); if(!ps) continue;
-    if(BOTS.some(function(b){ return b.id===+id; })) continue;   // 봇끼리는 서로 무시
+  for(var id in MP.peers){
+    if(+id===bot.id) continue;                                   // 나 자신
+    var ps=peerSample(MP.peers[id], now); if(!ps) continue;
     var d=Math.hypot(ps.x-bs.p.x, ps.z-bs.p.z); if(d<bd){ bd=d; best={x:ps.x,y:ps.y,z:ps.z,d:d}; } }
   // 방장 자신
   if(sim && !sim.practice){
@@ -734,7 +737,7 @@ function botThink(bot, dt){
   FIRING_BOT=true;
   var s=bot.sim, inp={mf:false,mb:false,ml:false,mr:false,jump:false};
   bot.cd=Math.max(0,(bot.cd||0)-dt);
-  var tgt=botTarget(s);
+  var tgt=botTarget(bot);
   var gx=tgt?tgt.x:0, gz=tgt?tgt.z:0;
   var dx=gx-s.p.x, dz=gz-s.p.z, dist=Math.hypot(dx,dz)||1;
   s.yaw=Math.atan2(dx,dz);                       // 시선은 항상 표적
@@ -827,11 +830,12 @@ function botStep(dt, now){
     stepSim(s, Math.min(0.05,dt), botThink(bot, dt));
     // 떨어졌으면 방장이 대신 신고한다
     if(GAMEMODE==='versus' && (s.fell||0)>(bot.lastFell||0)){
-      bot.lastFell=s.fell; mpSend({t:'fell', bot:bot.id}); scoreFall(bot.id);
+      bot.lastFell=s.fell; var bby=creditOf(s);
+      mpSend({t:'fell', bot:bot.id, by:bby}); scoreFall(bot.id, bby);
     }
     // 봇 상태를 '피어'로 넣어 두면 렌더·충돌·근접신관이 전부 그대로 동작한다
     var pe=MP.peers[bot.id] || (MP.peers[bot.id]={buf:[]});
-    pe.seen=now; pe.name=bot.name;
+    pe.seen=now; pe.name=bot.name; if(bot.col) pe.col=bot.col;
     pe.buf.push({t:now, x:s.p.x, y:s.p.y, z:s.p.z, yaw:s.yaw, pitch:s.pitch, rc:s.recoil||0});
     if(pe.buf.length>16) pe.buf.shift();
     if(MP.connected && now-(bot.lastSend||0)>45){ bot.lastSend=now;
@@ -1012,6 +1016,12 @@ function usePulse(s){
 /* 폭발을 '이 화면에서 돌아가는 다른 시뮬'에 먹인다 — 방장 자신과 봇들.
    쏜 당사자는 doFire 안에서 이미 처리하므로 건너뛴다. */
 var FIRING_BOT=false;
+/* 이 시뮬의 주인 id — 낙하 점수를 '민 사람'에게 주기 위해 필요하다 */
+function simOwner(s){
+  if(s===sim) return (MP.id!=null?MP.id:-1);
+  for(var i=0;i<BOTS.length;i++) if(BOTS[i].sim===s) return BOTS[i].id;
+  return null;
+}
 function applyLocalBlast(shooter, cx, cy, cz, lift, opt){
   if(sim && sim!==shooter) applyBlast(sim, cx, cy, cz, lift, opt);
   for(var i=0;i<BOTS.length;i++)
@@ -1033,6 +1043,7 @@ function doFire(s){
   // 이 탄에 실리는 아이템 성질 — 쏘는 순간 도장을 찍는다. 날아가는 도중에
   // 아이템이 끝나도 이미 나간 탄은 원래 성질대로 터져야 한다.
   var rev=!!(s.items&&s.items.reverse), pw=!!(s.items&&s.items.power);
+  var byId=simOwner(s);
   applyBlast(s, center.x, center.y, center.z, false, {rev:rev, pw:pw});   // 자기 넉백
   // 즉시: 총 반동/작은 흔들림. 폭발 연출은 발사체가 착탄할 때.
   s.recoil=1; s.shake=Math.min(0.4,s.shake+0.12);
@@ -1044,7 +1055,7 @@ function doFire(s){
   // 팀원에게 브로드캐스트: 폭발 지점 + 총구 원점(상대 화면에서 탄환이 날아가 보이도록)
   // 같은 화면에서 도는 봇(과 방장 자신)에게도 폭발이 닿아야 한다.
   // 원격 피어는 자기 화면에서 bl 을 받아 스스로 처리한다.
-  applyLocalBlast(s, center.x, center.y, center.z, lift, {rev:rev, pw:pw});
+  applyLocalBlast(s, center.x, center.y, center.z, lift, {rev:rev, pw:pw, by:byId});
   if(typeof mpSend==='function'){
     var _bl={t:'bl', x:center.x, y:center.y, z:center.z,
       ox:o.x, oy:o.y, oz:o.z, lf:lift?1:0, rv:rev?1:0, pw:pw?1:0};
@@ -1057,13 +1068,13 @@ function spawnRemoteShot(s, m){
   var ox=(m.ox!=null)?m.ox:m.x, oy=(m.oy!=null)?m.oy:m.y, oz=(m.oz!=null)?m.oz:m.z;
   var dx=m.x-ox, dy=m.y-oy, dz=m.z-oz, L=Math.hypot(dx,dy,dz);
   // 탄에 실려 온 성질(끌어당김·과충전·펄스 배율)을 그대로 재현한다
-  var opt={rev:!!m.rv, pw:!!m.pw, pf:m.pf, pr:m.pr};
+  var opt={rev:!!m.rv, pw:!!m.pw, pf:m.pf, pr:m.pr, by:(m.id!=null?m.id:null)};
   if(L<0.05){ applyBlast(s,m.x,m.y,m.z,m.lf,opt); blastFx(s,m.x,m.y,m.z,m.lf); return; }
   dx/=L; dy/=L; dz/=L;
   var start=Math.min(0.6, L*0.5);
   s.projectiles.push({ x:ox+dx*start, y:oy+dy*start, z:oz+dz*start, dx:dx, dy:dy, dz:dz,
     gone:0, dist:Math.max(0.05,L-start), bx:m.x, by:m.y, bz:m.z, hitMe:true, lift:m.lf,
-    rev:opt.rev, pw:opt.pw, pf:opt.pf, pr:opt.pr });
+    rev:opt.rev, pw:opt.pw, pf:opt.pf, pr:opt.pr, by:opt.by });
 }
 /* 폭발 넉백(자기/원격 공용): 중심 기준으로 플레이어를 민다.
    lift = 팀원 직격(리프트 샷). 방사형 대신 정확히 위로만 밀어 준다 —
@@ -1089,6 +1100,8 @@ function applyBlast(s, cx, cy, cz, lift, opt){
   }
   if(lift && dist<FUSE_R){
     s.v.y+=LIFT_V*take; ungroundWithGrace(); s.kb=KB_TIME; return; }
+  if(dist<R && opt.by!=null){        // 누가 밀었는지 기록 — 낙하 점수 귀속에 쓴다
+    s.hitBy=opt.by; s.hitT=(typeof performance!=='undefined')?performance.now():0; }
   if(dist<R){ var f=F*(1-dist/R)*take; if(dist<0.001){diff={x:0,y:1,z:0};dist=1;}
     s.v.x+=sgn*diff.x/dist*f; s.v.y+=sgn*diff.y/dist*f; s.v.z+=sgn*diff.z/dist*f;
     ungroundWithGrace();
@@ -1191,7 +1204,7 @@ function stepSim(s, dt, inp){
   // 발사체 비행 → 착탄 시 폭발 연출
   for(var pi=s.projectiles.length-1;pi>=0;pi--){ var pr=s.projectiles[pi]; var mv=PROJ_SPD*dt; pr.gone+=mv;
     pr.x+=pr.dx*mv; pr.y+=pr.dy*mv; pr.z+=pr.dz*mv;
-    if(pr.gone>=pr.dist){ if(pr.hitMe) applyBlast(s, pr.bx, pr.by, pr.bz, pr.lift, {rev:pr.rev,pw:pr.pw,pf:pr.pf,pr:pr.pr}); blastFx(s, pr.bx, pr.by, pr.bz, pr.lift); s.projectiles.splice(pi,1); } }
+    if(pr.gone>=pr.dist){ if(pr.hitMe) applyBlast(s, pr.bx, pr.by, pr.bz, pr.lift, {rev:pr.rev,pw:pr.pw,pf:pr.pf,pr:pr.pr,by:pr.by}); blastFx(s, pr.bx, pr.by, pr.bz, pr.lift); s.projectiles.splice(pi,1); } }
   // 블래스트/파티클
   for(var i=s.blasts.length-1;i>=0;i--){ s.blasts[i].t+=dt*3; if(s.blasts[i].t>=1)s.blasts.splice(i,1); }
   for(var j=s.particles.length-1;j>=0;j--){ var pt=s.particles[j]; pt.life-=dt*1.6; pt.x+=pt.vx*dt; pt.y+=pt.vy*dt; pt.z+=pt.vz*dt; pt.vy-=8*dt; if(pt.life<=0)s.particles.splice(j,1); }
@@ -1876,11 +1889,17 @@ function nameOf(id){ for(var i=0;i<MP.players.length;i++) if(MP.players[i].id===
   return (id===MP.id)?MP.name:('P'+id); }
 /* 누군가 아레나 밖으로 떨어지면 나머지 전원이 1점.
    떨어진 본인이 알리고, 받은 쪽도 같은 규칙을 적용하므로 양쪽 점수가 일치한다. */
-function scoreFall(fallerId){
+var CREDIT_MS=6000;   // 이 시간 안에 맞은 폭발이면 '그 사람이 떨어뜨렸다'로 본다
+/* 낙인 점수는 민 사람에게만 준다. 예전엔 '떨어진 사람 빼고 전원 +1' 이었는데,
+   AI 끼리도 싸우게 되자 구석에서 구경만 해도 점수가 쌓여 이겼다(실측: 방장을
+   200m 밖에 세워 두니 5:4 로 승리). 스스로 떨어지면 아무도 못 얻는다. */
+function scoreFall(fallerId, byId){
   if(GAMEMODE!=='versus') return;
+  var who=(byId!=null && byId!==fallerId) ? byId : null;
+  if(who!=null) SCORES[who]=(SCORES[who]||0)+1;
+  pushChat('', '💀 '+nameOf(fallerId)+' 님이 떨어졌습니다'
+    + (who!=null ? ' — '+nameOf(who) : ' (자멸)'), false, true);
   var ids=MP.players.length ? MP.players.map(function(p){return p.id;}) : [MP.id];
-  ids.forEach(function(id){ if(id!==fallerId) SCORES[id]=(SCORES[id]||0)+1; });
-  pushChat('', '💀 '+nameOf(fallerId)+' 님이 떨어졌습니다', false, true);
   // 승리 판정
   var best=null;
   ids.forEach(function(id){ if((SCORES[id]||0)>=VS_WIN && (best===null||SCORES[id]>SCORES[best])) best=id; });
@@ -1892,6 +1911,12 @@ function scoreFall(fallerId){
   }
 }
 function resetScores(){ SCORES={}; }
+// 최근에 나를 민 사람 — 너무 오래된 건 무효(스스로 걸어 나가 떨어진 걸로 본다)
+function creditOf(s){
+  if(s.hitBy==null) return null;
+  var now=(typeof performance!=='undefined')?performance.now():0;
+  return (now-(s.hitT||0) <= CREDIT_MS) ? s.hitBy : null;
+}
 /* ---------- 라운드 ----------
    예전엔 떨어지면 그 자리에서 즉시 리스폰이라 '라운드'라는 게 없었다. 이긴 쪽은
    위치와 속도를 그대로 쥔 채 다시 밀어버릴 수 있어 눈덩이가 굴렀고, 한 킬이
@@ -2062,7 +2087,7 @@ function mpHandle(m){
   // 호스트가 고른 게임 모드
   else if(m.t==='gm'){ if(m.mode==='coop'||m.mode==='versus'){ GAMEMODE=m.mode; syncModePicker(); } }
   // 누군가 아레나 밖으로 떨어졌다
-  else if(m.t==='fell'){ scoreFall(m.id); }
+  else if(m.t==='fell'){ scoreFall(m.id, (m.by!=null?m.by:null)); }
   // 아이템 패드 — 서버가 '누가 먼저 밟았나'를 판정해 되돌려 준다(본인 포함)
   else if(m.t==='pad'){ grantItem(m.id, m.pad, m.item); }
   // 패드에 새로 채워진 내용물 — 전원이 같은 표식을 보게 서버가 정한다
@@ -2418,9 +2443,18 @@ function startGame(levelId){
   // "같은 방인데 서로 다른 맵을 달리는" 상태가 되고, 한참 뒤에야 알아채게 된다.
   var missing = levelId && !PENG.getLevel(levelId);
   if(levelId) setLevel(levelId);
-  sim=makeSim(); MP.peers={}; resetScores(); resetRound(); lastFell=0; CAM_LEN=null;
+  /* 피어 버퍼는 비우되 '몸통 색'은 살린다. 예전엔 통째로 비워서 대기방에서 고른
+     색(사람·AI 모두)이 게임에 들어가는 순간 기본색으로 되돌아갔다 —
+     색을 다시 보내는 쪽은 아무도 없다(서버는 join 때만 알려준다). */
+  var _keepCol={};
+  for(var _pk in MP.peers) if(MP.peers[_pk].col) _keepCol[_pk]=MP.peers[_pk].col;
+  MP.peers={};
+  for(var _ck in _keepCol) MP.peers[_ck]={buf:[], col:_keepCol[_ck]};
+  sim=makeSim(); resetScores(); resetRound(); lastFell=0; CAM_LEN=null;
   // 경쟁은 1라운드부터 각자 다른 스폰에서 시작한다(둘 다 LEVEL.start 면 겹쳐서 시작한다)
   if(GAMEMODE==='versus' && !sim.practice) newArena();
+  // 게스트도 시작할 때 피어를 비우므로 봇 색을 다시 알려 준다
+  if(MP.connected) BOTS.forEach(function(b){ if(b.col) mpSend({t:'col', bot:b.id, c:b.col}); });
   showScreen('play'); acc=0; last=0; requestLock();
   if(missing){
     var warn='⚠ 내 컴퓨터에 "'+levelId+'" 맵이 없어 "'+(LEVEL.name||CURLEVEL)+'" 로 시작했습니다 — 서로 다른 코스를 달리는 중입니다. levels/ 폴더를 받아주세요.';
@@ -2585,8 +2619,9 @@ function loop(now){ if(!last)last=now; var dt=Math.min(0.05,(now-last)/1000); la
     // 경쟁: 내가 떨어졌으면 알리고 점수를 반영한다(떨어진 본인이 신고 → 양쪽 규칙이 같아 일치)
     if(vsLive && ROUND.phase==='live' && (sim.fell||0)>lastFell){
       lastFell=sim.fell;
-      if(MP.connected) mpSend({t:'fell'});
-      scoreFall(MP.id!=null?MP.id:-1);
+      var _by=creditOf(sim);
+      if(MP.connected) mpSend({t:'fell', by:_by});
+      scoreFall(MP.id!=null?MP.id:-1, _by);
     }
     // HUD
     // 경쟁에서는 경과 시간보다 "다음 붕괴까지"가 훨씬 중요한 정보다

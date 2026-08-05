@@ -350,9 +350,10 @@ server.on('upgrade', function(req, socket){
     if(m.t === 'fell'){         // 아레나 밖으로 떨어짐 — 떨어진 본인이 알린다
       var who = id;
       if(m.bot != null){ var mb = ownsBot(room, id, m.bot|0); if(!mb) return; who = mb.id; }
-      broadcast(room, id, JSON.stringify({ t:'fell', id:who }));
+      var by = (typeof m.by === 'number' && isFinite(m.by)) ? m.by : null;
+      broadcast(room, id, JSON.stringify({ t:'fell', id:who, by:by }));
       // 봇의 낙하는 방장 화면에서도 점수에 반영돼야 한다(자기 신고는 안 되돌아온다)
-      if(m.bot != null) send(socket, JSON.stringify({ t:'fell', id:who }));
+      if(m.bot != null) send(socket, JSON.stringify({ t:'fell', id:who, by:by }));
       return;
     }
     /* st·bl 은 원래 보낸 사람 id 로 덮어쓴다(남을 사칭하지 못하게). 봇은 예외로,
