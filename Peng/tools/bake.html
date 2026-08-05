@@ -43,6 +43,14 @@
   빠진 종만 게임에서 큐브 표식으로 떨어집니다.</p>
   <button id="goItems">아이템 굽고 저장</button>
 
+  <h2>플레이어 캐릭터 — <code>charbaked.js</code></h2>
+  <p><code>Mesh/SK_Player.glb</code>(리깅 + 걷기 애니메이션)를 읽습니다. 이것만 정점색으로
+  굽지 않고 <b>텍스처를 1024로 줄여 함께 저장</b>합니다 — 얼굴이 뭉개지면 캐릭터가 아니니까요.
+  스킨 가중치와 걷기 포즈(24fps 한 주기)도 같이 들어갑니다.</p>
+  <label>원본 GLB 경로</label>
+  <input type="text" id="curl" value="../Mesh/SK_Player.glb">
+  <button id="goChar">캐릭터 굽고 저장</button>
+
   <div id="log">대기 중</div>
   <canvas id="cv"></canvas>
 </div>
@@ -50,6 +58,7 @@
 <script src="../meshlib.js"></script>
 <script src="../gunmesh.js"></script>
 <script src="../itemmesh.js"></script>
+<script src="../charmesh.js"></script>
 <script>
 "use strict";
 ItemMesh.dir='../Mesh/';       // 이 페이지는 tools/ 아래라 한 칸 올라가야 한다
@@ -107,6 +116,24 @@ document.getElementById('goItems').addEventListener('click', function(){
   });
 });
 
+/* ---- 플레이어 캐릭터 ---- */
+document.getElementById('goChar').addEventListener('click', function(){
+  var btn=this; btn.disabled=true; clearLog();
+  var url=document.getElementById('curl').value.trim();
+  say('읽는 중: '+url+' (5MB — 조금 걸립니다)');
+  CharMesh.ready=false; CharMesh.loading=false; CharMesh.invalidate();
+  CharMesh.load(url, function(ok){
+    if(!ok){ say('실패: '+CharMesh.err, 'err'); btn.disabled=false; return; }
+    say('구움: '+CharMesh.info);
+    say('본: '+(CharMesh.POSE.names||[]).join(', '));
+    var text;
+    try{ text=CharMesh.serialize(); }
+    catch(e){ say('직렬화 실패: '+e.message,'err'); btn.disabled=false; return; }
+    preview('char');
+    save(text, 'charbaked.js', btn);
+  });
+});
+
 /* ---- 미리보기: 구운 정점을 그대로 그려 본다(게임과 같은 draw 경로) ---- */
 var previewOn=null;
 function preview(kind){
@@ -133,9 +160,9 @@ function preview(kind){
   var GAP=1.35;                              // 아이템을 한 줄로 늘어놓을 간격
   var t0=performance.now();
   function frame(){
-    var items=(previewOn==='item'), keys=ItemMesh.keys;
-    var a=(performance.now()-t0)/1800, D=items?7.2:3.1;
-    var eye={x:Math.sin(a)*D, y:items?1.6:0.85, z:Math.cos(a)*D};
+    var items=(previewOn==='item'), chr=(previewOn==='char'), keys=ItemMesh.keys;
+    var a=(performance.now()-t0)/1800, D=items?7.2:(chr?4.2:3.1);
+    var eye={x:Math.sin(a)*D, y:items?1.6:(chr?1.1:0.85), z:Math.cos(a)*D};
     var F={x:-eye.x,y:-eye.y,z:-eye.z}, L=Math.hypot(F.x,F.y,F.z);
     F={x:F.x/L,y:F.y/L,z:F.z/L};
     var R={x:F.z,y:0,z:-F.x}, RL=Math.hypot(R.x,R.z)||1; R={x:R.x/RL,y:0,z:R.z/RL};
@@ -151,7 +178,17 @@ function preview(kind){
     gl.viewport(0,0,cv.width,cv.height);
     gl.clearColor(0.094,0.125,0.227,1); gl.clear(gl.COLOR_BUFFER_BIT|gl.DEPTH_BUFFER_BIT);
     var i, x0=-(keys.length-1)*GAP/2;
-    if(items){
+    if(chr){
+      /* 캐릭터는 제자리에서 걷는다 — 위상만 시간으로 돌린다(게임에서는 이동 거리로 돈다).
+         정면을 확인해야 하므로 몸은 돌리지 않고 카메라만 돈다. */
+      var ph=(performance.now()-t0)/1000/Math.max(0.1,CharMesh.POSE.dur);
+      var mdl=CharMesh.modelMat(0,-0.9,0,0), bones=CharMesh.pose(ph,1);
+      CharMesh.draw(gl, VP, mdl, bones, '#ffffff');
+      gl.enable(gl.CULL_FACE); gl.cullFace(gl.BACK);
+      CharMesh.drawOutline(gl, VP, mdl, bones, CharMesh.outlineW);
+      gl.disable(gl.CULL_FACE);
+      gl.useProgram(p);
+    } else if(items){
       for(i=0;i<keys.length;i++) ItemMesh.draw(gl,p,VP,keys[i], x0+i*GAP,0,0, a*1.4);
       gl.enable(gl.CULL_FACE); gl.cullFace(gl.BACK);
       for(i=0;i<keys.length;i++) ItemMesh.drawOutline(gl,p,VP,keys[i], x0+i*GAP,0,0, a*1.4);

@@ -312,6 +312,11 @@
 <script src="gunbaked.js"></script>
 <script src="itemmesh.js"></script>
 <script src="itembaked.js"></script>
+<!-- 플레이어 캐릭터(리깅 + 걷기). 얼굴이 뭉개지지 않게 이것만 텍스처를 그대로 쓰고
+     스키닝도 GPU 에서 한다 — charmesh.js 가 전용 셰이더를 들고 있다.
+     charbaked.js 가 없으면 지금까지의 캡슐 캐릭터로 떨어진다. -->
+<script src="charmesh.js"></script>
+<script src="charbaked.js"></script>
 <!-- 아이템 HUD 아이콘. Image/Img_*.png 를 구워둔 96px 그림(data URI)으로,
      tools/bakeicons.js 가 만든다. 없으면 이모지로 그린다. -->
 <script src="itemicons.js"></script>
@@ -1655,7 +1660,7 @@ function render(dt){
   gl.depthMask(true); gl.enable(gl.DEPTH_TEST);
   if(!sim){ if(usePost) drawPost(); return; }
 
-  TRI.length=0; LINE.length=0; BB.length=0; OUTL.length=0; GUNQ.length=0; ITEMQ.length=0;
+  TRI.length=0; LINE.length=0; BB.length=0; OUTL.length=0; GUNQ.length=0; ITEMQ.length=0; CHARQ.length=0;
   /* 레벨 — 꺼진 연동 발판은 지우지 말고 어둡게 남긴다. "여기에 다리가 생길 수 있다"가
      보여야 퍼즐이 성립한다(안 보이면 그냥 못 넘는 협곡으로 읽힌다). */
   for(var i=0;i<LEVEL.boxes.length;i++){ var bx=LEVEL.boxes[i], bcol=bx.col;
@@ -1695,9 +1700,10 @@ function render(dt){
   }
   // 원격 플레이어 — 보간된 위치
   var pnow=performance.now();
+  walkPrune(pnow);
   for(var pid in MP.peers){ var pe=MP.peers[pid], ps=peerSample(pe, pnow); if(!ps)continue;
-    emitCharacter(ps.x, ps.y, ps.z, ps.yaw, ps.pitch, ps.rc, (pe.col||PEER_COL)); }
-  if(sim.tp){ emitCharacter(sim.p.x, sim.p.y, sim.p.z, sim.yaw, sim.pitch, sim.recoil||0, PLAYER_COL); }
+    emitCharacter(ps.x, ps.y, ps.z, ps.yaw, ps.pitch, ps.rc, (pe.col||PEER_COL), 'p'+pid); }
+  if(sim.tp){ emitCharacter(sim.p.x, sim.p.y, sim.p.z, sim.yaw, sim.pitch, sim.recoil||0, PLAYER_COL, 'me'); }
   else { // 1인칭: 총만
     var eye={x:sim.p.x,y:sim.p.y+EYE,z:sim.p.z}, kick=(sim.recoil||0)*(sim.recoil||0);
     emitGun(eye, AIMR, AIMU, AIMF, kick, null);
@@ -1727,7 +1733,7 @@ function render(dt){
   }
   // 총구 섬광
   if((sim.recoil||0)>0.5){ var kk=(sim.recoil-0.5)/0.5;
-    var e2={x:sim.p.x,y:sim.p.y+EYE,z:sim.p.z}, g2=sim.tp?GUN_TP:[0,0,0], mw;
+    var e2={x:sim.p.x,y:sim.p.y+EYE,z:sim.p.z}, g2=sim.tp?gunTP():[0,0,0], mw;
     if(gunMeshOK()) mw=GunMesh.muzzleWorld(e2,AIMR,AIMU,AIMF,(sim.recoil*sim.recoil),g2);
     else { var mz=[0.28+g2[0],-0.20+g2[1],1.12+g2[2]-0.16*(sim.recoil*sim.recoil)];
       mw={ x:e2.x+mz[0]*AIMR.x+mz[1]*AIMU.x+mz[2]*AIMF.x,
@@ -1746,15 +1752,29 @@ function render(dt){
     GunMesh.drawBody(gl, PROG.main, VP, Q.O,Q.R,Q.U,Q.F, Q.k, Q.e); }
   for(var ii=0;ii<ITEMQ.length;ii++){ var IT=ITEMQ[ii];
     ItemMesh.draw(gl, PROG.main, VP, IT.k, IT.x, IT.y, IT.z, IT.a); }
+  /* 캐릭터 — 텍스처·스키닝을 쓰는 전용 프로그램이라 여기만 프로그램을 갈아 끼운다.
+     본 행렬은 플레이어마다 다르므로(각자 걷기 위상이 다르다) 사람 수만큼 드로우콜이 든다. */
+  if(CHARQ.length){
+    for(var ci=0;ci<CHARQ.length;ci++){ var CQ=CHARQ[ci];
+      CharMesh.draw(gl, VP, CharMesh.modelMat(CQ.x,CQ.y,CQ.z,CQ.yaw),
+                    CharMesh.pose(CQ.ph, CQ.mv), CQ.col); }
+    gl.useProgram(PROG.main);                       // 뒤에 오는 패스는 이 프로그램을 기대한다
+  }
   // 윤곽선 껍질 — 카메라를 등진 면만 남겨야 실루엣 테두리가 된다.
   // 이 메시들은 바깥면이 CW(=GL 기준 뒷면)라 BACK 을 컬링해야 바깥이 지워진다.
-  if(OUTL.length || GUNQ.length || ITEMQ.length){
+  if(OUTL.length || GUNQ.length || ITEMQ.length || CHARQ.length){
     gl.enable(gl.CULL_FACE); gl.cullFace(gl.BACK);
     if(OUTL.length) drawArr(BUF.outl, OUTL, PROG.main, gl.TRIANGLES);
     for(var qo=0;qo<GUNQ.length;qo++){ var QO=GUNQ[qo];
       GunMesh.drawOutline(gl, PROG.main, VP, QO.O,QO.R,QO.U,QO.F, QO.k, QO.e); }
     for(var io=0;io<ITEMQ.length;io++){ var ITO=ITEMQ[io];
       ItemMesh.drawOutline(gl, PROG.main, VP, ITO.k, ITO.x, ITO.y, ITO.z, ITO.a); }
+    if(CHARQ.length){
+      for(var co=0;co<CHARQ.length;co++){ var CO=CHARQ[co];
+        CharMesh.drawOutline(gl, VP, CharMesh.modelMat(CO.x,CO.y,CO.z,CO.yaw),
+                             CharMesh.pose(CO.ph, CO.mv), CharMesh.outlineW); }
+      gl.useProgram(PROG.main);
+    }
     gl.disable(gl.CULL_FACE);
   }
   if(LINE.length) drawArr(BUF.line, LINE, PROG.main, gl.LINES);
@@ -1973,6 +1993,11 @@ var GUN=[
   {lc:[0.225,-0.285,0.62],lh:[0.062,0.062,0.075],col:'#2aa8e0'},// 공기통
 ];
 var GUN_TP=[0.15,0,-0.05]; // 3인칭: 오른쪽 가슴 쪽으로 살짝만(몸에 붙은 채 보이게)
+/* 리깅된 캐릭터를 쓸 때의 3인칭 위치. 캡슐(지름 0.7m)보다 몸이 굵어서(0.85m) 예전 값이면
+   총이 몸 안에 파묻혀 뒤에서 아예 안 보인다. 리그에 팔 본이 없으므로 손에 쥐여줄 수는 없고,
+   실루엣 바로 바깥에 걸치도록 옆·앞으로 조금 더 뺀다. */
+var GUN_TP_CHAR=[0.20,-0.07,0.06];
+function gunTP(){ return charMeshOK() ? GUN_TP_CHAR : GUN_TP; }
 /* 위 박스 5개는 이제 폴백이다. Mesh/ShockWave_Gun.glb 가 읽히면 그 메시로 그린다
    (gunmesh.js). 못 읽으면(file:// 직접 열기 등) 박스가 그대로 나온다. */
 var GUNMESH_ON=1;
@@ -1980,11 +2005,17 @@ function gunMeshOK(){ return GUNMESH_ON && window.GunMesh && GunMesh.ready; }
 /* 아이템 표식도 같은 구조다 — 구운 메시가 있으면 그걸로, 없으면 ITEMS 의 glyph 큐브로.
    0 으로 두면 메시가 있어도 큐브 표식을 본다(둘을 나란히 비교할 때 쓴다). */
 var ITEMMESH_ON=1;
+/* 플레이어도 같다 — 리깅된 SK_Player.glb 가 읽히면 그 캐릭터로, 없으면 캡슐+눈으로.
+   0 으로 두면 메시가 있어도 캡슐을 본다(둘을 나란히 비교할 때 쓴다). */
+var CHARMESH_ON=1;
+function charMeshOK(){ return CHARMESH_ON && window.CharMesh && CharMesh.ready; }
 // 디버그 패널용 — gunmesh.js / itemmesh.js 가 없어도 슬라이더가 터지지 않게 빈 객체를 준다
 var GM_NULL={scale:0,ox:0,oy:0,oz:0,outlineW:0};
 var IM_NULL={SIZE:0,outlineW:0};
+var CM_NULL={scale:0,outlineW:0,tint:0,stride:1,foot:0};
 function IM(){ return window.ItemMesh || IM_NULL; }
 function GM(){ return window.GunMesh || GM_NULL; }
+function CM(){ return window.CharMesh || CM_NULL; }
 /* 총 하나를 그릴 자리를 등록한다. (O,R,U,F)=붙일 기저, extra=3인칭 추가 오프셋.
    메시는 정적 VBO + 모델행렬로 따로 그려야 해서(1만 삼각형을 매 프레임 CPU 로 옮길 수는 없다)
    여기서는 '어디에' 만 모아두고, 실제 draw 는 아래 불투명 패스에서 한다. */
@@ -2015,12 +2046,46 @@ function peerSample(pe, now){
   }
   return b[b.length-1];                             // 패킷이 늦음 → 마지막 위치 유지
 }
-// 한 플레이어(캡슐+총)를 임의 위치/시점으로 렌더 — 3인칭 자기·원격 팀원 공용
-function emitCharacter(px,py,pz,yaw,pitch,recoil,col){
+/* 걷기 위상 — 애니메이션이 '거리'를 따라가야 발이 미끄러지지 않는다.
+   서버로 따로 보내지 않고 각자 화면에서 위치 변화로 뽑는다(원격 플레이어도 마찬가지다).
+   mv 는 걷기(1)와 대기 포즈(0) 사이 가중치로, 멈출 때 툭 끊기지 않게 천천히 따라간다. */
+var WALK={};
+function walkPhase(key, x, z){
+  var now=performance.now(), e=WALK[key];
+  if(!e){ e=WALK[key]={ph:Math.random(), x:x, z:z, t:now, mv:0}; return e; }
+  var dt=Math.min(0.25,(now-e.t)/1000); e.t=now;
+  var d=Math.hypot(x-e.x, z-e.z); e.x=x; e.z=z;
+  if(dt>0){
+    e.ph += d/Math.max(0.2, CM().stride||1.5);
+    if(e.ph>1e6) e.ph=e.ph%1;
+    var want=(d/dt)>0.6 ? 1 : 0;                     // 0.6m/s 아래는 서 있는 것으로 본다
+    e.mv += (want-e.mv)*Math.min(1, dt*9);
+  }
+  return e;
+}
+/* 화면에 없는 플레이어의 기록은 남겨둘 이유가 없다(나갔다 들어오면 새로 잡힌다). */
+function walkPrune(now){
+  var n=0, k;
+  for(k in WALK) n++;
+  if(n<48) return;
+  for(k in WALK) if(now-WALK[k].t>5000) delete WALK[k];
+}
+// 캐릭터 메시는 정적 VBO + 본 행렬로 따로 그린다 — 총·아이템과 같은 구조다
+var CHARQ=[];
+// 한 플레이어(몸+총)를 임의 위치/시점으로 렌더 — 3인칭 자기·원격 팀원 공용
+function emitCharacter(px,py,pz,yaw,pitch,recoil,col,key){
   var f={x:Math.cos(pitch)*Math.sin(yaw), y:Math.sin(pitch), z:Math.cos(pitch)*Math.cos(yaw)};
   var R={x:Math.cos(yaw),y:0,z:-Math.sin(yaw)};
   var U={x:f.y*R.z-f.z*R.y, y:f.z*R.x-f.x*R.z, z:f.x*R.y-f.y*R.x};
   var eye={x:px,y:py+EYE,z:pz};
+  /* 리깅된 캐릭터가 있으면 그걸 그리고 캡슐·눈은 건너뛴다.
+     눈은 이제 텍스처에 그려져 있으므로 구체 눈을 얹으면 얼굴 위에 눈이 두 쌍이 된다. */
+  if(charMeshOK()){
+    var W=walkPhase(key||'me', px, pz);
+    CHARQ.push({x:px, y:py, z:pz, yaw:yaw, ph:W.ph, mv:W.mv, col:col});
+    emitGun(eye, R, U, f, (recoil||0)*(recoil||0), gunTP());
+    return;
+  }
   capsuleGL(px,py+0.9,pz,0.35,0.55,col);
   capsuleOutlineGL(px,py+0.9,pz,0.35,0.55, OUTLINE_BODY);   // 몸통 실루엣   // 캡슐은 외곽선 없이 매끈하게(캐시 재사용)
   // 눈 — 흰자는 고정, 눈동자가 시선(pitch)을 따라 흰자 표면 위를 굴러간다.
@@ -2039,7 +2104,7 @@ function emitCharacter(px,py,pz,yaw,pitch,recoil,col){
     sphereOutlineGL(w.x,w.y,w.z, EYE_R, OUTLINE_EYE);   // 눈 테두리
     sphereGL(p.x,p.y,p.z, EYE_PUPIL_R, '#101c33');      // 눈동자
   }
-  emitGun(eye, R, U, f, (recoil||0)*(recoil||0), GUN_TP);
+  emitGun(eye, R, U, f, (recoil||0)*(recoil||0), gunTP());
 }
 
 /* ---------- 멀티플레이(릴레이) ---------- */
@@ -2377,6 +2442,13 @@ var DBG_SPEC=[
   ['높이',          -1,  1,  0.01, function(){return GM().oy;},      function(v){GM().oy=v;}],
   ['앞뒤',          -1,  2,  0.01, function(){return GM().oz;},      function(v){GM().oz=v;}],
   ['윤곽선 두께',   0,   0.05,0.001,function(){return GM().outlineW;},function(v){GM().outlineW=v;}],
+  ['sec','캐릭터 메시(.glb)'],
+  ['메시 쓰기(0/1)',0, 1,   1,    function(){return CHARMESH_ON;}, function(v){CHARMESH_ON=v?1:0;}],
+  ['크기(=키/2m)',  0.3, 2,  0.01, function(){return CM().scale;},   function(v){CM().scale=v;}],
+  ['발밑 맞춤',     0,   2,  0.01, function(){return CM().foot;},    function(v){CM().foot=v;}],
+  ['팀 색 섞기',    0,   1,  0.02, function(){return CM().tint;},    function(v){CM().tint=v;}],
+  ['보폭(m/주기)',  0.4, 4,  0.05, function(){return CM().stride;},  function(v){CM().stride=v;}],
+  ['윤곽선 두께',   0,   0.06,0.002,function(){return CM().outlineW;},function(v){CM().outlineW=v;}],
   ['sec','아이템 표식 메시(.glb)'],
   ['메시 쓰기(0/1)',0, 1,   1,    function(){return ITEMMESH_ON;}, function(v){ITEMMESH_ON=v?1:0;}],
   // 크기는 '가장 긴 변의 길이'다 — 종마다 비율이 달라서 배율로는 크기가 안 맞는다
@@ -2724,6 +2796,8 @@ try{
 if(window.GunMesh) GunMesh.init('Mesh/ShockWave_Gun.glb');
 // 아이템 표식은 구운 데이터만 쓴다 — 원본 6종이 합쳐서 40MB 라 접속할 때마다 받을 수 없다.
 if(window.ItemMesh) ItemMesh.init();
+// 플레이어 캐릭터 — charbaked.js 가 있으면 즉시, 없으면 원본 SK_Player.glb(5MB)를 받아 굽는다.
+if(window.CharMesh) CharMesh.init('Mesh/SK_Player.glb');
 layout(); requestAnimationFrame(loop);
 
 /* ---------- 검증 노출 ---------- */

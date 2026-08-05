@@ -101,7 +101,8 @@ function handleSave(req, res){
  */
 var BAKE_TARGETS = [
   { mark:'window.GUN_BAKED=',  file:'gunbaked.js'  },
-  { mark:'window.ITEM_BAKED=', file:'itembaked.js' }
+  { mark:'window.ITEM_BAKED=', file:'itembaked.js' },
+  { mark:'window.CHAR_BAKED=', file:'charbaked.js' }
 ];
 function handleBake(req, res){
   function fail(code, msg){ res.writeHead(code, {'Content-Type':'text/plain; charset=utf-8'}); res.end(msg); }
