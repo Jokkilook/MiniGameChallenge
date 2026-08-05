@@ -1268,6 +1268,20 @@ function discGL(cx,cy,cz,r,col,bright){
     prev=p;
   }
 }
+/* 링 게이지 — 원판 위에 얹는 부채꼴 고리. 아이템 재생성 진행도를 보여준다.
+   quadGL 의 CCW(위에서 볼 때) 를 유지하려면 각도를 증가 방향으로 감아야 한다
+   (안쪽·바깥쪽을 lo → hi 순서로 넣으면 법선이 +Y 가 된다). */
+function ringGL(cx,cy,cz,r0,r1,frac,col,bright){
+  frac=Math.max(0,Math.min(1,frac)); if(frac<=0.004) return;
+  var base=hexRGB(col), c=[base[0]*bright, base[1]*bright, base[2]*bright];
+  var N=Math.max(1, Math.ceil(30*frac)), A0=Math.PI*0.5, span=frac*Math.PI*2;
+  for(var i=0;i<N;i++){
+    var lo=A0+span*(i/N), hi=A0+span*((i+1)/N);
+    var cl=Math.cos(lo), sl=Math.sin(lo), ch=Math.cos(hi), sh=Math.sin(hi);
+    quadGL([[cx+cl*r0,cy,cz-sl*r0],[cx+cl*r1,cy,cz-sl*r1],
+            [cx+ch*r1,cy,cz-sh*r1],[cx+ch*r0,cy,cz-sh*r0]], c, false);
+  }
+}
 /* 패드 위에 떠 있는 아이템 표식 — 작은 큐브 몇 개를 Y축으로 돌린다.
    회전 메시가 없어 큐브 자체는 축 정렬이지만, 작아서 궤도만 보인다. */
 function drawGlyph(def, x, y, z, ang, bright){
@@ -1323,17 +1337,23 @@ function render(){
   // 협동 관문 표식(한계 기둥·가장자리 테두리). 순수 장식이라 충돌·광선 훑기에는 없다.
   for(var mi=0;mi<MARKS.length;mi++) meshGL(boxFaces(MARKS[mi]), MARKS[mi].col, true);
   /* 아이템 패드 — 충돌 박스가 아니라 그리기만 한다(LEVEL.boxes 에 넣으면 밟고 올라서게 된다).
-     원판은 어느 패드든 똑같이 생겼다 — 무작위인 건 위에 떠 있는 '내용물 표식'뿐이다.
-     뭘 주우러 갈지 보고 판단하게 하려는 것. 쿨다운 중에는 원판도 표식도 어둡게 죽인다
-     (표식은 쿨다운이 끝나면 나올 '다음 내용물'이라 미리 보여주는 게 맞다). */
+     원판은 어느 패드든 똑같은 색이다 — 무작위인 건 위에 떠 있는 '내용물 표식'뿐이다.
+     집어가면 표식이 사라지고, 원판 위에서 링 게이지가 한 바퀴 차오르며 재생성을 알린다
+     (숫자 없이도 "언제 다시 오면 되는지"가 멀리서 읽힌다). */
   var padT=performance.now()*0.001;
   for(var pdi=0;pdi<PADS.length;pdi++){ var pd=PADS[pdi], rdy=pd.cd<=0;
-    var def=ITEMS[pd.item];
-    discGL(pd.x, pd.y+0.035, pd.z, PAD_VIS_R, rdy?'#3fe0b4':'#2b3a4e', rdy?1:0.45);
-    if(def){
-      var bob=0.62+Math.sin(padT*2.2+pdi)*0.07;
-      var ang=(def.spin===false)?0:padT*1.4+pdi;
-      drawGlyph(def, pd.x, pd.y+bob, pd.z, ang, rdy?1:0.4);
+    discGL(pd.x, pd.y+0.035, pd.z, PAD_VIS_R, rdy?'#3fe0b4':'#22303f', 1);
+    if(rdy){
+      var def=ITEMS[pd.item];
+      if(def){
+        var bob=0.62+Math.sin(padT*2.2+pdi)*0.07;
+        var ang=(def.spin===false)?0:padT*1.4+pdi;
+        drawGlyph(def, pd.x, pd.y+bob, pd.z, ang, 1);
+      }
+    } else {
+      // 0 → 1 로 차오른다. 다 차면 아이템이 돌아온다.
+      ringGL(pd.x, pd.y+0.05, pd.z, PAD_VIS_R*0.5, PAD_VIS_R*0.86,
+        1-pd.cd/Math.max(0.001,PAD_CD), '#3fe0b4', 1);
     }
   }
   // 원격 플레이어 — 보간된 위치
@@ -2333,6 +2353,7 @@ window.__peng={ makeSim:makeSim, stepSim:stepSim, doFire:doFire,
   // 중력 렌즈 검증용: 이번 프레임에 실제로 화면을 휘게 한 왜곡원 목록
   get lenses(){ return lensList; }, get round(){ return ROUND; },
   get pads(){ return PADS; }, get items(){ return ITEMS; },   // 아이템 패드 검증용
+  get vertCount(){ return TRI.length/6; },  // 이번 프레임에 쌓인 정점 수(렌더 검증용)
   // 프레임 강제 실행 — 검증 환경(탭이 숨겨진 상태)에선 rAF 가 멈춰 렌더가 안 돈다
   frame:function(now){ loop(now!=null?now:performance.now()); },
   // 협동 기믹 검증용 — 리프트 샷(방사형 vs 순수 상승)과 연동 압력판의 켜짐 상태
