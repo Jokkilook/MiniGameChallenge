@@ -157,8 +157,24 @@ var server = http.createServer(function(req, res){
 var GUID = '258EAFA5-E914-47DA-95CA-C5AB0DC85B11';
 var rooms = {};        // room -> { id -> client }
 var roomLevel = {};    // room -> 호스트가 고른 맵 id (대기방에서도 같은 코스를 보도록)
-var roomPads = {};     // room -> {패드번호: 다시 밟을 수 있게 되는 시각(ms)}
+var roomPads = {};     // room -> {패드번호: {ready:다시 밟을 수 있는 시각(ms), item:내용물}}
 var PAD_CD_MS = 12000; // 아이템 패드 재생성 대기 — index.html 의 PAD_CD 와 맞춘다
+/* 패드에 뭐가 들었는지는 표식으로 미리 보인다. 그래서 전원이 같은 걸 봐야 하고,
+   내용물은 서버가 정해야 한다(예전엔 밟은 클라가 제안했는데, 보이는 것과
+   받는 것이 어긋날 수 있다). index.html 의 ITEMS 키 목록과 맞춰야 한다. */
+var ITEM_POOL = ['reverse','power','drum','feather','anchor','pulse'];
+function pickItem(){ return ITEM_POOL[Math.floor(Math.random()*ITEM_POOL.length)]; }
+function fillPads(room, n){
+  var st = roomPads[room] = {};
+  n = Math.max(0, Math.min(64, n|0));
+  for(var i=0;i<n;i++) st[i] = { ready:0, item:pickItem() };
+  return st;
+}
+function padsetLines(st){
+  var out = [];
+  for(var k in st) out.push(JSON.stringify({ t:'padset', pad:+k, item:st[k].item }));
+  return out;
+}
 var roomMode  = {};    // room -> 호스트가 고른 게임 모드(coop/versus)
 var nextId = 1;
 
@@ -220,6 +236,7 @@ server.on('upgrade', function(req, socket){
       // 새로 들어온 사람이 방의 현재 상태를 그대로 보도록 맞춰 준다
       if(roomLevel[room]) send(socket, JSON.stringify({ t:'lvl', level:roomLevel[room] }));
       if(roomMode[room])  send(socket, JSON.stringify({ t:'gm',  mode:roomMode[room] }));
+      if(roomPads[room]) padsetLines(roomPads[room]).forEach(function(ln){ send(socket, ln); });
       var r0 = rooms[room];
       if(r0) Object.keys(r0).forEach(function(k){
         var o = r0[k];
@@ -251,8 +268,10 @@ server.on('upgrade', function(req, socket){
       if(id !== hostOf(room)) return;
       var lv = (typeof m.level === 'string' && m.level && m.level.length <= 64) ? m.level : roomLevel[room];
       if(lv) roomLevel[room] = lv;
-      roomPads[room] = {};                     // 새 경기 — 패드 전부 초기화
+      // 새 경기 — 패드 내용물을 새로 굴려 전원에게 알린다(표식이 서로 달라지면 안 된다)
+      var st0 = fillPads(room, m.pads);
       broadcast(room, id, JSON.stringify({ t:'start', level:lv }));
+      padsetLines(st0).forEach(function(ln){ broadcast(room, id, ln); send(socket, ln); });
       return;
     }
     if(m.t === 'ch'){           // 채팅 — 보낸 사람에게도 되돌려 줘야 자기 화면에 뜬다
@@ -269,13 +288,18 @@ server.on('upgrade', function(req, socket){
     if(m.t === 'pick'){
       var pi = m.pad|0;
       if(pi < 0 || pi > 63) return;
-      if(typeof m.item !== 'string' || !m.item || m.item.length > 24) return;
       var pads = roomPads[room] || (roomPads[room] = {});
+      var slot = pads[pi];
+      if(!slot) slot = pads[pi] = { ready:0, item:pickItem() };   // start 를 못 본 방 대비
       var tnow = Date.now();
-      if((pads[pi] || 0) > tnow) return;        // 아직 쿨다운 — 늦게 온 사람은 빈손
-      pads[pi] = tnow + PAD_CD_MS;
-      var pline = JSON.stringify({ t:'pad', pad:pi, id:id, item:m.item });
+      if(slot.ready > tnow) return;             // 아직 쿨다운 — 늦게 온 사람은 빈손
+      var given = slot.item;
+      slot.ready = tnow + PAD_CD_MS;
+      slot.item  = pickItem();                  // 다음 내용물을 바로 굴려 표식에 띄운다
+      var pline = JSON.stringify({ t:'pad', pad:pi, id:id, item:given });
+      var nline = JSON.stringify({ t:'padset', pad:pi, item:slot.item });
       broadcast(room, id, pline); send(socket, pline);
+      broadcast(room, id, nline); send(socket, nline);
       return;
     }
     if(m.t === 'fell'){         // 아레나 밖으로 떨어짐 — 떨어진 본인이 알린다

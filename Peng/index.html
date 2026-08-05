@@ -480,6 +480,7 @@ function makeSim(){  // practice 를 켜면 기록/승리 없이 자유 연습
   var s=LEVEL.start;
   return { p:{x:s.x,y:s.y,z:s.z}, v:{x:0,y:0,z:0}, yaw:0, pitch:0, onGround:false,
     items:{}, charges:{},   // 아이템: id -> 남은 초 / id -> 남은 횟수
+    glide:0, glideLeft:0,   // 깃털 글라이딩: 남은 시간 / 남은 사용 횟수
     ammo:AMMO_MAX, ammoT:0, t:0, cpIdx:0, win:false, blasts:[], particles:[], projectiles:[], shake:0, _fireCd:0, tp:true, recoil:0, kb:0, aim:0, aimHold:false,   // tp:true = 기본 3인칭 (V 로 전환)
     coyote:0, jumped:false, bjGrace:0 };
 }
@@ -628,34 +629,57 @@ function aimRay(s){
      탄에 도장을 찍어 보낸다. 상대 화면에서도 같은 성질로 터져야 하므로 bl 에 실린다.
    · '내 몸에 걸리는 것'(feather·anchor·drum) — 각자 자기 물리를 돌리므로
      로컬에만 적용하면 되고 동기화가 필요 없다. */
+/* glyph = 패드 위에 떠 있는 표식. 작은 큐브 몇 개의 상대 위치·크기다.
+   Y축으로 천천히 도는데, 큐브가 작아야 '축 정렬 박스가 궤도를 도는' 게
+   어색하지 않고 의도한 것처럼 보인다(회전 메시가 없으므로).
+   [dx,dy,dz,s] — s 는 한 변의 반. spin:false 면 안 돌린다. */
 var ITEMS={
-  reverse:{name:'리버스캡슐', icon:'🌀', dur:12, desc:'폭발이 밀어내는 대신 끌어당긴다'},
-  power:  {name:'과충전',     icon:'💥', dur:12, desc:'폭발 위력·반경이 커진다'},
-  drum:   {name:'드럼 탄창',  icon:'🥁', dur:15, desc:'탄창 즉시 충전 + 재장전 3배'},
-  feather:{name:'깃털',       icon:'🪶', dur:15, desc:'더 멀리 날지만 더 잘 날아간다'},
-  anchor: {name:'닻',         icon:'⚓', dur:10, desc:'밀려나지 않는다(로켓점프도 약해진다)'},
-  pulse:  {name:'펄스',       icon:'⚡', dur:0, charges:1, desc:'F — 내 주위로 대형 폭발'}
+  reverse:{name:'리버스캡슐', icon:'🌀', dur:12, col:'#b07bff',
+    desc:'폭발이 밀어내는 대신 끌어당긴다',
+    glyph:[[0,0,0,.055],[.17,.02,0,.05],[0,-.02,.17,.05],[-.17,.02,0,.05],[0,-.02,-.17,.05]]},
+  power:  {name:'과충전',     icon:'💥', dur:12, col:'#ff7a3a',
+    desc:'폭발 위력·반경이 커진다',
+    glyph:[[0,0,0,.085],[.19,0,0,.045],[-.19,0,0,.045],[0,0,.19,.045],[0,0,-.19,.045],[0,.19,0,.045]]},
+  drum:   {name:'드럼 탄창',  icon:'🥁', dur:15, col:'#ffd23a',
+    desc:'탄창 즉시 충전 + 재장전 3배', spin:false,
+    glyph:[[0,0,0,.15,.075,.15],[0,.11,0,.16,.02,.16],[0,-.11,0,.16,.02,.16]]},
+  feather:{name:'깃털',       icon:'🪶', dur:15, col:'#7ce0ff',
+    desc:'더 멀리 날지만 더 잘 날아간다 · 공중에서 1초 글라이딩 1회',
+    glyph:[[0,.15,0,.04],[.05,.06,0,.05],[.1,-.04,0,.055],[.15,-.14,0,.045]]},
+  anchor: {name:'닻',         icon:'⚓', dur:10, col:'#8fd67a',
+    desc:'밀려나지 않는다(로켓점프도 약해진다)', spin:false,
+    glyph:[[0,.04,0,.035,.16,.035],[0,.17,0,.1,.03,.03],[-.12,-.13,0,.05],[.12,-.13,0,.05]]},
+  pulse:  {name:'펄스',       icon:'⚡', dur:0, charges:1, col:'#ff4d7d',
+    desc:'F — 내 주위로 대형 폭발', spin:false,
+    glyph:[[.07,.16,0,.055],[0,.05,0,.055],[-.06,-.05,0,.055],[.02,-.16,0,.055]]}
 };
 var ITEM_IDS=Object.keys(ITEMS);
 var IT_POWER_F=1.8, IT_POWER_R=1.25;   // 과충전 배율(위력/반경)
 var IT_DRUM=3;                          // 드럼 탄창 재장전 배속
 var IT_FEATHER_KB=1.7, IT_FEATHER_G=0.6;
+var GLIDE_T=1.0, GLIDE_FALL=1.4, GLIDE_G=0.15;   // 글라이딩 시간/최대낙하속도/중력배
 var IT_ANCHOR_KB=0.35;
 var IT_PULSE_F=2.0, IT_PULSE_R=1.6;
-var PAD_R=1.25, PAD_CD=12;              // 패드 반경(m) / 재생성 대기(초)
+/* 원판 반지름은 플레이어 반지름과 같다 → 지름 0.7m = 캐릭터 지름.
+   집는 판정은 '몸이 원판에 닿으면'이라 거기에 몸 반지름을 더한다. */
+var PAD_VIS_R=PH_HX, PAD_R=PH_HX*2, PAD_CD=12;
+function randItem(){ return ITEM_IDS[Math.floor(Math.random()*ITEM_IDS.length)]; }
 function buildPads(){
   PADS.length=0;
   var L=LEVEL&&LEVEL.pads; if(!L) return;
-  for(var i=0;i<L.length;i++) PADS.push({x:L[i].x, y:L[i].y, z:L[i].z, cd:0});
+  // 일단 로컬로 채워 둔다. 멀티면 서버가 padset 으로 덮어써서 전원이 같은 걸 본다.
+  for(var i=0;i<L.length;i++) PADS.push({x:L[i].x, y:L[i].y, z:L[i].z, cd:0, item:randItem()});
 }
 /* 패드를 밟았다. 멀티에서는 서버가 중재한다 — 둘이 동시에 밟으면 먼저 도착한
    쪽만 받는다. 클라가 아이템을 제안하고 서버는 '누가 먼저인가'만 판정한다
    (아이템 표를 서버에도 복사해 두면 둘이 어긋나기 시작한다). */
 function claimPad(i){
-  var item=ITEM_IDS[Math.floor(Math.random()*ITEM_IDS.length)];
+  var item=PADS[i].item;
   PADS[i].cd=PAD_CD;                     // 거절당해도 어차피 쿨다운이라 미리 잠근다
-  if(MP.connected) mpSend({t:'pick', pad:i, item:item});
-  else grantItem(MP.id, i, item);
+  // 멀티에서는 '패드에 뭐가 들었는지'를 서버가 쥐고 있다 — 보이는 것과 받는 것이
+  // 어긋나면 안 되므로 여기서 제안하지 않는다. 서버가 pad 로 알려준다.
+  if(MP.connected) mpSend({t:'pick', pad:i});
+  else { grantItem(MP.id, i, item); PADS[i].item=randItem(); }   // 솔로는 로컬로 다음 것 채움
 }
 function grantItem(who, padI, item){
   var def=ITEMS[item]; if(!def) return;
@@ -663,7 +687,9 @@ function grantItem(who, padI, item){
   var mine=(who===MP.id) || (MP.id==null && who==null) || (MP.id==null && who===-1);
   if(mine && sim){
     if(def.charges) sim.charges[item]=(sim.charges[item]||0)+def.charges;
-    else { sim.items[item]=def.dur; if(item==='drum') sim.ammo=AMMO_MAX; }
+    else { sim.items[item]=def.dur;
+      if(item==='drum') sim.ammo=AMMO_MAX;
+      if(item==='feather') sim.glideLeft=1; }   // 깃털 1개당 글라이딩 1회
     tone(880,0.09,'triangle',0.10,1320);
   }
   pushChat('', def.icon+' '+(mine?'내가':nameOf(who))+' — '+def.name, false, true);
@@ -827,11 +853,26 @@ function stepSim(s, dt, inp){
   }
   // 발밑을 먼저 쏜 뒤에 누른 점프 — 폭발 속도에 "더한다"(대입하면 폭발이 지워진다).
   // 이걸로 점프→사격과 사격→점프가 같은 높이가 된다.
+  /* 깃털 글라이딩 — 공중에서 한 번 더 누르면 1초간 천천히 떠서 내려온다.
+     깃털은 원래 '잘 날지만 잘 날아간다'는 양날이었는데, 날아간 뒤 손쓸 방법이
+     없어 순수 손해로 느껴질 때가 있었다. 이 1초가 복귀 수단이 된다. */
+  else if(inp.jump && !s.onGround && (s.glideLeft||0)>0 && s.items && s.items.feather){
+    s.glideLeft--; s.glide=GLIDE_T; s.jumped=true;
+    if(s.v.y<0) s.v.y*=0.25;                 // 낙하 중이었으면 일단 받아준다
+    tone(1200,0.18,'sine',0.07,700);
+  }
   else if(inp.jump && s.bjGrace>0){
     s.v.y+=JUMPV; s.bjGrace=0; s.jumped=true; sndJump();
   }
   // 중력
-  s.v.y-=GRAV*((s.items&&s.items.feather)?IT_FEATHER_G:1)*dt; if(s.v.y<-40)s.v.y=-40;
+  if(s.glide>0){
+    s.glide-=dt;
+    s.v.y-=GRAV*GLIDE_G*dt;
+    if(s.v.y<-GLIDE_FALL) s.v.y=-GLIDE_FALL;   // 최대 낙하속도를 묶어 '떠 있는' 느낌을 만든다
+  } else {
+    s.v.y-=GRAV*((s.items&&s.items.feather)?IT_FEATHER_G:1)*dt;
+  }
+  if(s.v.y<-40)s.v.y=-40;
   // 이동 + 충돌(축별)
   s.onGround=false;
   moveAxis(s,'x',s.v.x*dt); moveAxis(s,'z',s.v.z*dt); moveAxis(s,'y',s.v.y*dt);
@@ -1166,6 +1207,33 @@ function quadGL(v,c,outline){
       LINE.push(a[0],a[1],a[2],e[0],e[1],e[2], b[0],b[1],b[2],e[0],e[1],e[2]); } }
 }
 // 빌보드 1개: 중심/반지름/색+알파
+/* 위를 보는 원판 — 아이템 패드용. quadGL 은 사각형만 받으므로 삼각형 부채꼴로 직접 깐다.
+   CCW(위에서 볼 때)로 감아야 백페이스 컬링에 안 잘린다. */
+function discGL(cx,cy,cz,r,col,bright){
+  var base=hexRGB(col), c=[base[0]*bright, base[1]*bright, base[2]*bright];
+  var N=18, prev=null, first=null;
+  for(var i=0;i<=N;i++){
+    var a=i/N*Math.PI*2, p=[cx+Math.cos(a)*r, cy, cz-Math.sin(a)*r];
+    if(prev){ triPush([cx,cy,cz],c); triPush(prev,c); triPush(p,c);
+      LINE.push(prev[0],prev[1],prev[2],0,0,0, p[0],p[1],p[2],0,0,0); }
+    else first=p;
+    prev=p;
+  }
+}
+/* 패드 위에 떠 있는 아이템 표식 — 작은 큐브 몇 개를 Y축으로 돌린다.
+   회전 메시가 없어 큐브 자체는 축 정렬이지만, 작아서 궤도만 보인다. */
+function drawGlyph(def, x, y, z, ang, bright){
+  var g=def.glyph; if(!g) return;
+  var col=hexRGB(def.col), lit='#'+[0,1,2].map(function(i){
+    return ('0'+Math.round(Math.min(255,col[i]*255*bright)).toString(16)).slice(-2); }).join('');
+  var ca=Math.cos(ang), sa=Math.sin(ang);
+  for(var i=0;i<g.length;i++){
+    var e=g[i];
+    var hx=e[3], hy=(e.length>4?e[4]:e[3]), hz=(e.length>5?e[5]:e[3]);
+    var dx=e[0]*ca - e[2]*sa, dz=e[0]*sa + e[2]*ca;
+    meshGL(boxFaces({cx:x+dx, cy:y+e[1], cz:z+dz, hx:hx, hy:hy, hz:hz}), lit, true);
+  }
+}
 function bbPush(x,y,z,size,r,g,b,a){
   var q=[[-1,-1],[1,-1],[1,1],[-1,-1],[1,1],[-1,1]];
   for(var i=0;i<6;i++) BB.push(x,y,z, q[i][0],q[i][1], r,g,b,a, size);
@@ -1207,12 +1275,17 @@ function render(){
   // 협동 관문 표식(한계 기둥·가장자리 테두리). 순수 장식이라 충돌·광선 훑기에는 없다.
   for(var mi=0;mi<MARKS.length;mi++) meshGL(boxFaces(MARKS[mi]), MARKS[mi].col, true);
   /* 아이템 패드 — 충돌 박스가 아니라 그리기만 한다(LEVEL.boxes 에 넣으면 밟고 올라서게 된다).
-     준비되면 밝은 청록 + 위에 뜬 표식, 쿨다운이면 어둡게 죽여 멀리서도 구분된다. */
+     들어 있는 아이템이 표식으로 그대로 보인다: 뭘 주우러 갈지 보고 판단하게 하려는 것.
+     쿨다운 중에는 원판도 표식도 어둡게 죽여 멀리서 한눈에 구분된다. */
+  var padT=performance.now()*0.001;
   for(var pdi=0;pdi<PADS.length;pdi++){ var pd=PADS[pdi], rdy=pd.cd<=0;
-    meshGL(boxFaces({cx:pd.x, cy:pd.y+0.04, cz:pd.z, hx:PAD_R*0.85, hy:0.05, hz:PAD_R*0.85}),
-      rdy?'#3fe0b4':'#33445c', true);
-    if(rdy){ var bob=0.55+Math.sin(performance.now()*0.004+pdi)*0.12;
-      bbPush(pd.x, pd.y+bob, pd.z, 0.28, 0.45,1.0,0.85, 0.85); }
+    var def=ITEMS[pd.item];
+    discGL(pd.x, pd.y+0.035, pd.z, PAD_VIS_R, rdy?(def?def.col:'#3fe0b4'):'#2b3a4e', rdy?1:0.45);
+    if(def){
+      var bob=0.62+Math.sin(padT*2.2+pdi)*0.07;
+      var ang=(def.spin===false)?0:padT*1.4+pdi;
+      drawGlyph(def, pd.x, pd.y+bob, pd.z, ang, rdy?1:0.4);
+    }
   }
   // 원격 플레이어 — 보간된 위치
   var pnow=performance.now();
@@ -1466,7 +1539,7 @@ function roundStart(){
     sim.blasts.length=0; sim.projectiles.length=0; sim.particles.length=0;
     sim.ammo=AMMO_MAX; sim.ammoT=0; sim.onGround=false;
     sim.kb=0; sim.recoil=0; sim.shake=0; sim.aim=0; sim.aimHold=false; sim._fireCd=0;
-    sim.items={}; sim.charges={};        // 아이템은 라운드를 못 넘긴다
+    sim.items={}; sim.charges={}; sim.glide=0; sim.glideLeft=0;   // 아이템은 라운드를 못 넘긴다
     lastFell=sim.fell||0;                     // 리셋 중의 낙하는 신고하지 않는다
   }
   roundBanner('');
@@ -1613,6 +1686,8 @@ function mpHandle(m){
   else if(m.t==='fell'){ scoreFall(m.id); }
   // 아이템 패드 — 서버가 '누가 먼저 밟았나'를 판정해 되돌려 준다(본인 포함)
   else if(m.t==='pad'){ grantItem(m.id, m.pad, m.item); }
+  // 패드에 새로 채워진 내용물 — 전원이 같은 표식을 보게 서버가 정한다
+  else if(m.t==='padset'){ if(PADS[m.pad] && ITEMS[m.item]) PADS[m.pad].item=m.item; }
   else if(m.t==='lvl'){ if(m.level && m.level!==CURLEVEL && setLevel(m.level)){
       syncMapPickers(); applyLevelToPractice(); } }
   else if(m.t==='st'){ if(m.id===MP.id)return; var pe=MP.peers[m.id]||(MP.peers[m.id]={buf:[]});
@@ -1810,7 +1885,9 @@ function doJoin(){ ensureAudio();
 }
 document.getElementById('lobbyStartBtn').addEventListener('click',function(){
   if(!mpIsHost()||MP.players.length<2)return; mpSend({t:'gm', mode:GAMEMODE});
-  mpSend({t:'start', level:CURLEVEL}); startGame(CURLEVEL); });
+  // 패드 개수는 맵마다 다르다 — 서버가 내용물을 채우려면 몇 개인지 알아야 한다
+  mpSend({t:'start', level:CURLEVEL, pads:(LEVEL.pads||[]).length});
+  startGame(CURLEVEL); });
 document.getElementById('lobbyLeaveBtn').addEventListener('click',function(){ mpDisconnect(); showScreen('title'); });
 document.getElementById('copyCode').addEventListener('click',function(e){ e.preventDefault(); var c=MP.room||'';
   if(navigator.clipboard&&navigator.clipboard.writeText){ navigator.clipboard.writeText(c).then(function(){ e.target.textContent='복사됨!';
@@ -1871,7 +1948,10 @@ var DBG_SPEC=[
   ['화면 반경 상한',0.05,1.5, 0.05, function(){return LENS_MAXSCR;},   function(v){LENS_MAXSCR=v;}],
   ['변위 상한',     0,   0.6, 0.01, function(){return LENS_KMAX;},     function(v){LENS_KMAX=v;}],
   ['sec','아이템'],
-  ['패드 반경',      0.4, 4,   0.05, function(){return PAD_R;},        function(v){PAD_R=v;}],
+  ['패드 판정 반경',  0.2, 3,   0.05, function(){return PAD_R;},      function(v){PAD_R=v;}],
+  ['패드 원판 반경',  0.1, 2,   0.05, function(){return PAD_VIS_R;},  function(v){PAD_VIS_R=v;}],
+  ['글라이딩 시간',   0,   4,   0.1,  function(){return GLIDE_T;},    function(v){GLIDE_T=v;}],
+  ['글라이딩 낙하속도',0,  6,   0.1,  function(){return GLIDE_FALL;}, function(v){GLIDE_FALL=v;}],
   ['패드 쿨다운(초)',1,   60,  1,    function(){return PAD_CD;},       function(v){PAD_CD=v;}],
   ['과충전 위력배',  1,   4,   0.05, function(){return IT_POWER_F;},   function(v){IT_POWER_F=v;}],
   ['과충전 반경배',  1,   3,   0.05, function(){return IT_POWER_R;},   function(v){IT_POWER_R=v;}],
@@ -2203,6 +2283,7 @@ window.__peng={ makeSim:makeSim, stepSim:stepSim, doFire:doFire,
   get sim(){ return sim; }, get MP(){ return MP; },   // 실시간 검증용(멀티 상호작용 확인)
   // 중력 렌즈 검증용: 이번 프레임에 실제로 화면을 휘게 한 왜곡원 목록
   get lenses(){ return lensList; }, get round(){ return ROUND; },
+  get pads(){ return PADS; }, get items(){ return ITEMS; },   // 아이템 패드 검증용
   // 프레임 강제 실행 — 검증 환경(탭이 숨겨진 상태)에선 rAF 가 멈춰 렌더가 안 돈다
   frame:function(now){ loop(now!=null?now:performance.now()); },
   // 협동 기믹 검증용 — 리프트 샷(방사형 vs 순수 상승)과 연동 압력판의 켜짐 상태
