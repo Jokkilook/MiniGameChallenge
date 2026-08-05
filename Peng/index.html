@@ -19,7 +19,10 @@
     font-family:"Pretendard","Inter","Segoe UI","Malgun Gothic",sans-serif;font-weight:600;
     -webkit-font-smoothing:antialiased;-webkit-user-select:none;user-select:none}
   #wrap{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:#04060a}
-  canvas{display:block;cursor:none}
+  /* 커서는 '마우스가 잠긴 동안'에만 숨긴다. 예전엔 캔버스에 항상 cursor:none 이라
+     ESC 로 락이 풀려도 커서가 계속 안 보였다 — 일시정지 메뉴를 눈으로 찾을 수가 없다. */
+  canvas{display:block}
+  canvas.locked{cursor:none}
   #hud{position:fixed;inset:0;pointer-events:none;z-index:5}
   #crosshair{position:absolute;left:50%;top:50%;width:18px;height:18px;transform:translate(-50%,-50%);opacity:.9}
   /* 라운드 배너 — 중앙 상단. 조준선을 가리지 않게 위쪽에 둔다 */
@@ -447,11 +450,12 @@ function buildCollapseFloor(){
       var m=PP[pc.t]; if(!m) return;
       var bs=pieceBoxes(m, pc.t), r=pc.rot&3;
       var po=PIECE_OFF[pc.t], pox=po?po[0]:0, poz=po?po[1]:0;
+      var ps=PIECE_SCALE[pc.t]||1;
       for(var q=0;q<bs.length;q++){
-        var b=bs[q], x=b.cx+pox, z=b.cz+poz, hx=b.hx, hz=b.hz;
+        var b=bs[q], x=(b.cx+pox)*ps, z=(b.cz+poz)*ps, hx=b.hx*ps, hz=b.hz*ps;
         for(var t=0;t<r;t++){ var tx=z; z=-x; x=tx; var th=hz; hz=hx; hx=th; }
-        LEVEL.boxes.push({ cx:(pc.i+x)*U, cy:(pc.y+b.cy)*U, cz:(pc.j+z)*U,
-          hx:hx*U, hy:b.hy*U, hz:hz*U,
+        LEVEL.boxes.push({ cx:(pc.i+x)*U, cy:(pc.y+b.cy*ps)*U, cz:(pc.j+z)*U,
+          hx:hx*U, hy:b.hy*ps*U, hz:hz*U,
           col:C.col, _tile:true, _ring:pc.order, _col0:C.col,
           _hide:true });        // 보이는 건 킷 조각 쪽이다 — 이건 충돌 전용
       }
@@ -1648,6 +1652,11 @@ var PIECE_SOLID={ 'rail':1 };
    그냥 놓으면 벽과 0.25 만큼 어긋나 틈이 벌어진다. 두께는 둘 다 0.3 으로 같으므로
    (-0.25,-0.25) 옮기면 팔이 이웃 벽의 슬래브와 정확히 한 줄이 된다. */
 var PIECE_OFF={ 'wall-corner':[-0.25,-0.25] };
+/* 코너는 팔이 0.8 인데 필요한 길이는 0.65 라, 정렬하면 이웃 벽과 0.15(=0.44m) 겹친다.
+   길이를 줄이면 반대로 틈이 벌어지므로 겹침은 그대로 두되, 조각을 3% 줄여
+   옆면이 벽면보다 안쪽(4.5mm)에 오게 한다 — 같은 평면이 사라져 깜박임이 없어지고,
+   겹침이 남아 있어 틈도 안 생긴다. */
+var PIECE_SCALE={ 'wall-corner':0.97 };
 var RAIL_SOLID=1;                      // 0 이면 난간을 장식으로(통과) 되돌린다
 function pieceBoxes(m, name){
   if(m._boxes) return m._boxes;
@@ -1736,8 +1745,9 @@ function buildStation(pieces){
     var m=P[pc.t]; if(!m) continue;
     var r=pc.rot&3, ox=pc.i*S, oy=pc.y*S, oz=pc.j*S;
     var off=PIECE_OFF[pc.t], offx=off?off[0]:0, offz=off?off[1]:0;
+    var psc=PIECE_SCALE[pc.t]||1;
     for(var k=0;k<m.idx.length;k++){
-      var v=m.idx[k], x=(m.pos[v*3]+offx)*S, y=m.pos[v*3+1]*S, z=(m.pos[v*3+2]+offz)*S;
+      var v=m.idx[k], x=(m.pos[v*3]+offx)*psc*S, y=m.pos[v*3+1]*psc*S, z=(m.pos[v*3+2]+offz)*psc*S;
       var nx=m.nrm?m.nrm[v*3]:0, ny=m.nrm?m.nrm[v*3+1]:1, nz=m.nrm?m.nrm[v*3+2]:0;
       for(var t=0;t<r;t++){ var tx=z; z=-x; x=tx; var tn=nz; nz=-nx; nx=tn; }
       var sh=0.62+0.38*Math.max(0,(nx*L[0]+ny*L[1]+nz*L[2])/ll);
@@ -2891,6 +2901,7 @@ window.addEventListener('mouseup',function(e){ if(e.button===2 && sim) sim.aimHo
 window.addEventListener('blur',function(){ if(sim) sim.aimHold=false; });
 document.addEventListener('pointerlockchange',function(){
   locked=(document.pointerLockElement===cv);
+  cv.classList.toggle('locked', locked);        // 풀리는 즉시 커서가 보이게
   // 채팅을 열려고 푼 게 아니라면 락이 풀린 것 = ESC 를 눌렀다는 뜻
   if(!locked && mode==='play' && !chatting) openPause();
 });
