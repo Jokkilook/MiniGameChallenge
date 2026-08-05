@@ -142,23 +142,71 @@ function sampleBilinear(img,u,v,out){
 /* ---------- 조립 ---------- */
 var M=null;   // {pos, col, nrm(용접된 평균 법선), idx, n, tris}
 
+/* 4x4 곱(열 우선) — 노드 계층을 따라 변환을 누적하는 데 쓴다 */
+function mmul(a,b){ var o=new Array(16);
+  for(var c=0;c<4;c++)for(var r=0;r<4;r++){ var s2=0;
+    for(var k=0;k<4;k++) s2+=a[k*4+r]*b[c*4+k]; o[c*4+r]=s2; }
+  return o; }
+/* 장면의 모든 메시 노드를 하나로 합친다.
+   블로키 캐릭터처럼 머리·몸통·팔·다리가 노드로 쪼개진 모델은 첫 노드만 읽으면
+   몸통 한 조각만 나온다. 노드 계층을 훑어 변환을 누적한 뒤 이어 붙인다.
+   (애니메이션은 쓰지 않으므로 기본 포즈 그대로 굳는다.) */
+function collectPrims(json){
+  var out=[], nodes=json.nodes||[];
+  var roots=(json.scenes&&json.scenes[json.scene||0]&&json.scenes[json.scene||0].nodes) || null;
+  if(!roots){ roots=[]; for(var i=0;i<nodes.length;i++) roots.push(i); }
+  function walk(idx, parent){
+    var nd=nodes[idx]; if(!nd) return;
+    var WM=mmul(parent, nodeMatrix(nd));
+    if(nd.mesh!=null){
+      var me=json.meshes[nd.mesh];
+      for(var q=0;q<me.primitives.length;q++){
+        var pm=me.primitives[q];
+        if((pm.mode==null||pm.mode===4) && pm.attributes && pm.attributes.POSITION!=null)
+          out.push({prim:pm, m:WM});
+      }
+    }
+    if(nd.children) for(var c=0;c<nd.children.length;c++) walk(nd.children[c], WM);
+  }
+  var I4=[1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1];
+  for(var r=0;r<roots.length;r++) walk(roots[r], I4);
+  return out;
+}
 function build(g, img){
   var json=g.json;
-  var mesh=json.meshes[0], prim=null;
-  for(var i=0;i<mesh.primitives.length;i++){
-    var p=mesh.primitives[i];
-    if((p.mode==null||p.mode===4) && p.attributes && p.attributes.POSITION!=null){ prim=p; break; }
+  var parts=collectPrims(json);
+  if(!parts.length) throw new Error('삼각형 프리미티브가 없음');
+  /* 여러 조각을 하나의 정점 배열로 이어 붙인다. 스킨드 메시는 노드 변환을 무시해야
+     하므로(glTF 규약) 그 경우엔 첫 조각만 단위행렬로 쓴다. */
+  var skinned = (json.skins && json.skins.length) ? true : false;
+  var P=[], N=[], T=[], IDX=[], vbase=0;
+  for(var pi=0; pi<parts.length; pi++){
+    // 지역 이름을 M 으로 두면 모듈 전역 M(구운 메시)을 가려서, 아래 M={...} 가
+    // 지역 변수에 들어가 버린다(var 호이스팅). 이름을 다르게 쓴다.
+    var prim=parts[pi].prim, NM=skinned ? null : parts[pi].m;
+    var pp=readAccessor(g, prim.attributes.POSITION);
+    var nn=prim.attributes.NORMAL!=null ? readAccessor(g, prim.attributes.NORMAL) : null;
+    var tt=prim.attributes.TEXCOORD_0!=null ? readAccessor(g, prim.attributes.TEXCOORD_0) : null;
+    var ii=prim.indices!=null ? readAccessor(g, prim.indices) : null;
+    var cnt=pp.length/3;
+    for(var v=0; v<cnt; v++){
+      var q = NM ? xformPoint(NM, pp[v*3], pp[v*3+1], pp[v*3+2]) : [pp[v*3],pp[v*3+1],pp[v*3+2]];
+      P.push(q[0],q[1],q[2]);
+      if(nn){ var d = NM ? xformDir(NM, nn[v*3], nn[v*3+1], nn[v*3+2]) : [nn[v*3],nn[v*3+1],nn[v*3+2]];
+        N.push(d[0],d[1],d[2]); } else N.push(0,1,0);
+      if(tt) T.push(tt[v*2], tt[v*2+1]); else T.push(0,0);
+    }
+    if(ii) for(var k=0;k<ii.length;k++) IDX.push(ii[k]+vbase);
+    else   for(var k2=0;k2<cnt;k2++) IDX.push(k2+vbase);
+    vbase+=cnt;
+    if(skinned) break;                      // 스킨드는 첫 조각이 곧 전체다
   }
-  if(!prim) throw new Error('삼각형 프리미티브가 없음');
-
-  var P=readAccessor(g, prim.attributes.POSITION);
-  var N=prim.attributes.NORMAL!=null ? readAccessor(g, prim.attributes.NORMAL) : null;
-  var T=prim.attributes.TEXCOORD_0!=null ? readAccessor(g, prim.attributes.TEXCOORD_0) : null;
-  var IDX=prim.indices!=null ? readAccessor(g, prim.indices) : null;
+  N=N.length?N:null; T=T.length?T:null;
   var n=P.length/3;
   if(n>65535) throw new Error('정점이 65535 개를 넘음(uint16 인덱스 불가): '+n);
 
-  var nm=nodeMatrix(findMeshNode(json));
+  // 위에서 노드 변환을 이미 적용했다 — 여기서 또 곱하면 이중 변환이 된다
+  var nm=[1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1];
   var pos=new Float32Array(n*3), rawN=new Float32Array(n*3);
   var mn=[1e9,1e9,1e9], mx=[-1e9,-1e9,-1e9];
   for(var v=0;v<n;v++){

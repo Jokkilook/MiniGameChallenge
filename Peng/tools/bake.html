@@ -94,7 +94,9 @@ document.getElementById('go').addEventListener('click', function(){
   var url=document.getElementById('url').value.trim();
   var tgt=document.getElementById('target').value;
   // 축 매핑은 굽기 전에 정해야 한다 — 정점 좌표에 그대로 구워지기 때문
-  GunMesh.axes = (tgt==='bullet') ? 'bullet' : ((tgt==='player') ? 'station' : 'kenney');
+  /* 캐릭터 축: Kenney 블로키 캐릭터는 glTF 규약대로 -Z 를 본다(leg-left/arm-left 가 +X).
+     게임은 +Z 전방이라 Z 를 뒤집는 'kenney' 매핑을 쓴다. */
+  GunMesh.axes = (tgt==='bullet') ? 'bullet' : 'kenney';
   say('읽는 중: '+url+'  (축 매핑 '+GunMesh.axes+')');
   // 이미 구워진 상태로 다시 누를 수 있게 초기화
   GunMesh.ready=false; GunMesh.loading=false;
