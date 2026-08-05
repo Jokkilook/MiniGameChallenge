@@ -176,6 +176,17 @@ function padsetLines(st){
   return out;
 }
 var roomMode  = {};    // room -> 호스트가 고른 게임 모드(coop/versus)
+/* AI 봇 — 서버에는 물리도 레벨도 없으므로(순수 중계) 봇은 방장이 자기 클라이언트에서
+   돌린다. 서버가 하는 일은 '가상 참가자 슬롯'을 잡아 주고, 방장이 그 슬롯 이름으로
+   보내는 상태를 중계하는 것뿐이다. 게스트 입장에서는 사람과 구별되지 않는다. */
+var roomBots = {};     // room -> [{id, name, owner}]
+var nextBotId = 100000;   // 사람 id(1부터)와 절대 겹치지 않게 멀리 띄운다
+function botsOf(room){ return roomBots[room] || (roomBots[room] = []); }
+function ownsBot(room, ownerId, botId){
+  var b = botsOf(room);
+  for(var i=0;i<b.length;i++) if(b[i].id === botId && b[i].owner === ownerId) return b[i];
+  return null;
+}
 var nextId = 1;
 
 function roomOf(url){ var m = /[?&]room=([^&]+)/.exec(url || ''); return m ? decodeURIComponent(m[1]).slice(0,40) : 'lobby'; }
@@ -223,7 +234,13 @@ server.on('upgrade', function(req, socket){
     if(closed) return; closed = true;
     var r = rooms[room]; if(r){ delete r[id];
       broadcast(room, id, JSON.stringify({ t:'left', id:id }));
-      if(Object.keys(r).length === 0){ delete rooms[room]; delete roomLevel[room]; delete roomMode[room]; delete roomPads[room]; } else sendRoster(room);
+      var mine = botsOf(room).filter(function(b){ return b.owner === id; });
+      if(mine.length){
+        roomBots[room] = botsOf(room).filter(function(b){ return b.owner !== id; });
+        mine.forEach(function(b){ broadcast(room, id, JSON.stringify({ t:'left', id:b.id })); });
+      }
+      if(Object.keys(r).length === 0){ delete rooms[room]; delete roomLevel[room];
+        delete roomMode[room]; delete roomPads[room]; delete roomBots[room]; } else sendRoster(room);
     }
     try{ socket.destroy(); }catch(e){}
     log('left', 'room='+room, 'id='+id);
@@ -306,12 +323,40 @@ server.on('upgrade', function(req, socket){
       broadcast(room, id, nline); send(socket, nline);
       return;
     }
-    if(m.t === 'fell'){         // 아레나 밖으로 떨어짐 — 떨어진 본인이 알린다
-      broadcast(room, id, JSON.stringify({ t:'fell', id:id }));
+    if(m.t === 'bot'){          // AI 참가자 추가/제거 — 방장만
+      if(id !== hostOf(room)) return;
+      var list = botsOf(room);
+      if(m.add){
+        if(list.length >= 6) return;                 // 한 방에 봇 6까지
+        list.push({ id: nextBotId++, name: 'AI ' + (list.length + 1), owner: id });
+      } else {
+        var gone = list.pop();
+        if(gone) broadcast(room, -1, JSON.stringify({ t:'left', id:gone.id }));
+      }
+      sendRoster(room);
       return;
     }
-    if(m.t === 'st'){  m.id = id; m.name = client.name; broadcast(room, id, JSON.stringify(m)); return; }
-    if(m.t === 'bl'){  m.id = id; broadcast(room, id, JSON.stringify(m)); return; }
+    if(m.t === 'fell'){         // 아레나 밖으로 떨어짐 — 떨어진 본인이 알린다
+      var who = id;
+      if(m.bot != null){ var mb = ownsBot(room, id, m.bot|0); if(!mb) return; who = mb.id; }
+      broadcast(room, id, JSON.stringify({ t:'fell', id:who }));
+      // 봇의 낙하는 방장 화면에서도 점수에 반영돼야 한다(자기 신고는 안 되돌아온다)
+      if(m.bot != null) send(socket, JSON.stringify({ t:'fell', id:who }));
+      return;
+    }
+    /* st·bl 은 원래 보낸 사람 id 로 덮어쓴다(남을 사칭하지 못하게). 봇은 예외로,
+       'bot' 필드가 있고 그 봇을 이 연결이 소유할 때만 봇 id 로 바꿔 중계한다. */
+    if(m.t === 'st' || m.t === 'bl'){
+      if(m.bot != null){
+        var ob = ownsBot(room, id, m.bot|0); if(!ob) return;
+        m.id = ob.id; if(m.t === 'st') m.name = ob.name;
+        delete m.bot;
+      } else {
+        m.id = id; if(m.t === 'st') m.name = client.name;
+      }
+      broadcast(room, id, JSON.stringify(m));
+      return;
+    }
   }
 });
 
@@ -327,6 +372,7 @@ function sendRoster(room, onlySocket){
   var r = rooms[room]; if(!r) return;
   var ids = Object.keys(r).map(Number).sort(function(a,b){ return a-b; });
   var players = ids.map(function(id){ return { id:id, name:r[id].name }; });
+  botsOf(room).forEach(function(b){ players.push({ id:b.id, name:b.name, bot:true }); });
   var msg = JSON.stringify({ t:'roster', players:players, host: ids[0] });
   if(onlySocket){ send(onlySocket, msg); return; }
   ids.forEach(function(id){ send(r[id].socket, msg); });

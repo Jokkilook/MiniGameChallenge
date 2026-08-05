@@ -262,6 +262,10 @@
   <label class="pick">내 색 <input type="color" id="colSel" /></label>
   <p class="hint" id="lobbyHint">친구가 들어오면 시작할 수 있어요.</p>
   <div class="menu row">
+    <button class="go alt" id="botAddBtn">+ AI 추가</button>
+    <button class="go alt" id="botDelBtn">− AI</button>
+  </div>
+  <div class="menu row">
     <button class="go" id="lobbyStartBtn" disabled>게임 시작</button>
     <button class="go alt" id="lobbyLeaveBtn">나가기</button>
   </div>
@@ -684,6 +688,157 @@ function aimRay(s){
   if(!(L>1e-4)) return {o:o, d:f, aimD:0};
   return {o:o, d:{x:dx/L, y:dy/L, z:dz/L}, aimD:L};
 }
+/* ---------- AI 봇 ----------
+   서버는 순수 중계라 물리도 레벨도 없다. 그래서 봇은 '방장의 클라이언트'가 돌리고,
+   서버는 가상 참가자 슬롯만 잡아 준다. 게스트 입장에서는 사람과 구별되지 않는다.
+   봇도 사람과 똑같이 stepSim 을 돌린다 — 별도 물리를 만들면 반드시 어긋난다. */
+var BOTS=[];                 // [{id, name, sim, ...}] — 방장만 채운다
+var BOT_FIRE_CD=0.55;        // 사격 간격(사람보다 느리게 — 완벽하면 재미없다)
+var BOT_AIM_ERR=0.10;        // 조준 오차(rad)
+var BOT_RANGE=13;            // 이 거리 안이면 쏜다
+var BOT_EDGE=2.2;            // 이만큼 앞에 바닥이 없으면 물러난다
+/* 발밑에 설 곳이 있는지 — 봇이 스스로 떨어지지 않게 하는 가장 중요한 판정.
+   이게 없으면 봇은 상대를 쫓다가 그대로 낭떠러지로 걸어 들어간다. */
+function groundAt(x, z, y){
+  for(var i=0;i<LEVEL.boxes.length;i++){ var b=LEVEL.boxes[i];
+    if(!boxSolid(b)) continue;
+    if(Math.abs(x-b.cx)>b.hx+0.2 || Math.abs(z-b.cz)>b.hz+0.2) continue;
+    var top=b.cy+b.hy;
+    if(top<=y+1.2 && top>y-6) return top;      // 걸어 내려갈 수 있는 범위
+  }
+  return null;
+}
+function botTarget(bs){
+  var best=null, bd=1e9;
+  // 사람
+  var now=(typeof performance!=='undefined')?performance.now():0;
+  for(var id in MP.peers){ var ps=peerSample(MP.peers[id], now); if(!ps) continue;
+    if(BOTS.some(function(b){ return b.id===+id; })) continue;   // 봇끼리는 서로 무시
+    var d=Math.hypot(ps.x-bs.p.x, ps.z-bs.p.z); if(d<bd){ bd=d; best={x:ps.x,y:ps.y,z:ps.z,d:d}; } }
+  // 방장 자신
+  if(sim && !sim.practice){
+    var d2=Math.hypot(sim.p.x-bs.p.x, sim.p.z-bs.p.z);
+    if(d2<bd){ bd=d2; best={x:sim.p.x, y:sim.p.y, z:sim.p.z, d:d2}; } }
+  return best;
+}
+function botThink(bot, dt){
+  FIRING_BOT=true;
+  var s=bot.sim, inp={mf:false,mb:false,ml:false,mr:false,jump:false};
+  bot.cd=Math.max(0,(bot.cd||0)-dt);
+  var tgt=botTarget(s);
+  var gx=tgt?tgt.x:0, gz=tgt?tgt.z:0;
+  var dx=gx-s.p.x, dz=gz-s.p.z, dist=Math.hypot(dx,dz)||1;
+  s.yaw=Math.atan2(dx,dz);                       // 시선은 항상 표적
+
+  /* 가고 싶은 '월드 방향'을 먼저 정하고 마지막에 입력으로 바꾼다.
+     예전엔 정면만 짚어 봐서 옆걸음(strafe) 중에는 낭떠러지를 그대로 밟았다 —
+     봇이 재미없어지는 가장 큰 이유가 '스스로 떨어지기'다. */
+  var toC=Math.hypot(s.p.x,s.p.z)||1;
+  var cx=-s.p.x/toC, cz=-s.p.z/toC;              // 판 가운데 쪽
+  var mx=0, mz=0;
+  if(dist>6.5){ mx=dx/dist; mz=dz/dist; }
+  else if(dist<3.0){ mx=-dx/dist; mz=-dz/dist; }
+  else {
+    if(bot.strafe==null || Math.random()<0.008) bot.strafe=Math.random()<0.5;
+    var sgn=bot.strafe?1:-1;
+    mx=-dz/dist*sgn; mz=dx/dist*sgn;             // 표적 주위를 돈다
+  }
+  /* 붕괴 대비 — 지금 서 있는 고리가 다음에 무너질 고리면 상대고 뭐고 안쪽으로 물러난다.
+     이게 없으면 봇은 표적만 보고 버티다 발밑이 통째로 사라져 그대로 떨어진다
+     (실측: 이 규칙 없이는 30초에 4번 자멸했다). */
+  var CC=LEVEL.collapse;
+  if(CC && LEVEL._maxRing!=null){
+    var myRing=Math.round(toC/CC.size);
+    if(myRing >= LEVEL._maxRing-(LEVEL._gone||0)){ mx=cx; mz=cz; }
+  }
+  // 안전 확인 — 가려는 쪽에 바닥이 없으면 가운데로 방향을 튼다
+  if(s.onGround && groundAt(s.p.x+mx*BOT_EDGE, s.p.z+mz*BOT_EDGE, s.p.y)===null){
+    if(groundAt(s.p.x+cx*BOT_EDGE, s.p.z+cz*BOT_EDGE, s.p.y)!==null){ mx=cx; mz=cz; }
+    else { mx=0; mz=0; }                          // 사방이 낭떠러지면 그냥 버틴다
+  }
+
+  /* 복귀 사격 — 떨어지는 중이거나 발밑에 아무것도 없으면 아래를 쏴 다시 뜬다.
+     공중 조작이 약하므로(0.10) 동시에 가운데 쪽으로 밀어 준다. */
+  var below = groundAt(s.p.x, s.p.z, s.p.y);
+  var 위험 = !s.onGround && (s.v.y < -4) && (below===null || s.p.y - below > 3);
+  if(위험){
+    mx=cx; mz=cz;
+    if(s.ammo>0 && bot.cd<=0){
+      s.pitch=-PITCH_LIM; doFire(s); bot.cd=BOT_FIRE_CD*0.4; botBroadcastShot(bot);
+    }
+  } else if(tgt){
+    // 조준 — 상대 발밑을 노려야 넉백이 위로 뜬다. 약간의 오차를 준다(완벽하면 재미없다).
+    var eye=s.p.y+EYE, aimY=tgt.y+0.1;
+    s.pitch=Math.atan2(aimY-eye, Math.max(0.6,tgt.d)) + (Math.random()*2-1)*BOT_AIM_ERR;
+    s.yaw += (Math.random()*2-1)*BOT_AIM_ERR;
+    if(tgt.d<BOT_RANGE && s.ammo>0 && bot.cd<=0 && ROUND.phase==='live'){
+      doFire(s); bot.cd=BOT_FIRE_CD; botBroadcastShot(bot);
+    }
+  }
+  s.pitch=Math.max(-PITCH_LIM, Math.min(PITCH_LIM, s.pitch));
+
+  // 월드 방향 → 시선 기준 입력(전후·좌우)
+  var f=Math.hypot(mx,mz);
+  if(f>1e-3){
+    var fx=Math.sin(s.yaw), fz=Math.cos(s.yaw);
+    var fwd=(mx*fx+mz*fz)/f, rgt=(mx*Math.cos(s.yaw)-mz*Math.sin(s.yaw))/f;
+    if(fwd>0.35) inp.mf=true; else if(fwd<-0.35) inp.mb=true;
+    if(rgt>0.35) inp.mr=true; else if(rgt<-0.35) inp.ml=true;
+  }
+  FIRING_BOT=false;
+  return inp;
+}
+/* doFire 는 자기 폭발을 s.blasts 에 넣고 mpSend 로 '내 id' 로 알린다.
+   봇의 사격은 봇 id 로 나가야 하므로, doFire 안의 전송을 막고 여기서 다시 보낸다. */
+var BOT_SHOT=null;
+function botBroadcastShot(bot){
+  if(!BOT_SHOT) return;
+  var m=BOT_SHOT; BOT_SHOT=null;
+  m.bot=bot.id; mpSend(m);
+}
+function botStep(dt, now){
+  if(!BOTS.length) return;
+  for(var i=0;i<BOTS.length;i++){
+    var bot=BOTS[i], s=bot.sim;
+    var frozen = (GAMEMODE==='versus' && ROUND.phase!=='live');
+    var inp = frozen ? {mf:false,mb:false,ml:false,mr:false,jump:false} : botThink(bot, dt);
+    if(!frozen) stepSim(s, Math.min(0.05,dt), inp);
+    // 떨어졌으면 방장이 대신 신고한다
+    if(GAMEMODE==='versus' && (s.fell||0)>(bot.lastFell||0) && ROUND.phase==='live'){
+      bot.lastFell=s.fell; mpSend({t:'fell', bot:bot.id}); scoreFall(bot.id);
+    }
+    // 봇 상태를 '피어'로 넣어 두면 렌더·충돌·근접신관이 전부 그대로 동작한다
+    var pe=MP.peers[bot.id] || (MP.peers[bot.id]={buf:[]});
+    pe.seen=now; pe.name=bot.name;
+    pe.buf.push({t:now, x:s.p.x, y:s.p.y, z:s.p.z, yaw:s.yaw, pitch:s.pitch, rc:s.recoil||0});
+    if(pe.buf.length>16) pe.buf.shift();
+    if(MP.connected && now-(bot.lastSend||0)>45){ bot.lastSend=now;
+      mpSend({t:'st', bot:bot.id, x:Math.round(s.p.x*1000)/1000, y:Math.round(s.p.y*1000)/1000,
+        z:Math.round(s.p.z*1000)/1000, yaw:Math.round(s.yaw*1000)/1000,
+        pitch:Math.round(s.pitch*1000)/1000, rc:Math.round((s.recoil||0)*100)/100}); }
+  }
+}
+// 봇 명단을 로스터에 맞춘다(서버가 슬롯의 주인이다)
+function syncBots(){
+  if(!mpIsHost()){ BOTS.length=0; return; }
+  var want=MP.players.filter(function(p){ return p.bot; });
+  BOTS=BOTS.filter(function(b){ return want.some(function(p){ return p.id===b.id; }); });
+  want.forEach(function(p){
+    if(BOTS.some(function(b){ return b.id===p.id; })) return;
+    var s=makeSim(); s.tp=false;
+    BOTS.push({ id:p.id, name:p.name, sim:s, cd:0, lastFell:0, lastSend:0 });
+  });
+}
+function botsRespawn(){
+  BOTS.forEach(function(b, i){
+    var sp=(LEVEL.spawns&&LEVEL.spawns.length)
+      ? LEVEL.spawns[(ROUND.n+1+i)%LEVEL.spawns.length] : LEVEL.start;
+    b.sim.p={x:sp.x,y:sp.y,z:sp.z}; b.sim.v={x:0,y:0,z:0};
+    b.sim.ammo=AMMO_MAX; b.sim.items={}; b.sim.charges={};
+    b.sim.blasts.length=0; b.sim.projectiles.length=0; b.sim.particles.length=0;
+    b.lastFell=b.sim.fell||0; b.cd=0;
+  });
+}
 /* ---------- 아이템 ----------
    패드를 밟으면 무작위로 하나가 나온다. 효과는 크게 두 갈래다.
    · '탄에 실리는 것'(reverse·power) — 내 총이 만드는 폭발의 성질이라 발사할 때
@@ -819,6 +974,14 @@ function usePulse(s){
     ox:c.x, oy:c.y, oz:c.z, pf:IT_PULSE_F, pr:IT_PULSE_R});
   return true;
 }
+/* 폭발을 '이 화면에서 돌아가는 다른 시뮬'에 먹인다 — 방장 자신과 봇들.
+   쏜 당사자는 doFire 안에서 이미 처리하므로 건너뛴다. */
+var FIRING_BOT=false;
+function applyLocalBlast(shooter, cx, cy, cz, lift, opt){
+  if(sim && sim!==shooter) applyBlast(sim, cx, cy, cz, lift, opt);
+  for(var i=0;i<BOTS.length;i++)
+    if(BOTS[i].sim!==shooter) applyBlast(BOTS[i].sim, cx, cy, cz, lift, opt);
+}
 function doFire(s){
   if(s.win || s.ammo<=0 || s._fireCd>0) return false;
   s.ammo--; s._fireCd=0.12;
@@ -844,8 +1007,14 @@ function doFire(s){
     bx:center.x, by:center.y, bz:center.z, lift:lift, rev:rev, pw:pw });
   sndShoot();
   // 팀원에게 브로드캐스트: 폭발 지점 + 총구 원점(상대 화면에서 탄환이 날아가 보이도록)
-  if(typeof mpSend==='function') mpSend({t:'bl', x:center.x, y:center.y, z:center.z,
-    ox:o.x, oy:o.y, oz:o.z, lf:lift?1:0, rv:rev?1:0, pw:pw?1:0});
+  // 같은 화면에서 도는 봇(과 방장 자신)에게도 폭발이 닿아야 한다.
+  // 원격 피어는 자기 화면에서 bl 을 받아 스스로 처리한다.
+  applyLocalBlast(s, center.x, center.y, center.z, lift, {rev:rev, pw:pw});
+  if(typeof mpSend==='function'){
+    var _bl={t:'bl', x:center.x, y:center.y, z:center.z,
+      ox:o.x, oy:o.y, oz:o.z, lf:lift?1:0, rv:rev?1:0, pw:pw?1:0};
+    if(FIRING_BOT) BOT_SHOT=_bl; else mpSend(_bl);   // 봇 사격은 봇 id 로 따로 나간다
+  }
   return true;
 }
 // 팀원이 쏜 탄환: 상대 총구에서 폭발 지점까지 날아가는 걸 보여주고, 도착 시 나에게 넉백+연출
@@ -1710,6 +1879,7 @@ function roundStart(){
     sim.items={}; sim.charges={}; sim.glide=0; sim.glideLeft=0;   // 아이템은 라운드를 못 넘긴다
     lastFell=sim.fell||0;                     // 리셋 중의 낙하는 신고하지 않는다
   }
+  botsRespawn();
   roundBanner('');
 }
 function roundEnd(fallerId){
@@ -1831,7 +2001,7 @@ function mpDisconnect(){ if(MP.ws){ try{ MP.ws.onclose=null; MP.ws.close(); }cat
 function mpSend(o){ if(MP.ws&&MP.connected){ try{ MP.ws.send(JSON.stringify(o)); }catch(e){} } }
 function mpHandle(m){
   if(m.t==='welcome'){ MP.id=m.id; }
-  else if(m.t==='roster'){
+  else if(m.t==='roster'){ setTimeout(syncBots,0);
     var before=MP.players||[], after=m.players||[];
     if(before.length){   // 첫 명단은 알리지 않음(내가 막 들어온 시점)
       after.forEach(function(p){ if(p.id!==MP.id && !before.some(function(q){return q.id===p.id;})) pushChat('','▶ '+p.name+' 님이 들어왔습니다',false,true); });
@@ -1864,7 +2034,10 @@ function mpHandle(m){
     // 스냅샷을 쌓아두고 렌더 시 보간 — 22Hz 수신을 60fps 화면에서 부드럽게
     pe.buf.push({t:pe.seen, x:m.x, y:m.y, z:m.z, yaw:m.yaw||0, pitch:m.pitch||0, rc:m.rc||0});
     if(pe.buf.length>16)pe.buf.shift(); }
-  else if(m.t==='bl'){ if(m.id===MP.id)return; if(sim&&!sim.win) spawnRemoteShot(sim,m); }
+  else if(m.t==='bl'){ if(m.id===MP.id)return;
+    if(sim&&!sim.win) spawnRemoteShot(sim,m);
+    // 방장이 돌리는 봇들도 남의 폭발에 밀려야 한다(봇 자신이 쏜 건 제외)
+    for(var _b=0;_b<BOTS.length;_b++) if(BOTS[_b].id!==m.id) spawnRemoteShot(BOTS[_b].sim, m); }
   else if(m.t==='ch'){ pushChat(m.name, m.text, m.id===MP.id); }
   else if(m.t==='left'){ delete MP.peers[m.id]; }
   mpStatus();
@@ -2009,12 +2182,19 @@ function renderLobby(){
     var d=document.createElement('span'); d.className='dot'; li.appendChild(d);
     var nm=document.createElement('span'); nm.textContent=p.name+(p.id===MP.id?' (나)':''); li.appendChild(nm);
     if(p.id===MP.host){ var tg=document.createElement('span'); tg.className='tag'; tg.textContent='HOST'; li.appendChild(tg); }
+    if(p.bot){ var bt=document.createElement('span'); bt.className='tag'; bt.textContent='AI'; li.appendChild(bt); }
     ul.appendChild(li);
   });
   var btn=document.getElementById('lobbyStartBtn'), hint=document.getElementById('lobbyHint');
   var enough=MP.players.length>=2;
+  // AI 는 방장만 넣고 뺀다(서버가 슬롯의 주인이라 게스트가 눌러도 거절된다)
+  var nbot=MP.players.filter(function(p){return p.bot;}).length;
+  var ab=document.getElementById('botAddBtn'), db=document.getElementById('botDelBtn');
+  if(ab){ ab.disabled=!mpIsHost()||nbot>=6; ab.textContent='+ AI 추가'; }
+  if(db){ db.disabled=!mpIsHost()||nbot<=0; db.textContent='− AI ('+nbot+')'; }
   if(mpIsHost()){ btn.disabled=!enough; btn.textContent='게임 시작';
-    hint.textContent= enough ? '모두 준비됐어요! 시작을 누르세요.' : '친구가 코드를 입력해 들어오면 시작할 수 있어요.'; }
+    hint.textContent= enough ? '모두 준비됐어요! 시작을 누르세요.'
+      : '친구가 들어오거나 <b>AI 추가</b>를 누르면 시작할 수 있어요.'; }
   else { btn.disabled=true; btn.textContent='호스트 대기 중…';
     hint.textContent='호스트가 게임을 시작하면 함께 출발합니다.'; }
   // 연습장 안내: 화면 클릭으로 조작, Esc 로 마우스를 풀어야 버튼을 누를 수 있다
@@ -2060,6 +2240,10 @@ document.getElementById('lobbyStartBtn').addEventListener('click',function(){
   mpSend({t:'start', level:CURLEVEL, pads:(LEVEL.pads||[]).length, seed:MATCH_SEED});
   startGame(CURLEVEL); });
 document.getElementById('lobbyLeaveBtn').addEventListener('click',function(){ mpDisconnect(); showScreen('title'); });
+document.getElementById('botAddBtn').addEventListener('click',function(){
+  if(mpIsHost()) mpSend({t:'bot', add:1}); });
+document.getElementById('botDelBtn').addEventListener('click',function(){
+  if(mpIsHost()) mpSend({t:'bot', add:0}); });
 document.getElementById('copyCode').addEventListener('click',function(e){ e.preventDefault(); var c=MP.room||'';
   if(navigator.clipboard&&navigator.clipboard.writeText){ navigator.clipboard.writeText(c).then(function(){ e.target.textContent='복사됨!';
     setTimeout(function(){ e.target.textContent='코드 복사'; },1200); },function(){ prompt('세션 코드:',c); }); }
@@ -2352,6 +2536,7 @@ function loop(now){ if(!last)last=now; var dt=Math.min(0.05,(now-last)/1000); la
     if(MP.connected && now-MP.lastSend>45){ MP.lastSend=now;
       mpSend({t:'st', name:MP.name, x:Math.round(sim.p.x*1000)/1000, y:Math.round(sim.p.y*1000)/1000, z:Math.round(sim.p.z*1000)/1000,
         yaw:Math.round(sim.yaw*1000)/1000, pitch:Math.round(sim.pitch*1000)/1000, rc:Math.round((sim.recoil||0)*100)/100}); }
+    botStep(dt, now);            // 방장이 AI 참가자를 대신 굴린다
     for(var _pid in MP.peers){ if(now-(MP.peers[_pid].seen||0)>5000) delete MP.peers[_pid]; }
     // 경쟁: 내가 떨어졌으면 알리고 점수를 반영한다(떨어진 본인이 신고 → 양쪽 규칙이 같아 일치)
     if(vsLive && ROUND.phase==='live' && (sim.fell||0)>lastFell){
@@ -2464,6 +2649,7 @@ window.__peng={ makeSim:makeSim, stepSim:stepSim, doFire:doFire,
   get pads(){ return PADS; }, get items(){ return ITEMS; },   // 아이템 패드 검증용
   get cam(){ return CAMPOS; }, get camLen(){ return CAM_LEN; },   // 3인칭 카메라 충돌 검증용
   get matchSeed(){ return MATCH_SEED; }, get floorSeed(){ return FLOOR_SEED; },  // 절차 생성 검증용
+  get bots(){ return BOTS; },        // AI 검증용
   get vertCount(){ return TRI.length/6; },  // 이번 프레임에 쌓인 정점 수(렌더 검증용)
   // 프레임 강제 실행 — 검증 환경(탭이 숨겨진 상태)에선 rAF 가 멈춰 렌더가 안 돈다
   frame:function(now){ loop(now!=null?now:performance.now()); },
