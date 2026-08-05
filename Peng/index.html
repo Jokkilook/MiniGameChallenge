@@ -1769,7 +1769,7 @@ try{
    밝기만 살리고 색조를 몸통 색으로 갈아끼운다(회색조 → 색조 적용). */
 /* 정적 VBO 한 벌을 만들어 두고, 캐릭터마다 모델행렬 + 색조만 바꿔 그린다.
    음영은 구울 때 정점색에 미리 섞는다(로컬 법선 기준이라 yaw 로 돌아도 어색하지 않다). */
-var PLAYER_VBO=null, PLAYER_N=0;
+var PLAYER_VBO=null, PLAYER_N=0, PLAYER_HULL=null, PLAYER_HULL_W=-1;
 function ensurePlayerVBO(){
   if(PLAYER_VBO || !PLAYER_MESH || !GLREADY) return;
   var m=PLAYER_MESH, L=[0.42,0.80,0.43], ll=Math.hypot(L[0],L[1],L[2]);
@@ -1787,6 +1787,28 @@ function ensurePlayerVBO(){
   gl.bindBuffer(gl.ARRAY_BUFFER,PLAYER_VBO);
   gl.bufferData(gl.ARRAY_BUFFER,arr,gl.STATIC_DRAW);
   PLAYER_N=I.length;
+}
+/* 툰 윤곽선 껍질 — 법선 방향으로 살짝 부풀린 사본. 본체를 그린 뒤 BACK 을 컬링해
+   그리면 실루엣 테두리만 남는다(총·캡슐과 같은 방식).
+   두께는 월드 기준이라 로컬로 환산한다(모델을 PLAYER_SCALE 로 줄여 그리므로). */
+function ensurePlayerHull(){
+  var w=OUTLINE_BODY/Math.max(1e-4,PLAYER_SCALE);
+  if(PLAYER_HULL && Math.abs(w-PLAYER_HULL_W)<1e-6) return;
+  if(!PLAYER_MESH || !GLREADY) return;
+  var m=PLAYER_MESH, I=m.idx, arr=new Float32Array(I.length*6);
+  var c=OUTLINE_COL;
+  for(var k=0;k<I.length;k++){
+    var v=I[k], o=k*6;
+    var nx=m.nrm?m.nrm[v*3]:0, ny=m.nrm?m.nrm[v*3+1]:0, nz=m.nrm?m.nrm[v*3+2]:0;
+    arr[o]  =m.pos[v*3]  +nx*w;
+    arr[o+1]=m.pos[v*3+1]+ny*w+PLAYER_LIFT;
+    arr[o+2]=m.pos[v*3+2]+nz*w;
+    arr[o+3]=c[0]; arr[o+4]=c[1]; arr[o+5]=c[2];
+  }
+  if(!PLAYER_HULL) PLAYER_HULL=gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER,PLAYER_HULL);
+  gl.bufferData(gl.ARRAY_BUFFER,arr,gl.STATIC_DRAW);
+  PLAYER_HULL_W=w;
 }
 var CHARQ=[];                                    // 이번 프레임에 그릴 캐릭터(위치·yaw·색)
 function drawPlayerMesh(px,py,pz,yaw,col){
@@ -1815,7 +1837,27 @@ function flushChars(VP){
   }
   gl.uniformMatrix4fv(PROG.main.uVP,false,VP);
   gl.uniform3f(PROG.main.uTint,1,1,1);
-  CHARQ.length=0;
+  // CHARQ 는 여기서 안 비운다 — 윤곽선 패스가 같은 모델행렬을 다시 쓴다(프레임 시작에 비운다)
+}
+/* 캐릭터 윤곽선. 호출부가 CULL_FACE/BACK 을 켠 상태에서 부른다. */
+function flushCharOutlines(VP){
+  if(!CHARQ.length || OUTLINE_BODY<=0) return;
+  ensurePlayerHull();
+  if(!PLAYER_HULL) return;
+  gl.bindBuffer(gl.ARRAY_BUFFER,PLAYER_HULL);
+  gl.enableVertexAttribArray(PROG.main.aPos);
+  gl.vertexAttribPointer(PROG.main.aPos,3,gl.FLOAT,false,24,0);
+  gl.enableVertexAttribArray(PROG.main.aCol);
+  gl.vertexAttribPointer(PROG.main.aCol,3,gl.FLOAT,false,24,12);
+  gl.uniform3f(PROG.main.uTint,1,1,1);
+  var s=PLAYER_SCALE;
+  for(var i=0;i<CHARQ.length;i++){
+    var q=CHARQ[i], ca=Math.cos(q.yaw)*s, sa=Math.sin(q.yaw)*s;
+    var M=[ca,0,-sa,0,  0,s,0,0,  sa,0,ca,0,  q.x,q.y,q.z,1];
+    gl.uniformMatrix4fv(PROG.main.uVP,false,mat4Mul(VP,M));
+    gl.drawArrays(gl.TRIANGLES,0,PLAYER_N);
+  }
+  gl.uniformMatrix4fv(PROG.main.uVP,false,VP);
 }
 /* ---------- 투사체 메시 ----------
    총과 달리 탄환은 월드 공간에 여러 개가 동시에 뜬다. GL 버퍼를 따로 두는 대신
@@ -2027,11 +2069,12 @@ function render(dt){
     GunMesh.drawBody(gl, PROG.main, VP, Q.O,Q.R,Q.U,Q.F, Q.k, Q.e); }
   // 윤곽선 껍질 — 카메라를 등진 면만 남겨야 실루엣 테두리가 된다.
   // 이 메시들은 바깥면이 CW(=GL 기준 뒷면)라 BACK 을 컬링해야 바깥이 지워진다.
-  if(OUTL.length || GUNQ.length){
+  if(OUTL.length || GUNQ.length || CHARQ.length){
     gl.enable(gl.CULL_FACE); gl.cullFace(gl.BACK);
     if(OUTL.length) drawArr(BUF.outl, OUTL, PROG.main, gl.TRIANGLES);
     for(var qo=0;qo<GUNQ.length;qo++){ var QO=GUNQ[qo];
       GunMesh.drawOutline(gl, PROG.main, VP, QO.O,QO.R,QO.U,QO.F, QO.k, QO.e); }
+    flushCharOutlines(VP);                      // 캐릭터 실루엣
     gl.disable(gl.CULL_FACE);
   }
   if(LINE.length) drawArr(BUF.line, LINE, PROG.main, gl.LINES);
@@ -3033,6 +3076,8 @@ window.__peng={ makeSim:makeSim, stepSim:stepSim, doFire:doFire,
   get matchSeed(){ return MATCH_SEED; }, get floorSeed(){ return FLOOR_SEED; },  // 절차 생성 검증용
   get bots(){ return BOTS; },        // AI 검증용
   get station(){ return STATION; }, buildStation:buildStation,   // 정거장 검증용
+  get charMesh(){ return {vbo:!!PLAYER_VBO, hull:!!PLAYER_HULL, hullW:PLAYER_HULL_W,
+    n:PLAYER_N, scale:PLAYER_SCALE, lift:PLAYER_LIFT, outline:OUTLINE_BODY}; },
   pieceBoxes:pieceBoxes,             // 조각 모양 → 충돌 박스(검증용)
   get vertCount(){ return TRI.length/6; },  // 이번 프레임에 쌓인 정점 수(렌더 검증용)
   // 프레임 강제 실행 — 검증 환경(탭이 숨겨진 상태)에선 rAF 가 멈춰 렌더가 안 돈다

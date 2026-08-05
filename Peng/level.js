@@ -761,8 +761,11 @@ PENG.genStation = function(seed){
       }
       var bi=ob.ring[baseIdx][0], bj=ob.ring[baseIdx][1];
       wallSpec=wallOf(bi, bj-podC, wallR, true);
+      /* 고리를 빈틈없이 두르면 포드가 닫힌 상자가 된다 — 밀려도 벽에 막혀
+         아무도 밖으로 안 날아간다(실측: 낙하 4/8 → 0/8, 평균 이동 1.6m).
+         직선 구간의 40% 는 비워 둔다. 모서리 기둥과 문은 남긴다. */
       if(wallSpec.straight && !wallSpec.t)
-        wallSpec.t = pick(['wall','wall','wall','wall-window']);
+        wallSpec.t = (rnd()<0.60) ? pick(['wall','wall','wall','wall-window']) : null;
     }
     // 소품 — 벽 칸이 아닌 안쪽에만(벽과 겹치지 않게). 정중앙은 비워 둔다
     var prop=null;
