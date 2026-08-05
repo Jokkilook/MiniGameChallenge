@@ -33,6 +33,8 @@
   #topbar .pill{background:rgba(8,11,17,.75);border:1px solid var(--line);padding:7px 14px;
     font-size:12px;font-weight:800;letter-spacing:1.2px;text-transform:uppercase;color:#9dabc4}
   #topbar .pill b{color:#fff;font-family:var(--mono);font-weight:700;letter-spacing:0}
+  #topbar .pill.off{display:none}
+  #itemV{color:#3fe0b4;border-color:#3fe0b4}   /* 아이템 칩만 눈에 띄게 */
   #ammo{position:absolute;right:18px;bottom:18px;display:flex;gap:5px;align-items:flex-end}
   #ammo .p{position:relative;width:7px;height:28px;background:transparent;border:1px solid var(--line2);overflow:hidden}
   #ammo .p.on{background:var(--acc);border-color:var(--acc)}
@@ -195,6 +197,7 @@
     <span class="pill">⏱ <b id="timeV">0.0</b>s</span>
     <span class="pill" id="cpV">체크포인트 0</span>
     <span class="pill" id="mapV">맵</span>
+    <span class="pill off" id="itemV"></span>
     <span class="pill" id="mpV">🎮 솔로</span>
   </div>
   <div id="ammo"></div>
@@ -208,7 +211,7 @@
   <p><b>PoofGun</b>은 닿는 곳에서 공기를 <b>뻥</b> 터뜨려 사람을 날린다.<br>
      발밑을 쏴 <b>로켓점프</b>로 못 넘는 협곡을 넘어 <b>결승선(초록)</b>까지!</p>
   <p class="hint"><kbd>WASD</kbd> 이동 · <kbd>마우스</kbd> 시점 · <kbd>좌클릭</kbd> 펑! · <kbd>Space</kbd> 점프 · <kbd>우클릭 홀드</kbd> 조준(캐릭터가 옆으로 비켜 조준점이 드러남)<br><kbd>R</kbd> 리스폰 · <kbd>V</kbd> 시점 전환(1·3인칭) · <kbd>Enter</kbd> 채팅 · 화면 클릭 시 마우스 잠금, <kbd>ESC</kbd> 해제.</p>
-  <label class="pick">맵 <select id="mapSel"></select></label>
+  <label class="pick">맵 <span style="opacity:.6">(혼자 플레이)</span> <select id="mapSel"></select></label>
   <div class="menu">
     <button class="go" id="soloBtn">혼자 플레이</button>
     <button class="go alt" id="hostBtn">방 만들기 (호스트)</button>
@@ -337,10 +340,22 @@ function dot(a,b){return a.x*b.x+a.y*b.y+a.z*b.z;}
 // 코스 데이터는 levels/*.js 로 분리돼 있다 — editor.html 이 같은 형식을 읽고 쓴다.
 // LEVEL 은 "지금 켜져 있는 맵"을 가리키는 변수. 맵을 바꿀 때는 setLevel() 을 쓴다.
 var LEVEL=null, CURLEVEL=null;
+/* 혼자 플레이용 맵 — 메인 메뉴 선택. 방(멀티) 맵인 CURLEVEL 과 완전히 분리돼 있다.
+   둘을 한 변수로 쓰던 시절엔 메인 메뉴에서 고른 맵이 방 맵까지 바꿔서,
+   대기방 선택과 어느 쪽이 진짜인지 헷갈렸다. */
+var SOLO_LEVEL=null;
+function setSoloLevel(id){
+  if(!PENG.getLevel(id)) return false;
+  SOLO_LEVEL=id; try{ localStorage.setItem('peng.solomap', id); }catch(e){}
+  return true;
+}
 /* 협동 관문 표식 — 물리 판정에서 파생된 장식 박스(level.js 의 coopMarkers).
    LEVEL.boxes 에 합치지 않고 따로 둔다: 그리기만 하면 되는 것들이고, 레벨 데이터에
    섞으면 에디터 시험 플레이 후 저장할 때 표식이 파일에 딸려 들어간다. */
 var MARKS=[];
+/* 아이템 패드 — setLevel 이 로드 시점에 buildPads() 를 부르므로 선언이 여기 있어야 한다.
+   아래 아이템 구역에 두면 그 시점엔 아직 undefined 라 터진다(var 는 선언만 끌어올려진다). */
+var PADS=[];
 /* 등록된 레벨 데이터는 원본 그대로 둬야 한다 — 무너지는 아레나가 boxes 를 실시간으로
    고치기 때문에, 예전처럼 LEVEL 이 원본을 그대로 가리키면 한 판 하고 나면 맵이
    영구히 부서진 채로 남는다. 얕은 복사 + 박스만 복사하면 충분하다(박스 ≤ 100). */
@@ -356,6 +371,7 @@ function setLevel(id){
   if(!d) return false;
   LEVEL=cloneLevel(d); CURLEVEL=id;
   buildCollapseFloor();                                    // 아레나 바닥은 여기서 깔린다
+  buildPads();                                             // 아이템 패드 위치
   MARKS = PENG.coopMarkers(d);
   // HUD 표시를 즉시 갱신 — 프레임을 기다리지 않아야 "지금 어느 맵인지"가 항상 맞다.
   // 두 사람이 서로 다른 코스를 보고 있으면 이 칩만 비교해도 바로 드러난다.
@@ -439,6 +455,9 @@ try{
   }
 }catch(e){}
 setLevel(PENG.getLevel('__playtest') ? '__playtest' : PENG.defaultLevel());
+// 혼자 플레이 맵은 따로 기억한다(지난번에 고른 게 남아 있으면 그대로)
+SOLO_LEVEL=CURLEVEL;
+try{ var _sm=localStorage.getItem('peng.solomap'); if(_sm && PENG.getLevel(_sm)) SOLO_LEVEL=_sm; }catch(e){}
 
 /* ---------- 물리 상수 ---------- */
 // 상수의 단일 출처는 level.js 의 PENG.PHYS 다. 에디터가 도달 거리를 게임과 똑같은
@@ -460,6 +479,7 @@ var BJ_GRACE=_P.BLAST_JUMP_GRACE;
 function makeSim(){  // practice 를 켜면 기록/승리 없이 자유 연습
   var s=LEVEL.start;
   return { p:{x:s.x,y:s.y,z:s.z}, v:{x:0,y:0,z:0}, yaw:0, pitch:0, onGround:false,
+    items:{}, charges:{},   // 아이템: id -> 남은 초 / id -> 남은 횟수
     ammo:AMMO_MAX, ammoT:0, t:0, cpIdx:0, win:false, blasts:[], particles:[], projectiles:[], shake:0, _fireCd:0, tp:true, recoil:0, kb:0, aim:0, aimHold:false,   // tp:true = 기본 3인칭 (V 로 전환)
     coyote:0, jumped:false, bjGrace:0 };
 }
@@ -602,6 +622,78 @@ function aimRay(s){
   if(!(L>1e-4)) return {o:o, d:f, aimD:0};
   return {o:o, d:{x:dx/L, y:dy/L, z:dz/L}, aimD:L};
 }
+/* ---------- 아이템 ----------
+   패드를 밟으면 무작위로 하나가 나온다. 효과는 크게 두 갈래다.
+   · '탄에 실리는 것'(reverse·power) — 내 총이 만드는 폭발의 성질이라 발사할 때
+     탄에 도장을 찍어 보낸다. 상대 화면에서도 같은 성질로 터져야 하므로 bl 에 실린다.
+   · '내 몸에 걸리는 것'(feather·anchor·drum) — 각자 자기 물리를 돌리므로
+     로컬에만 적용하면 되고 동기화가 필요 없다. */
+var ITEMS={
+  reverse:{name:'리버스캡슐', icon:'🌀', dur:12, desc:'폭발이 밀어내는 대신 끌어당긴다'},
+  power:  {name:'과충전',     icon:'💥', dur:12, desc:'폭발 위력·반경이 커진다'},
+  drum:   {name:'드럼 탄창',  icon:'🥁', dur:15, desc:'탄창 즉시 충전 + 재장전 3배'},
+  feather:{name:'깃털',       icon:'🪶', dur:15, desc:'더 멀리 날지만 더 잘 날아간다'},
+  anchor: {name:'닻',         icon:'⚓', dur:10, desc:'밀려나지 않는다(로켓점프도 약해진다)'},
+  pulse:  {name:'펄스',       icon:'⚡', dur:0, charges:1, desc:'F — 내 주위로 대형 폭발'}
+};
+var ITEM_IDS=Object.keys(ITEMS);
+var IT_POWER_F=1.8, IT_POWER_R=1.25;   // 과충전 배율(위력/반경)
+var IT_DRUM=3;                          // 드럼 탄창 재장전 배속
+var IT_FEATHER_KB=1.7, IT_FEATHER_G=0.6;
+var IT_ANCHOR_KB=0.35;
+var IT_PULSE_F=2.0, IT_PULSE_R=1.6;
+var PAD_R=1.25, PAD_CD=12;              // 패드 반경(m) / 재생성 대기(초)
+function buildPads(){
+  PADS.length=0;
+  var L=LEVEL&&LEVEL.pads; if(!L) return;
+  for(var i=0;i<L.length;i++) PADS.push({x:L[i].x, y:L[i].y, z:L[i].z, cd:0});
+}
+/* 패드를 밟았다. 멀티에서는 서버가 중재한다 — 둘이 동시에 밟으면 먼저 도착한
+   쪽만 받는다. 클라가 아이템을 제안하고 서버는 '누가 먼저인가'만 판정한다
+   (아이템 표를 서버에도 복사해 두면 둘이 어긋나기 시작한다). */
+function claimPad(i){
+  var item=ITEM_IDS[Math.floor(Math.random()*ITEM_IDS.length)];
+  PADS[i].cd=PAD_CD;                     // 거절당해도 어차피 쿨다운이라 미리 잠근다
+  if(MP.connected) mpSend({t:'pick', pad:i, item:item});
+  else grantItem(MP.id, i, item);
+}
+function grantItem(who, padI, item){
+  var def=ITEMS[item]; if(!def) return;
+  if(padI!=null && PADS[padI]) PADS[padI].cd=PAD_CD;
+  var mine=(who===MP.id) || (MP.id==null && who==null) || (MP.id==null && who===-1);
+  if(mine && sim){
+    if(def.charges) sim.charges[item]=(sim.charges[item]||0)+def.charges;
+    else { sim.items[item]=def.dur; if(item==='drum') sim.ammo=AMMO_MAX; }
+    tone(880,0.09,'triangle',0.10,1320);
+  }
+  pushChat('', def.icon+' '+(mine?'내가':nameOf(who))+' — '+def.name, false, true);
+}
+function renderItemChip(s){
+  var el=document.getElementById('itemV'); if(!el) return;
+  var parts=[], k;
+  for(k in s.items) if(ITEMS[k]) parts.push(ITEMS[k].icon+' '+ITEMS[k].name+' '+Math.ceil(s.items[k]));
+  for(k in s.charges) if(s.charges[k]>0 && ITEMS[k]) parts.push(ITEMS[k].icon+' '+ITEMS[k].name+' ×'+s.charges[k]);
+  el.textContent=parts.join('   ');
+  el.classList.toggle('off', parts.length===0);
+}
+function padTick(dt){
+  if(!PADS.length || !sim || sim.practice || mode!=='play') return;
+  for(var i=0;i<PADS.length;i++){ var p=PADS[i];
+    if(p.cd>0){ p.cd-=dt; continue; }
+    if(Math.hypot(sim.p.x-p.x, sim.p.z-p.z)<PAD_R && Math.abs(sim.p.y-p.y)<1.6) claimPad(i);
+  }
+}
+/* 펄스 — 내 주위로 대형 폭발. 나 자신에게는 적용하지 않는다(내 위치에서 터지므로
+   거리 0 → 최대 힘으로 수직 발사돼 버린다). 붙어 있는 상대를 떼어내는 용도다. */
+function usePulse(s){
+  if(!s.charges || !s.charges.pulse) return false;
+  s.charges.pulse--;
+  var c={x:s.p.x, y:s.p.y+PH_HY, z:s.p.z};
+  blastFx(s, c.x, c.y, c.z); s.shake=Math.min(0.6, s.shake+0.3);
+  if(typeof mpSend==='function') mpSend({t:'bl', x:c.x, y:c.y, z:c.z,
+    ox:c.x, oy:c.y, oz:c.z, pf:IT_PULSE_F, pr:IT_PULSE_R});
+  return true;
+}
 function doFire(s){
   if(s.win || s.ammo<=0 || s._fireCd>0) return false;
   s.ammo--; s._fireCd=0.12;
@@ -615,34 +707,48 @@ function doFire(s){
   // 팀원 직격 = 리프트 샷. 경쟁에서는 끈다(밖으로 밀어내는 게 목적인데 수직으로만 띄우면 넉백이 죽는다).
   var lift = fz.hit && GAMEMODE!=='versus';
   var center={x:o.x+d.x*tHit, y:o.y+d.y*tHit, z:o.z+d.z*tHit};
-  applyBlast(s, center.x, center.y, center.z);   // 자기 넉백(리프트는 맞은 쪽에만 적용된다)
+  // 이 탄에 실리는 아이템 성질 — 쏘는 순간 도장을 찍는다. 날아가는 도중에
+  // 아이템이 끝나도 이미 나간 탄은 원래 성질대로 터져야 한다.
+  var rev=!!(s.items&&s.items.reverse), pw=!!(s.items&&s.items.power);
+  applyBlast(s, center.x, center.y, center.z, false, {rev:rev, pw:pw});   // 자기 넉백
   // 즉시: 총 반동/작은 흔들림. 폭발 연출은 발사체가 착탄할 때.
   s.recoil=1; s.shake=Math.min(0.4,s.shake+0.12);
   var start=Math.min(0.6, tHit*0.5);
   s.projectiles.push({ x:o.x+d.x*start, y:o.y+d.y*start, z:o.z+d.z*start,
     dx:d.x, dy:d.y, dz:d.z, gone:0, dist:Math.max(0.05,tHit-start),
-    bx:center.x, by:center.y, bz:center.z, lift:lift });
+    bx:center.x, by:center.y, bz:center.z, lift:lift, rev:rev, pw:pw });
   sndShoot();
   // 팀원에게 브로드캐스트: 폭발 지점 + 총구 원점(상대 화면에서 탄환이 날아가 보이도록)
   if(typeof mpSend==='function') mpSend({t:'bl', x:center.x, y:center.y, z:center.z,
-    ox:o.x, oy:o.y, oz:o.z, lf:lift?1:0});
+    ox:o.x, oy:o.y, oz:o.z, lf:lift?1:0, rv:rev?1:0, pw:pw?1:0});
   return true;
 }
 // 팀원이 쏜 탄환: 상대 총구에서 폭발 지점까지 날아가는 걸 보여주고, 도착 시 나에게 넉백+연출
 function spawnRemoteShot(s, m){
   var ox=(m.ox!=null)?m.ox:m.x, oy=(m.oy!=null)?m.oy:m.y, oz=(m.oz!=null)?m.oz:m.z;
   var dx=m.x-ox, dy=m.y-oy, dz=m.z-oz, L=Math.hypot(dx,dy,dz);
-  if(L<0.05){ applyBlast(s,m.x,m.y,m.z,m.lf); blastFx(s,m.x,m.y,m.z,m.lf); return; }
+  // 탄에 실려 온 성질(끌어당김·과충전·펄스 배율)을 그대로 재현한다
+  var opt={rev:!!m.rv, pw:!!m.pw, pf:m.pf, pr:m.pr};
+  if(L<0.05){ applyBlast(s,m.x,m.y,m.z,m.lf,opt); blastFx(s,m.x,m.y,m.z,m.lf); return; }
   dx/=L; dy/=L; dz/=L;
   var start=Math.min(0.6, L*0.5);
   s.projectiles.push({ x:ox+dx*start, y:oy+dy*start, z:oz+dz*start, dx:dx, dy:dy, dz:dz,
-    gone:0, dist:Math.max(0.05,L-start), bx:m.x, by:m.y, bz:m.z, hitMe:true, lift:m.lf });
+    gone:0, dist:Math.max(0.05,L-start), bx:m.x, by:m.y, bz:m.z, hitMe:true, lift:m.lf,
+    rev:opt.rev, pw:opt.pw, pf:opt.pf, pr:opt.pr });
 }
 /* 폭발 넉백(자기/원격 공용): 중심 기준으로 플레이어를 민다.
    lift = 팀원 직격(리프트 샷). 방사형 대신 정확히 위로만 밀어 준다 —
    방사형이면 위에서 쏜 폭발이 팀원을 아래로 처박아서, 도움이 한 방향뿐이게 된다.
    맞은 사람만 뜨도록 "내 몸이 폭발점에서 FUSE_R 안"일 때만 적용한다(3인 이상 방 대비). */
-function applyBlast(s, cx, cy, cz, lift){
+/* opt = 탄에 실려 온 폭발의 성질. rev=끌어당김, pw=과충전, pf/pr=배율 직접 지정(펄스).
+   받는 쪽 몸에 걸린 아이템(깃털·닻)은 여기서 곱해진다 — 그건 각자 로컬 값이다. */
+function applyBlast(s, cx, cy, cz, lift, opt){
+  opt=opt||{};
+  var R=BLAST_R*(opt.pw?IT_POWER_R:1)*(opt.pr||1);
+  var F=BLAST_F*(opt.pw?IT_POWER_F:1)*(opt.pf||1);
+  var take=1;
+  if(s.items){ if(s.items.feather) take*=IT_FEATHER_KB; if(s.items.anchor) take*=IT_ANCHOR_KB; }
+  var sgn=opt.rev?-1:1;
   var pc={x:s.p.x, y:s.p.y+PH_HY, z:s.p.z};
   var diff={x:pc.x-cx, y:pc.y-cy, z:pc.z-cz}, dist=Math.hypot(diff.x,diff.y,diff.z);
   /* 폭발은 지면 접촉을 지운다. 그런데 발밑을 먼저 쏘고 점프를 누르는 순서에서는
@@ -653,9 +759,10 @@ function applyBlast(s, cx, cy, cz, lift){
     s.onGround=false; s.coyote=0;
   }
   if(lift && dist<FUSE_R){
-    s.v.y+=LIFT_V; ungroundWithGrace(); s.kb=KB_TIME; return; }
-  if(dist<BLAST_R){ var f=BLAST_F*(1-dist/BLAST_R); if(dist<0.001){diff={x:0,y:1,z:0};dist=1;}
-    s.v.x+=diff.x/dist*f; s.v.y+=diff.y/dist*f; s.v.z+=diff.z/dist*f; ungroundWithGrace();
+    s.v.y+=LIFT_V*take; ungroundWithGrace(); s.kb=KB_TIME; return; }
+  if(dist<R){ var f=F*(1-dist/R)*take; if(dist<0.001){diff={x:0,y:1,z:0};dist=1;}
+    s.v.x+=sgn*diff.x/dist*f; s.v.y+=sgn*diff.y/dist*f; s.v.z+=sgn*diff.z/dist*f;
+    ungroundWithGrace();
     s.kb=KB_TIME; }   // 잠깐 조작 권한을 낮춰 넉백이 살아있게
 }
 function blastFx(s,x,y,z,lift){ // 착탄 폭발 연출(구+파편+흔들림+소리)
@@ -691,7 +798,10 @@ function stepSim(s, dt, inp){
   // 조준 전환을 부드럽게(끊기면 화면이 튄다)
   s.aim += ((s.aimHold?1:0)-s.aim)*Math.min(1, dt*11);
   // 탄 재충전
-  if(s.ammo<AMMO_MAX){ s.ammoT+=dt; if(s.ammoT>=AMMO_REGEN){ s.ammoT=0; s.ammo++; } }
+  // 아이템 지속시간
+  if(s.items) for(var _it in s.items){ s.items[_it]-=dt; if(s.items[_it]<=0) delete s.items[_it]; }
+  if(s.ammo<AMMO_MAX){ s.ammoT+=dt*((s.items&&s.items.drum)?IT_DRUM:1);
+    if(s.ammoT>=AMMO_REGEN){ s.ammoT=0; s.ammo++; } }
   // 이동 입력 → 목표 수평속도
   var mf=(inp.mf?1:0)-(inp.mb?1:0), mr=(inp.mr?1:0)-(inp.ml?1:0);
   var fwd={x:Math.sin(s.yaw),z:Math.cos(s.yaw)}, rgt={x:Math.cos(s.yaw),z:-Math.sin(s.yaw)};
@@ -721,7 +831,7 @@ function stepSim(s, dt, inp){
     s.v.y+=JUMPV; s.bjGrace=0; s.jumped=true; sndJump();
   }
   // 중력
-  s.v.y-=GRAV*dt; if(s.v.y<-40)s.v.y=-40;
+  s.v.y-=GRAV*((s.items&&s.items.feather)?IT_FEATHER_G:1)*dt; if(s.v.y<-40)s.v.y=-40;
   // 이동 + 충돌(축별)
   s.onGround=false;
   moveAxis(s,'x',s.v.x*dt); moveAxis(s,'z',s.v.z*dt); moveAxis(s,'y',s.v.y*dt);
@@ -729,7 +839,7 @@ function stepSim(s, dt, inp){
   // 발사체 비행 → 착탄 시 폭발 연출
   for(var pi=s.projectiles.length-1;pi>=0;pi--){ var pr=s.projectiles[pi]; var mv=PROJ_SPD*dt; pr.gone+=mv;
     pr.x+=pr.dx*mv; pr.y+=pr.dy*mv; pr.z+=pr.dz*mv;
-    if(pr.gone>=pr.dist){ if(pr.hitMe) applyBlast(s, pr.bx, pr.by, pr.bz, pr.lift); blastFx(s, pr.bx, pr.by, pr.bz, pr.lift); s.projectiles.splice(pi,1); } }
+    if(pr.gone>=pr.dist){ if(pr.hitMe) applyBlast(s, pr.bx, pr.by, pr.bz, pr.lift, {rev:pr.rev,pw:pr.pw,pf:pr.pf,pr:pr.pr}); blastFx(s, pr.bx, pr.by, pr.bz, pr.lift); s.projectiles.splice(pi,1); } }
   // 블래스트/파티클
   for(var i=s.blasts.length-1;i>=0;i--){ s.blasts[i].t+=dt*3; if(s.blasts[i].t>=1)s.blasts.splice(i,1); }
   for(var j=s.particles.length-1;j>=0;j--){ var pt=s.particles[j]; pt.life-=dt*1.6; pt.x+=pt.vx*dt; pt.y+=pt.vy*dt; pt.z+=pt.vz*dt; pt.vy-=8*dt; if(pt.life<=0)s.particles.splice(j,1); }
@@ -1096,6 +1206,14 @@ function render(){
     meshGL(boxFaces(bx), bcol, true); }
   // 협동 관문 표식(한계 기둥·가장자리 테두리). 순수 장식이라 충돌·광선 훑기에는 없다.
   for(var mi=0;mi<MARKS.length;mi++) meshGL(boxFaces(MARKS[mi]), MARKS[mi].col, true);
+  /* 아이템 패드 — 충돌 박스가 아니라 그리기만 한다(LEVEL.boxes 에 넣으면 밟고 올라서게 된다).
+     준비되면 밝은 청록 + 위에 뜬 표식, 쿨다운이면 어둡게 죽여 멀리서도 구분된다. */
+  for(var pdi=0;pdi<PADS.length;pdi++){ var pd=PADS[pdi], rdy=pd.cd<=0;
+    meshGL(boxFaces({cx:pd.x, cy:pd.y+0.04, cz:pd.z, hx:PAD_R*0.85, hy:0.05, hz:PAD_R*0.85}),
+      rdy?'#3fe0b4':'#33445c', true);
+    if(rdy){ var bob=0.55+Math.sin(performance.now()*0.004+pdi)*0.12;
+      bbPush(pd.x, pd.y+bob, pd.z, 0.28, 0.45,1.0,0.85, 0.85); }
+  }
   // 원격 플레이어 — 보간된 위치
   var pnow=performance.now();
   for(var pid in MP.peers){ var pe=MP.peers[pid], ps=peerSample(pe, pnow); if(!ps)continue;
@@ -1348,6 +1466,7 @@ function roundStart(){
     sim.blasts.length=0; sim.projectiles.length=0; sim.particles.length=0;
     sim.ammo=AMMO_MAX; sim.ammoT=0; sim.onGround=false;
     sim.kb=0; sim.recoil=0; sim.shake=0; sim.aim=0; sim.aimHold=false; sim._fireCd=0;
+    sim.items={}; sim.charges={};        // 아이템은 라운드를 못 넘긴다
     lastFell=sim.fell||0;                     // 리셋 중의 낙하는 신고하지 않는다
   }
   roundBanner('');
@@ -1492,6 +1611,8 @@ function mpHandle(m){
   else if(m.t==='gm'){ if(m.mode==='coop'||m.mode==='versus'){ GAMEMODE=m.mode; syncModePicker(); } }
   // 누군가 아레나 밖으로 떨어졌다
   else if(m.t==='fell'){ scoreFall(m.id); }
+  // 아이템 패드 — 서버가 '누가 먼저 밟았나'를 판정해 되돌려 준다(본인 포함)
+  else if(m.t==='pad'){ grantItem(m.id, m.pad, m.item); }
   else if(m.t==='lvl'){ if(m.level && m.level!==CURLEVEL && setLevel(m.level)){
       syncMapPickers(); applyLevelToPractice(); } }
   else if(m.t==='st'){ if(m.id===MP.id)return; var pe=MP.peers[m.id]||(MP.peers[m.id]={buf:[]});
@@ -1601,14 +1722,22 @@ function fillMapPickers(){
       o.textContent=PENG.getLevel(id).name||id;
       sel.appendChild(o);
     });
-    sel.value=CURLEVEL;
-    sel.addEventListener('change',function(){
-      if(!setLevel(sel.value)) return;
+  });
+  /* 메인 메뉴의 맵 선택은 혼자 플레이 전용이다. 예전엔 이게 CURLEVEL 을 바꿔서
+     방을 만들면 그 맵이 그대로 방 맵이 됐는데, 대기방에도 맵 선택이 따로 있어
+     "어느 쪽이 진짜인지" 헷갈렸다. 이제 메인 메뉴는 SOLO_LEVEL 만 건드리고,
+     방 맵은 오직 대기방 선택(호스트)만 정한다. */
+  var msel=document.getElementById('mapSel');
+  if(msel){ msel.value=SOLO_LEVEL;
+    msel.addEventListener('change',function(){ setSoloLevel(msel.value); }); }
+  var lsel=document.getElementById('mapSelLobby');
+  if(lsel){ lsel.value=CURLEVEL;
+    lsel.addEventListener('change',function(){
+      if(!setLevel(lsel.value)) return;
       syncMapPickers();
       applyLevelToPractice();                    // 대기방 연습장을 새 맵으로 교체
       if(mpIsHost()) mpSend({t:'lvl', level:CURLEVEL});   // 팀원도 같은 코스를 보게
-    });
-  });
+    }); }
   syncMapPickers(); syncModePicker();
 }
 /* 모드 선택 — 맵과 마찬가지로 호스트만 정하고 게스트는 잠긴다 */
@@ -1620,8 +1749,10 @@ function syncModePicker(){
   if(lb) lb.textContent=guest?'모드 (호스트가 결정)':'모드';
 }
 function syncMapPickers(){
-  ['mapSel','mapSelLobby'].forEach(function(idn){
-    var sel=document.getElementById(idn); if(sel && sel.value!==CURLEVEL) sel.value=CURLEVEL; });
+  // 메인 메뉴 선택은 혼자 플레이용이라 방 맵(CURLEVEL)에 맞추지 않는다
+  var ms=document.getElementById('mapSel'); if(ms && ms.value!==SOLO_LEVEL) ms.value=SOLO_LEVEL;
+  var mls=document.getElementById('mapSelLobby');
+  if(mls && mls.value!==CURLEVEL) mls.value=CURLEVEL;
   var ls=document.getElementById('mapSelLobby'), lb=document.getElementById('mapPickLabel');
   var guest=MP.connected && !mpIsHost();
   if(ls) ls.disabled=guest;
@@ -1648,7 +1779,8 @@ function renderLobby(){
     '<b>Esc</b> 로 마우스를 풀면 버튼을 누를 수 있어요 · <b>Enter</b> 채팅 · <b>R</b> 리스폰';
   syncMapPickers();
 }
-document.getElementById('soloBtn').addEventListener('click',function(){ ensureAudio(); mpDisconnect(); startGame(); });
+document.getElementById('soloBtn').addEventListener('click',function(){
+  ensureAudio(); mpDisconnect(); startGame(SOLO_LEVEL); });
 document.getElementById('hostBtn').addEventListener('click',function(){ ensureAudio(); setWarn('서버에 연결 중…');
   mpConnect(mpCode(), function(){ setWarn(''); enterLobby(); mpSend({t:'lvl', level:CURLEVEL}); },
     function(){ setWarn(noServerMsg()); }); });
@@ -1738,6 +1870,17 @@ var DBG_SPEC=[
   ['왜곡 반경(m)',  0.2, 12,  0.1,  function(){return LENS_WORLD_R;},  function(v){LENS_WORLD_R=v;}],
   ['화면 반경 상한',0.05,1.5, 0.05, function(){return LENS_MAXSCR;},   function(v){LENS_MAXSCR=v;}],
   ['변위 상한',     0,   0.6, 0.01, function(){return LENS_KMAX;},     function(v){LENS_KMAX=v;}],
+  ['sec','아이템'],
+  ['패드 반경',      0.4, 4,   0.05, function(){return PAD_R;},        function(v){PAD_R=v;}],
+  ['패드 쿨다운(초)',1,   60,  1,    function(){return PAD_CD;},       function(v){PAD_CD=v;}],
+  ['과충전 위력배',  1,   4,   0.05, function(){return IT_POWER_F;},   function(v){IT_POWER_F=v;}],
+  ['과충전 반경배',  1,   3,   0.05, function(){return IT_POWER_R;},   function(v){IT_POWER_R=v;}],
+  ['드럼 재장전배',  1,   8,   0.5,  function(){return IT_DRUM;},      function(v){IT_DRUM=v;}],
+  ['깃털 반동배',    1,   3,   0.05, function(){return IT_FEATHER_KB;},function(v){IT_FEATHER_KB=v;}],
+  ['깃털 중력배',    0.2, 1,   0.05, function(){return IT_FEATHER_G;}, function(v){IT_FEATHER_G=v;}],
+  ['닻 반동배',      0,   1,   0.05, function(){return IT_ANCHOR_KB;}, function(v){IT_ANCHOR_KB=v;}],
+  ['펄스 위력배',    1,   4,   0.05, function(){return IT_PULSE_F;},   function(v){IT_PULSE_F=v;}],
+  ['펄스 반경배',    1,   4,   0.05, function(){return IT_PULSE_R;},   function(v){IT_PULSE_R=v;}],
   ['sec','멀티'],
   ['보간 지연(ms)', 0,   400, 5,    function(){return INTERP_MS;},  function(v){INTERP_MS=v;}],
   ['몸통 충돌 반경(경쟁)', 0, 1.2, 0.01, function(){return PEER_R;},  function(v){PEER_R=v;}]
@@ -1910,6 +2053,7 @@ window.addEventListener('keydown',function(e){
   if(e.key==='Enter' && (mode==='play'||mode==='lobbyScr')){ e.preventDefault(); openChat(); return; }
   ensureAudio(); var k=e.key.toLowerCase(); keys[k]=true;
   if(k===' '){ jumpEdge=true; e.preventDefault(); } if(k==='r'&&sim)respawn(sim);
+  if(k==='f'&&sim&&mode==='play') usePulse(sim);
   if(k==='v'&&sim)sim.tp=!sim.tp; });
 window.addEventListener('keyup',function(e){ if(chatting) return; keys[e.key.toLowerCase()]=false; });
 
@@ -1931,6 +2075,7 @@ function loop(now){ if(!last)last=now; var dt=Math.min(0.05,(now-last)/1000); la
       collapseTick(dt);
     }
     var frozen = PAUSED || (vsLive && ROUND.phase!=='live');
+    if(!frozen) padTick(dt);               // 정산·일시정지 중에는 패드를 안 먹는다
     var inp = frozen ? {mf:false,mb:false,ml:false,mr:false,jump:false}
                      : { mf:keys['w'], mb:keys['s'], ml:keys['a'], mr:keys['d'], jump:false };
     if(frozen) jumpBuf=0;
@@ -1972,6 +2117,7 @@ function loop(now){ if(!last)last=now; var dt=Math.min(0.05,(now-last)/1000); la
     }
     else document.getElementById('cpV').textContent='체크포인트 '+sim.cpIdx;
     document.getElementById('mapV').textContent = '🗺 '+(LEVEL.name||CURLEVEL);
+    renderItemChip(sim);
     renderAmmo(sim.ammo, sim.ammo<AMMO_MAX ? sim.ammoT/AMMO_REGEN : 0);
     if(sim.win){ document.getElementById('winMsg').textContent='기록 '+sim.t.toFixed(1)+'초!'; showScreen('win'); sndWin(); if(locked)document.exitPointerLock(); }
     if(mode==='play') showHint(sim); else showHint(null);

@@ -157,6 +157,8 @@ var server = http.createServer(function(req, res){
 var GUID = '258EAFA5-E914-47DA-95CA-C5AB0DC85B11';
 var rooms = {};        // room -> { id -> client }
 var roomLevel = {};    // room -> 호스트가 고른 맵 id (대기방에서도 같은 코스를 보도록)
+var roomPads = {};     // room -> {패드번호: 다시 밟을 수 있게 되는 시각(ms)}
+var PAD_CD_MS = 12000; // 아이템 패드 재생성 대기 — index.html 의 PAD_CD 와 맞춘다
 var roomMode  = {};    // room -> 호스트가 고른 게임 모드(coop/versus)
 var nextId = 1;
 
@@ -205,7 +207,7 @@ server.on('upgrade', function(req, socket){
     if(closed) return; closed = true;
     var r = rooms[room]; if(r){ delete r[id];
       broadcast(room, id, JSON.stringify({ t:'left', id:id }));
-      if(Object.keys(r).length === 0){ delete rooms[room]; delete roomLevel[room]; delete roomMode[room]; } else sendRoster(room);
+      if(Object.keys(r).length === 0){ delete rooms[room]; delete roomLevel[room]; delete roomMode[room]; delete roomPads[room]; } else sendRoster(room);
     }
     try{ socket.destroy(); }catch(e){}
     log('left', 'room='+room, 'id='+id);
@@ -249,6 +251,7 @@ server.on('upgrade', function(req, socket){
       if(id !== hostOf(room)) return;
       var lv = (typeof m.level === 'string' && m.level && m.level.length <= 64) ? m.level : roomLevel[room];
       if(lv) roomLevel[room] = lv;
+      roomPads[room] = {};                     // 새 경기 — 패드 전부 초기화
       broadcast(room, id, JSON.stringify({ t:'start', level:lv }));
       return;
     }
@@ -257,6 +260,22 @@ server.on('upgrade', function(req, socket){
       var txt = m.text.slice(0,120); if(!txt) return;
       var line = JSON.stringify({ t:'ch', id:id, name:client.name, text:txt });
       broadcast(room, id, line); send(socket, line);
+      return;
+    }
+    /* 아이템 패드 — 둘이 거의 동시에 밟으면 먼저 도착한 신고만 받는다.
+       클라가 아이템을 제안하고 서버는 '누가 먼저인가'만 판정한다. 아이템 표를
+       서버에도 복사해 두면 index.html 과 조용히 어긋나기 시작하기 때문이다.
+       (친구끼리 하는 프로토타입이라 클라가 좋은 아이템만 제안하는 건 막지 않는다.) */
+    if(m.t === 'pick'){
+      var pi = m.pad|0;
+      if(pi < 0 || pi > 63) return;
+      if(typeof m.item !== 'string' || !m.item || m.item.length > 24) return;
+      var pads = roomPads[room] || (roomPads[room] = {});
+      var tnow = Date.now();
+      if((pads[pi] || 0) > tnow) return;        // 아직 쿨다운 — 늦게 온 사람은 빈손
+      pads[pi] = tnow + PAD_CD_MS;
+      var pline = JSON.stringify({ t:'pad', pad:pi, id:id, item:m.item });
+      broadcast(room, id, pline); send(socket, pline);
       return;
     }
     if(m.t === 'fell'){         // 아레나 밖으로 떨어짐 — 떨어진 본인이 알린다
