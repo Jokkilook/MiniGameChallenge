@@ -5,6 +5,7 @@
 Mesh/*
 !Mesh/blaster-h.glb
 !Mesh/bullet-foam-tip-thick.glb
+!Mesh/character-d.glb
 !Mesh/Textures/
 !Mesh/Textures/*.png
 !Mesh/station/
