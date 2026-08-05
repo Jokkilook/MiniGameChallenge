@@ -93,12 +93,16 @@ function handleSave(req, res){
   });
 }
 
-/* ---------- 총 메시 굽기 결과 저장 ----------
+/* ---------- 메시 굽기 결과 저장 ----------
  * Node 에는 JPEG 디코더가 없어서 굽는 일은 브라우저(tools/bake.html)가 하고,
- * 서버는 그 결과를 gunbaked.js 로 받아쓰기만 한다. 저장과 같은 이유로 로컬 전용이고,
- * 파일명은 클라이언트가 못 정한다(경로가 고정이라 탈출 여지가 없다).
+ * 서버는 그 결과를 받아쓰기만 한다. 저장과 같은 이유로 로컬 전용이고,
+ * 파일명은 클라이언트가 못 정한다 — **본문에 든 전역 이름으로** 고른다.
+ * (총과 아이템 두 종류라 대상이 필요해졌는데, 이름을 그대로 받으면 경로 탈출이 열린다.)
  */
-var BAKED_FILE = path.join(ROOT, 'gunbaked.js');
+var BAKE_TARGETS = [
+  { mark:'window.GUN_BAKED=',  file:'gunbaked.js'  },
+  { mark:'window.ITEM_BAKED=', file:'itembaked.js' }
+];
 function handleBake(req, res){
   function fail(code, msg){ res.writeHead(code, {'Content-Type':'text/plain; charset=utf-8'}); res.end(msg); }
   if(!isLocal(req)) return fail(403, '이 서버를 돌리는 PC에서만 저장할 수 있습니다.');
@@ -110,12 +114,15 @@ function handleBake(req, res){
   });
   req.on('end', function(){
     if(tooBig) return;
-    if(!body || body.indexOf('window.GUN_BAKED=') < 0) return fail(400, '구운 데이터가 아닙니다.');
-    fs.writeFile(BAKED_FILE, body, function(err){
+    var t = null;
+    for(var i = 0; i < BAKE_TARGETS.length; i++)
+      if(body && body.indexOf(BAKE_TARGETS[i].mark) >= 0){ t = BAKE_TARGETS[i]; break; }
+    if(!t) return fail(400, '구운 데이터가 아닙니다.');
+    fs.writeFile(path.join(ROOT, t.file), body, function(err){
       if(err) return fail(500, '저장 실패: ' + err.message);
-      log('bake', 'gunbaked.js (' + Math.round(body.length/1024) + 'KB)');
+      log('bake', t.file + ' (' + Math.round(body.length/1024) + 'KB)');
       res.writeHead(200, {'Content-Type':'application/json'});
-      res.end(JSON.stringify({ ok:true, path:'gunbaked.js', bytes:body.length }));
+      res.end(JSON.stringify({ ok:true, path:t.file, bytes:body.length }));
     });
   });
 }

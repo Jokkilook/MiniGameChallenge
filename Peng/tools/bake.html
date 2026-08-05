@@ -1,11 +1,12 @@
 <!doctype html>
 <html lang="ko"><head><meta charset="utf-8">
-<title>PENG! — 총 메시 굽기</title>
+<title>PENG! — 메시 굽기</title>
 <style>
   body{margin:0;padding:28px;background:#0f1422;color:#dbe4f5;
     font-family:"Pretendard","Inter","Segoe UI","Malgun Gothic",sans-serif;font-size:14px;line-height:1.7}
   .wrap{max-width:760px;margin:0 auto}
   h1{font-size:20px;margin:0 0 4px}
+  h2{font-size:15px;margin:30px 0 2px;padding-top:22px;border-top:1px solid #222c46}
   .sub{color:#7e8db0;margin:0 0 22px}
   p{color:#9fb0d0}
   label{display:block;color:#7e8db0;font-size:12px;margin:16px 0 6px}
@@ -22,40 +23,59 @@
   code{background:#161d30;padding:1px 6px;border-radius:4px;color:#c6d3ec}
 </style></head>
 <body><div class="wrap">
-  <h1>총 메시 굽기</h1>
-  <p class="sub">.glb 를 읽어 텍스처를 정점색에 굽고, 결과만 <code>gunbaked.js</code> 로 저장합니다.</p>
+  <h1>메시 굽기</h1>
+  <p class="sub">.glb 를 읽어 텍스처를 정점색에 굽고, 결과만 <code>*baked.js</code> 로 저장합니다.</p>
 
-  <p>원본 <code>.glb</code> 는 텍스처 때문에 6MB가 넘습니다. 게임이 실제로 쓰는 건 구워진
+  <p>원본 <code>.glb</code> 는 텍스처 때문에 장당 6MB가 넘습니다. 게임이 실제로 쓰는 건 구워진
   정점(위치·색·법선·인덱스)뿐이라, 그것만 뽑아두면 <b>약 190KB</b>로 줄고 <code>&lt;script src&gt;</code>
-  로 읽히므로 <code>file://</code> 오프라인 플레이에서도 총 메시가 나옵니다.</p>
-  <p><b>모델을 바꿨을 때만</b> 이 페이지를 다시 열어 [굽고 저장] 을 누르면 됩니다.
+  로 읽히므로 <code>file://</code> 오프라인 플레이에서도 메시가 나옵니다.</p>
+  <p><b>모델을 바꿨을 때만</b> 이 페이지를 다시 열어 누르면 됩니다.
   (저장은 서버를 돌리는 PC에서만 됩니다.)</p>
 
+  <h2>총 — <code>gunbaked.js</code></h2>
   <label>원본 GLB 경로</label>
   <input type="text" id="url" value="../Mesh/ShockWave_Gun.glb">
   <button id="go">굽고 저장</button>
+
+  <h2>아이템 표식 6종 — <code>itembaked.js</code></h2>
+  <p><code>Mesh/SM_*.glb</code> 6개를 차례로 읽어 한 파일로 굽습니다. 합쳐서 40MB 라
+  하나씩 이어 받습니다 — 조금 걸립니다. 한 종이 실패해도 나머지는 저장되고,
+  빠진 종만 게임에서 큐브 표식으로 떨어집니다.</p>
+  <button id="goItems">아이템 굽고 저장</button>
 
   <div id="log">대기 중</div>
   <canvas id="cv"></canvas>
 </div>
 
+<script src="../meshlib.js"></script>
 <script src="../gunmesh.js"></script>
+<script src="../itemmesh.js"></script>
 <script>
 "use strict";
-var logEl=document.getElementById('log'), logN=0;
+ItemMesh.dir='../Mesh/';       // 이 페이지는 tools/ 아래라 한 칸 올라가야 한다
+var logEl=document.getElementById('log');
 function say(msg,cls){
   var d=document.createElement('div');
   if(cls) d.className=cls;
-  d.textContent=msg; logEl.appendChild(d); logN++;
+  d.textContent=msg; logEl.appendChild(d);
 }
-function clearLog(){ logEl.textContent=''; logN=0; }
+function clearLog(){ logEl.textContent=''; }
+function save(text, label, btn){
+  say('결과 크기: '+Math.round(text.length/1024)+'KB');
+  fetch('/__bake',{method:'POST',headers:{'Content-Type':'text/plain; charset=utf-8'},body:text})
+    .then(function(r){ return r.text().then(function(t){ if(!r.ok) throw new Error(t); return t; }); })
+    .then(function(){ say('저장 완료 → '+label, 'ok');
+      say('index.html 을 새로고침하면 이제 이 파일을 씁니다(.glb 는 더 안 받습니다).');
+      btn.disabled=false; })
+    .catch(function(e){ say('저장 실패: '+e.message, 'err'); btn.disabled=false; });
+}
 
+/* ---- 총 ---- */
 document.getElementById('go').addEventListener('click', function(){
   var btn=this; btn.disabled=true; clearLog();
   var url=document.getElementById('url').value.trim();
   say('읽는 중: '+url);
-  // 이미 구워진 상태로 다시 누를 수 있게 초기화
-  GunMesh.ready=false; GunMesh.loading=false;
+  GunMesh.ready=false; GunMesh.loading=false;   // 이미 구워진 상태로 다시 누를 수 있게 초기화
   GunMesh.load(url, function(ok){
     if(!ok){ say('실패: '+GunMesh.err, 'err'); btn.disabled=false; return; }
     say('구움: '+GunMesh.info);
@@ -63,20 +83,37 @@ document.getElementById('go').addEventListener('click', function(){
     var text;
     try{ text=GunMesh.serialize(); }
     catch(e){ say('직렬화 실패: '+e.message,'err'); btn.disabled=false; return; }
-    say('결과 크기: '+Math.round(text.length/1024)+'KB');
-    preview();
-    fetch('/__bake',{method:'POST',headers:{'Content-Type':'text/plain; charset=utf-8'},body:text})
-      .then(function(r){ return r.text().then(function(t){ if(!r.ok) throw new Error(t); return t; }); })
-      .then(function(){ say('저장 완료 → gunbaked.js', 'ok');
-        say('index.html 을 새로고침하면 이제 이 파일을 씁니다(.glb 는 더 안 받습니다).');
-        btn.disabled=false; })
-      .catch(function(e){ say('저장 실패: '+e.message, 'err'); btn.disabled=false; });
+    preview('gun');
+    save(text, 'gunbaked.js', btn);
+  });
+});
+
+/* ---- 아이템 6종 ---- */
+document.getElementById('goItems').addEventListener('click', function(){
+  var btn=this; btn.disabled=true; clearLog();
+  say('아이템 '+ItemMesh.keys.length+'종을 차례로 읽습니다…');
+  for(var i=0;i<ItemMesh.keys.length;i++){                 // 다시 누를 수 있게 초기화
+    var r=ItemMesh.res[ItemMesh.keys[i]]; r.ready=false; r.loading=false;
+  }
+  ItemMesh.loadAll(function(n){
+    if(!n){ say('한 종도 못 읽었습니다', 'err'); btn.disabled=false; return; }
+    var text;
+    try{ text=ItemMesh.serialize(); }
+    catch(e){ say('직렬화 실패: '+e.message,'err'); btn.disabled=false; return; }
+    preview('item');
+    save(text, 'itembaked.js', btn);
+  }, function(key, ok, res){
+    say(ok ? ('  ' + key.padEnd(8) + res.info) : ('  ' + key + ' 실패: ' + res.err), ok?null:'err');
   });
 });
 
 /* ---- 미리보기: 구운 정점을 그대로 그려 본다(게임과 같은 draw 경로) ---- */
-function preview(){
+var previewOn=null;
+function preview(kind){
   var cv=document.getElementById('cv');
+  var restart=(previewOn===null);
+  previewOn=kind;
+  if(!restart) return;                       // 루프는 하나만 돌리고 대상만 바꾼다
   cv.width=cv.clientWidth; cv.height=cv.clientHeight;
   var gl=cv.getContext('webgl'); if(!gl){ say('미리보기 불가(WebGL 없음)'); return; }
   function sh(t,src){ var s=gl.createShader(t); gl.shaderSource(s,src); gl.compileShader(s); return s; }
@@ -89,12 +126,16 @@ function preview(){
   gl.enable(gl.DEPTH_TEST);
 
   // 모델을 원점에 원래 크기로 두고 카메라만 돌린다
-  var save={s:GunMesh.scale,x:GunMesh.ox,y:GunMesh.oy,z:GunMesh.oz,w:GunMesh.outlineW};
+  var sv={s:GunMesh.scale,x:GunMesh.ox,y:GunMesh.oy,z:GunMesh.oz,w:GunMesh.outlineW,
+          iS:ItemMesh.SIZE,iW:ItemMesh.outlineW};
   GunMesh.scale=1; GunMesh.ox=0; GunMesh.oy=0; GunMesh.oz=0; GunMesh.outlineW=0.012;
+  ItemMesh.SIZE=1; ItemMesh.outlineW=0.012;
+  var GAP=1.35;                              // 아이템을 한 줄로 늘어놓을 간격
   var t0=performance.now();
   function frame(){
-    var a=(performance.now()-t0)/1800, D=3.1;
-    var eye={x:Math.sin(a)*D, y:0.85, z:Math.cos(a)*D};
+    var items=(previewOn==='item'), keys=ItemMesh.keys;
+    var a=(performance.now()-t0)/1800, D=items?7.2:3.1;
+    var eye={x:Math.sin(a)*D, y:items?1.6:0.85, z:Math.cos(a)*D};
     var F={x:-eye.x,y:-eye.y,z:-eye.z}, L=Math.hypot(F.x,F.y,F.z);
     F={x:F.x/L,y:F.y/L,z:F.z/L};
     var R={x:F.z,y:0,z:-F.x}, RL=Math.hypot(R.x,R.z)||1; R={x:R.x/RL,y:0,z:R.z/RL};
@@ -109,16 +150,25 @@ function preview(){
 
     gl.viewport(0,0,cv.width,cv.height);
     gl.clearColor(0.094,0.125,0.227,1); gl.clear(gl.COLOR_BUFFER_BIT|gl.DEPTH_BUFFER_BIT);
-    var O={x:0,y:0,z:0}, BR={x:1,y:0,z:0}, BU={x:0,y:1,z:0}, BF={x:0,y:0,z:1};
-    GunMesh.drawBody(gl,p,VP,O,BR,BU,BF,0,null);
-    gl.enable(gl.CULL_FACE); gl.cullFace(gl.BACK);
-    GunMesh.drawOutline(gl,p,VP,O,BR,BU,BF,0,null);
-    gl.disable(gl.CULL_FACE);
+    var i, x0=-(keys.length-1)*GAP/2;
+    if(items){
+      for(i=0;i<keys.length;i++) ItemMesh.draw(gl,p,VP,keys[i], x0+i*GAP,0,0, a*1.4);
+      gl.enable(gl.CULL_FACE); gl.cullFace(gl.BACK);
+      for(i=0;i<keys.length;i++) ItemMesh.drawOutline(gl,p,VP,keys[i], x0+i*GAP,0,0, a*1.4);
+      gl.disable(gl.CULL_FACE);
+    } else {
+      var O={x:0,y:0,z:0}, BR={x:1,y:0,z:0}, BU={x:0,y:1,z:0}, BF={x:0,y:0,z:1};
+      GunMesh.drawBody(gl,p,VP,O,BR,BU,BF,0,null);
+      gl.enable(gl.CULL_FACE); gl.cullFace(gl.BACK);
+      GunMesh.drawOutline(gl,p,VP,O,BR,BU,BF,0,null);
+      gl.disable(gl.CULL_FACE);
+    }
     requestAnimationFrame(frame);
   }
   frame();
   window.addEventListener('beforeunload',function(){
-    GunMesh.scale=save.s; GunMesh.ox=save.x; GunMesh.oy=save.y; GunMesh.oz=save.z; GunMesh.outlineW=save.w; });
+    GunMesh.scale=sv.s; GunMesh.ox=sv.x; GunMesh.oy=sv.y; GunMesh.oz=sv.z; GunMesh.outlineW=sv.w;
+    ItemMesh.SIZE=sv.iS; ItemMesh.outlineW=sv.iW; });
 }
 </script>
 </body></html>
