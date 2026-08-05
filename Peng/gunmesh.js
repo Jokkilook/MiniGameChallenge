@@ -15,6 +15,7 @@
  *   shockwave : 총구가 -X   →  local = (-z,  y, -x)
  *   kenney    : 총구가 -Z   →  local = ( x,  y, -z)   (Kenney Blaster Kit 계열)
  *   bullet    : 끝이  +Y   →  local = ( x,  z,  y)   (탄환 — 긴 축을 +Z 로 세운다)
+ *   station   : 그대로       →  local = (-x,  y,  z)   (레벨 조각 — 좌우만 뒤집어 감기를 맞춘다)
  *
  * 실패하면 조용히 ready=false 로 남는다. 호출부는 기존 박스 총으로 폴백한다
  * (file:// 로 직접 열면 fetch 가 막히므로 이 경로가 실제로 쓰인다).
@@ -166,6 +167,7 @@ function build(g, img){
     var lx,ly,lz;
     if(GunMesh.axes==='kenney'){ lx=q[0];  ly=q[1]; lz=-q[2]; }
     else if(GunMesh.axes==='bullet'){ lx=q[0]; ly=q[2]; lz=q[1]; }
+    else if(GunMesh.axes==='station'){ lx=-q[0]; ly=q[1]; lz=q[2]; }
     else                       { lx=-q[2]; ly=q[1]; lz=-q[0]; }
     pos[v*3]=lx; pos[v*3+1]=ly; pos[v*3+2]=lz;
     if(lx<mn[0])mn[0]=lx; if(ly<mn[1])mn[1]=ly; if(lz<mn[2])mn[2]=lz;
@@ -175,6 +177,7 @@ function build(g, img){
       var nx,ny,nz;
       if(GunMesh.axes==='kenney'){ nx=d[0];  ny=d[1]; nz=-d[2]; }
       else if(GunMesh.axes==='bullet'){ nx=d[0]; ny=d[2]; nz=d[1]; }
+      else if(GunMesh.axes==='station'){ nx=-d[0]; ny=d[1]; nz=d[2]; }
       else                       { nx=-d[2]; ny=d[1]; nz=-d[0]; }
       var nl=Math.hypot(nx,ny,nz)||1;
       rawN[v*3]=nx/nl; rawN[v*3+1]=ny/nl; rawN[v*3+2]=nz/nl;
@@ -278,13 +281,16 @@ GunMesh.decodeBaked=function(o){
   if(!o || o.v!==BAKE_VER) throw new Error('구운 데이터의 형식 버전이 다릅니다');
   var n=o.n, mn=o.mn, mx=o.mx;
   var P=new Uint16Array(b64dec(o.p).buffer), C=b64dec(o.c),
-      idx=new Uint16Array(b64dec(o.i).buffer);
+      NR=new Int8Array(b64dec(o.nr).buffer), idx=new Uint16Array(b64dec(o.i).buffer);
   if(P.length!==n*3 || C.length!==n*3) throw new Error('구운 데이터의 길이가 안 맞습니다');
-  var pos=new Float32Array(n*3), col=new Float32Array(n*3);
+  var pos=new Float32Array(n*3), col=new Float32Array(n*3), nrm=new Float32Array(n*3);
   var sc=[(mx[0]-mn[0])/65535, (mx[1]-mn[1])/65535, (mx[2]-mn[2])/65535];
-  for(var v=0;v<n;v++) for(var a=0;a<3;a++){
-    pos[v*3+a]=mn[a]+P[v*3+a]*sc[a]; col[v*3+a]=C[v*3+a]/255; }
-  return {pos:pos, col:col, idx:idx, n:n, min:mn, max:mx, tip:o.mz.slice()};
+  for(var v=0;v<n;v++){
+    for(var a=0;a<3;a++){ pos[v*3+a]=mn[a]+P[v*3+a]*sc[a]; col[v*3+a]=C[v*3+a]/255; }
+    var qx=NR[v*3]/127, qy=NR[v*3+1]/127, qz=NR[v*3+2]/127, ql=Math.hypot(qx,qy,qz)||1;
+    nrm[v*3]=qx/ql; nrm[v*3+1]=qy/ql; nrm[v*3+2]=qz/ql;
+  }
+  return {pos:pos, col:col, nrm:nrm, idx:idx, n:n, min:mn, max:mx, tip:o.mz.slice()};
 };
 function applyBaked(o){
   if(!o || o.v!==BAKE_VER) throw new Error('구운 데이터의 형식 버전이 다릅니다');

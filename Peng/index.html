@@ -307,6 +307,7 @@
 <script src="gunmesh.js"></script>
 <script src="gunbaked.js"></script>
 <script src="bulletbaked.js"></script>
+<script src="stationbaked.js"></script>
 
 <script>
 "use strict";
@@ -432,7 +433,24 @@ function buildCollapseFloor(){
       col:col, _tile:true, _ring:ring, _col0:col });
     if(ring>maxR) maxR=ring;
   }
-  if(C.gen){
+  if(C.gen==='station'){
+    /* 우주 정거장 — 코어에서 복도를 뻗어 포드를 붙이는 조립식.
+       조각은 정적 VBO 로 따로 그리고, 여기서는 충돌체만 LEVEL.boxes 에 넣는다.
+       _ring 은 '분리 순서'다 — 기존 붕괴 코드가 그대로 쓴다(큰 값부터 떨어져 나간다). */
+    var ST=PENG.genStation(FLOOR_SEED), U=STATION.unit;
+    ST.colliders.forEach(function(cl){
+      LEVEL.boxes.push({ cx:cl.i*U, cy:cl.cy*U, cz:cl.j*U,
+        hx:cl.hx*U, hy:cl.hy*U, hz:cl.hz*U,
+        col:C.col, _tile:true, _ring:cl.order, _col0:C.col });
+      if(cl.order>maxR) maxR=cl.order;
+    });
+    LEVEL._pieces = ST.pieces;
+    LEVEL.spawns = ST.spawns.map(function(s2){ return {x:s2.i*U, y:0, z:s2.j*U}; });
+    LEVEL.pads   = ST.pads.map(function(p2){ return {x:p2.i*U, y:0, z:p2.j*U}; });
+    LEVEL.start  = LEVEL.spawns[0];
+    LEVEL._gen   = [ST.info];
+    buildStation(ST.pieces);
+  } else if(C.gen){
     /* 절차적 판 — 시드 하나로 전원이 같은 지형을 만든다(릴레이라 지형 권위가 없다).
        FLOOR_SEED 는 라운드마다 바뀐다: 경기 시드 + 라운드 번호. */
     var G=PENG.genArena(C, FLOOR_SEED);
@@ -474,6 +492,15 @@ function buildCollapseFloor(){
 }
 function dropRing(r){
   if(!LEVEL) return;
+  // 정거장: 그 순서의 조각을 통째로 목록에서 빼고 VBO 를 다시 만든다(분리 = 떨어져 나감)
+  if(LEVEL._pieces){
+    var any=false;
+    for(var q=0;q<LEVEL._pieces.length;q++){
+      var pp=LEVEL._pieces[q];
+      if(pp.order===r && !pp._gone){ pp._gone=true; any=true; }
+    }
+    if(any) buildStation(LEVEL._pieces);
+  }
   for(var i=0;i<LEVEL.boxes.length;i++){ var b=LEVEL.boxes[i];
     if(b.deco || b._ring!==r || b._fall) continue;
     b._fall=true; b._vy=0; b.deco=true;      // deco = 이제 밟히지도 총알을 막지도 않는다
@@ -1573,6 +1600,48 @@ function quadGL(v,c,outline){
       LINE.push(a[0],a[1],a[2],e[0],e[1],e[2], b[0],b[1],b[2],e[0],e[1],e[2]); } }
 }
 // 빌보드 1개: 중심/반지름/색+알파
+/* ---------- 정거장 조각 렌더 ----------
+   조각이 100~300개라 매 프레임 CPU 로 옮기면 낭비다. 분리될 때 말고는 안 움직이므로
+   판을 만들 때 한 번만 정점을 굽고 정적 VBO 로 올린다 — 그린 뒤엔 드로우콜 하나다.
+   조각이 떨어져 나가면 그때만 다시 만든다(경기당 서너 번). */
+var STATION={ buf:null, count:0, parts:null, unit:2.6 };
+var STATION_LIGHT=[0.42,0.80,0.43];        // 간이 방향광 — 킷 색만 쓰면 전부 납작해 보인다
+function stationParts(){
+  if(STATION.parts) return STATION.parts;
+  var out=null;
+  try{
+    if(window.STATION_BAKED && window.GunMesh && GunMesh.decodeBaked){
+      out={};
+      for(var k in window.STATION_BAKED) out[k]=GunMesh.decodeBaked(window.STATION_BAKED[k]);
+    }
+  }catch(e){ out=null; }
+  STATION.parts=out||{};
+  return STATION.parts;
+}
+/* pieces → 정점 배열. rot 은 90도 단위(0..3), (x,z) 를 (z,-x) 로 r 번 돌린다.
+   법선으로 간이 음영을 넣는다 — 안 그러면 킷 색이 그대로라 면 구분이 안 된다. */
+function buildStation(pieces){
+  var P=stationParts(), S=STATION.unit, arr=[];
+  var L=STATION_LIGHT, ll=Math.hypot(L[0],L[1],L[2])||1;
+  for(var p=0;p<pieces.length;p++){
+    var pc=pieces[p]; if(pc._gone) continue;
+    var m=P[pc.t]; if(!m) continue;
+    var r=pc.rot&3, ox=pc.i*S, oy=pc.y*S, oz=pc.j*S;
+    for(var k=0;k<m.idx.length;k++){
+      var v=m.idx[k], x=m.pos[v*3]*S, y=m.pos[v*3+1]*S, z=m.pos[v*3+2]*S;
+      var nx=m.nrm?m.nrm[v*3]:0, ny=m.nrm?m.nrm[v*3+1]:1, nz=m.nrm?m.nrm[v*3+2]:0;
+      for(var t=0;t<r;t++){ var tx=z; z=-x; x=tx; var tn=nz; nz=-nx; nx=tn; }
+      var sh=0.62+0.38*Math.max(0,(nx*L[0]+ny*L[1]+nz*L[2])/ll);
+      arr.push(ox+x, oy+y, oz+z, m.col[v*3]*sh, m.col[v*3+1]*sh, m.col[v*3+2]*sh);
+    }
+  }
+  if(!GLREADY){ STATION.pending=arr; return; }
+  if(!STATION.buf) STATION.buf=gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, STATION.buf);
+  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(arr), gl.STATIC_DRAW);
+  STATION.count=arr.length/6;
+  STATION.pending=null;
+}
 /* ---------- 투사체 메시 ----------
    총과 달리 탄환은 월드 공간에 여러 개가 동시에 뜬다. GL 버퍼를 따로 두는 대신
    삼각형 44개짜리 작은 메시를 CPU 로 변환해 기존 TRI 파이프라인에 밀어 넣는다
@@ -1755,6 +1824,16 @@ function render(dt){
   gl.disable(gl.BLEND);
   gl.enable(gl.POLYGON_OFFSET_FILL); gl.polygonOffset(1.0,1.0);  // 외곽선이 면에 묻히지 않게
   drawArr(BUF.tri, TRI, PROG.main, gl.TRIANGLES);
+  // 정거장 조각 — 정적 VBO 라 매 프레임 옮기지 않는다(드로우콜 1)
+  if(STATION.pending) buildStation(LEVEL._pieces||[]);
+  if(STATION.buf && STATION.count){
+    gl.bindBuffer(gl.ARRAY_BUFFER, STATION.buf);
+    gl.enableVertexAttribArray(PROG.main.aPos);
+    gl.vertexAttribPointer(PROG.main.aPos,3,gl.FLOAT,false,24,0);
+    gl.enableVertexAttribArray(PROG.main.aCol);
+    gl.vertexAttribPointer(PROG.main.aCol,3,gl.FLOAT,false,24,12);
+    gl.drawArrays(gl.TRIANGLES,0,STATION.count);
+  }
   gl.disable(gl.POLYGON_OFFSET_FILL);
   // 총 메시 — 정적 VBO 라 매 프레임 옮기지 않고 모델행렬만 바꿔 그린다
   for(var qi=0;qi<GUNQ.length;qi++){ var Q=GUNQ[qi];
@@ -2760,6 +2839,7 @@ window.__peng={ makeSim:makeSim, stepSim:stepSim, doFire:doFire,
   get cam(){ return CAMPOS; }, get camLen(){ return CAM_LEN; },   // 3인칭 카메라 충돌 검증용
   get matchSeed(){ return MATCH_SEED; }, get floorSeed(){ return FLOOR_SEED; },  // 절차 생성 검증용
   get bots(){ return BOTS; },        // AI 검증용
+  get station(){ return STATION; }, buildStation:buildStation,   // 정거장 검증용
   get vertCount(){ return TRI.length/6; },  // 이번 프레임에 쌓인 정점 수(렌더 검증용)
   // 프레임 강제 실행 — 검증 환경(탭이 숨겨진 상태)에선 rAF 가 멈춰 렌더가 안 돈다
   frame:function(now){ loop(now!=null?now:performance.now()); },

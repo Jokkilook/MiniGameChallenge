@@ -651,3 +651,135 @@ PENG.genArenaOnce = function(C, seed){
     used:    used
   };
 };
+
+/* ---------- 절차적 우주 정거장 (Kenney Space Station Kit) ----------
+ * 예전 아레나는 "원판을 깔고 구멍을 파는" 방식이라 아무리 손봐도 지형 덩어리였다.
+ * 이건 반대로 간다 — 실제 정거장처럼 코어에서 복도를 뻗고 끝에 포드를 붙여 '조립'한다.
+ * 그래서 실루엣이 허브+스포크로 읽히고, 조각이 킷의 1x1 격자에 그대로 얹힌다.
+ *
+ * 좌표는 킷 유닛(1칸=1)으로 낸다. 미터 환산은 부르는 쪽이 한다(1유닛 = 2.6m).
+ * 데크 윗면이 y=0 이 되도록 바닥 조각은 y=-0.3 에 놓는다.
+ *
+ * 4겹 회전 대칭은 그대로 지킨다: 한 사분면(+Z 방향 팔)만 굴리고 네 번 돌린다.
+ * 밀어 떨어뜨리는 경기에서 비대칭은 곧 불공정이다.
+ *
+ * 붕괴는 '고리'가 아니라 '모듈 분리'다. order 가 클수록 먼저 떨어져 나간다:
+ *   위성(가장 바깥) → 포드 → 복도(바깥→안) → 코어(안 떨어짐).
+ */
+PENG.genStation = function(seed){
+  var rnd = PENG.rng32(seed);
+  var ri = function(a,b){ return a + Math.floor(rnd()*(b-a+1)); };
+  var pick = function(a){ return a[Math.floor(rnd()*a.length)]; };
+
+  /* --- 1) 칸 배치(한 사분면) --- */
+  var armLen = ri(2,4);          // 코어에서 뻗는 복도 길이(칸)
+  var podR   = ri(1,2);          // 포드 반경 → 3x3 또는 5x5
+  var hasSat = rnd() < 0.6;      // 포드 너머 떨어진 위성 발판(로켓점프 표적)
+  var podC   = 2 + armLen + podR;                 // 포드 중심의 j
+  var satJ   = podC + podR + ri(2,3);             // 위성 j (사이가 비어 협곡이 된다)
+  var maxOrd = armLen + (hasSat?2:1);
+
+  var cells = {};                                  // "i,j" -> {i,j,order,kind}
+  function put(i,j,order,kind){
+    var k = i+','+j, c = cells[k];
+    if(c){ if(order < c.order){ c.order=order; c.kind=kind; } return; }
+    cells[k] = {i:i, j:j, order:order, kind:kind};
+  }
+  // 사분면 하나에만 놓고 아래에서 네 번 돌린다. 코어는 대칭이라 그냥 다 놓는다.
+  var q = [];
+  function q4(i,j,order,kind){ q.push({i:i,j:j,order:order,kind:kind}); }
+  for(var j=2; j<2+armLen; j++) q4(0, j, j-1, 'arm');          // 복도 — 안쪽일수록 늦게 분리
+  for(var pi=-podR; pi<=podR; pi++) for(var pj=-podR; pj<=podR; pj++)
+    q4(pi, podC+pj, armLen+0, 'pod');
+  if(hasSat){ q4(0, satJ, armLen+1, 'sat'); q4(-1, satJ, armLen+1, 'sat'); }
+
+  for(var ci=-1; ci<=1; ci++) for(var cj=-1; cj<=1; cj++) put(ci,cj,0,'core');
+  for(var t=0; t<q.length; t++){
+    var e=q[t], x=e.i, z=e.j;
+    for(var r=0; r<4; r++){                       // (i,j) -> (j,-i) 네 번 = 4겹 대칭
+      put(x, z, e.order, e.kind);
+      var nx=z, nz=-x; x=nx; z=nz;
+    }
+  }
+
+  /* --- 2) 조각 얹기 ---
+     결정은 '회전 궤도당 한 번'만 내리고 네 칸에 똑같이 적용한다. 칸마다 굴리면
+     같은 자리인데 한쪽만 벽이고 다른 쪽은 난간이 되어 4겹 대칭이 깨진다
+     (밀어 떨어뜨리는 경기에서 그건 곧 불공정이다). */
+  var pieces=[], colliders=[];
+  function has(i,j){ return !!cells[i+','+j]; }
+  var DIR=[[0,1],[1,0],[0,-1],[-1,0]];            // rot 0..3 이 그대로 바깥 방향
+
+  // 궤도 묶기 — (i,j) -> (j,-i) 를 네 번 돌면 제자리
+  var orbits=[], seen={};
+  var keys=Object.keys(cells).sort();             // 시드가 같으면 순서도 같아야 한다
+  for(var k=0;k<keys.length;k++){
+    var c0=cells[keys[k]];
+    var i=c0.i, j=c0.j, ring=[];
+    for(var r=0;r<4;r++){ ring.push([i,j]); var ni=j, nj=-i; i=ni; j=nj; }
+    var best=ring[0];
+    for(r=1;r<4;r++) if(ring[r][0]<best[0] || (ring[r][0]===best[0] && ring[r][1]<best[1])) best=ring[r];
+    var ck=best[0]+','+best[1];
+    if(seen[ck]) continue;
+    seen[ck]=1;
+    orbits.push({rep:c0, ring:ring});
+  }
+
+  var PROP={ 'container':[0.57,0.6,0.57], 'container-wide':[0.6,0.7,0.6], 'skip':[0.7,0.5,1.2],
+             'computer-system':[0.9,0.6,0.69], 'table':[1.1,0.4,0.6], 'pipe':[0.25,0.5,0.28] };
+  var PROPK=Object.keys(PROP);
+
+  for(var o=0;o<orbits.length;o++){
+    var ob=orbits[o], c=ob.rep;
+    /* 이 궤도의 결정을 여기서 전부 뽑아 둔다 — 아래 네 칸이 같은 값을 쓴다 */
+    var floorT = rnd()<0.18 ? 'floor-detail' : (rnd()<0.3 ? 'floor-panel' : 'floor');
+    var floorR = ri(0,3);
+    var edge=[];                                   // 방향별: null | {wall:true,t:..} | {rail:true}
+    for(var d=0; d<4; d++){
+      if(has(c.i+DIR[d][0], c.j+DIR[d][1])){ edge.push(null); continue; }
+      var wall = (c.kind==='pod') ? rnd()<0.55 : (c.kind==='core' ? rnd()<0.25 : rnd()<0.08);
+      edge.push(wall ? {wall:true, t:pick(['wall','wall','wall-window','wall-door'])} : {rail:true});
+    }
+    // 소품 — 코어 정중앙은 비워 둔다(최후의 결전장)
+    var prop=null;
+    if((c.kind==='pod'||c.kind==='core') && !(c.i===0&&c.j===0) && rnd()<0.34){
+      var pt=pick(PROPK); prop={t:pt, sz:PROP[pt], rot:ri(0,3)};
+    }
+
+    for(r=0;r<4;r++){
+      var ci=ob.ring[r][0], cj=ob.ring[r][1];
+      var cell=cells[ci+','+cj]; if(!cell) continue;
+      pieces.push({t:floorT, i:ci, j:cj, y:-0.3, rot:(floorR+r)&3, order:cell.order});
+      colliders.push({i:ci, j:cj, cy:-0.15, hx:0.5, hy:0.15, hz:0.5, order:cell.order});
+      for(d=0; d<4; d++){
+        var e=edge[d]; if(!e) continue;
+        var dd=(d+r)&3;                            // 방향도 같이 돈다((dx,dz) -> (dz,-dx) = d+1)
+        var ei=ci+DIR[dd][0]*0.5, ej=cj+DIR[dd][1]*0.5;
+        if(e.wall){
+          pieces.push({t:e.t, i:ei, j:ej, y:0, rot:dd, order:cell.order});
+          var ax=(dd%2===0);                       // 0·2 는 X 로 넓고 1·3 은 Z 로 넓다
+          colliders.push({i:ei, j:ej, cy:0.5, hx:ax?0.5:0.15, hy:0.5, hz:ax?0.15:0.5, order:cell.order});
+        } else {
+          // 난간은 장식이다 — 충돌을 주면 아무도 안 떨어져 경기가 성립하지 않는다
+          pieces.push({t:'rail', i:ei, j:ej, y:0, rot:dd, order:cell.order, deco:true});
+        }
+      }
+      if(prop){
+        pieces.push({t:prop.t, i:ci, j:cj, y:0, rot:(prop.rot+r)&3, order:cell.order});
+        var sz=prop.sz, sw=(prop.rot+r)&1 ? sz[2] : sz[0], sd=(prop.rot+r)&1 ? sz[0] : sz[2];
+        colliders.push({i:ci, j:cj, cy:sz[1]/2, hx:sw/2, hy:sz[1]/2, hz:sd/2, order:cell.order});
+      }
+    }
+  }
+
+  /* --- 3) 스폰·패드 (전부 4겹) --- */
+  var spawns=[], pads=[{i:0,j:0}];
+  function ring4(i,j,out){ for(var t2=0;t2<4;t2++){ out.push({i:i,j:j}); var n1=j, n2=-i; i=n1; j=n2; } }
+  ring4(0, podC, spawns);            // 포드 중심
+  ring4(0, 2, pads);                 // 복도 첫 칸 — 집으러 가려면 자리를 비워야 한다
+  ring4(0, podC+podR, pads);         // 포드 바깥쪽
+
+  return { pieces:pieces, colliders:colliders, spawns:spawns, pads:pads,
+           maxOrder:maxOrd, cells:Object.keys(cells).length,
+           info:'팔'+armLen+' 포드'+(podR*2+1)+'x'+(podR*2+1)+(hasSat?' 위성':'') };
+};

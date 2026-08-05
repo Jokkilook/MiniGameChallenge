@@ -35,6 +35,7 @@
   <select id="target">
     <option value="gun">총 (gunbaked.js)</option>
     <option value="bullet">투사체 (bulletbaked.js)</option>
+    <option value="station">정거장 킷 전체 (stationbaked.js)</option>
   </select>
   <label>원본 GLB 경로</label>
   <input type="text" id="url" value="../Mesh/blaster-h.glb">
@@ -55,8 +56,39 @@ function say(msg,cls){
 }
 function clearLog(){ logEl.textContent=''; logN=0; }
 
+/* 정거장 킷 — 조각을 하나씩 구워 한 파일로 묶는다. 축은 원본 그대로 쓴다
+   (킷 전체가 같은 규약: 1x1 격자, 원점 중심, Y=0 바닥). */
+var STATION_PARTS=['floor','floor-detail','floor-panel','wall','wall-window','wall-door',
+  'wall-corner','rail','container','container-wide','skip','computer-system','table','pipe'];
+function bakeStation(btn){
+  var out={}, i=0;
+  (function next(){
+    if(i>=STATION_PARTS.length){
+      var NL=String.fromCharCode(10);
+      var text='/* 자동 생성 — tools/bake.html [정거장 킷 전체].'
+        + ' Kenney Space Station Kit (CC0) */' + NL
+        + 'window.STATION_BAKED=' + JSON.stringify(out) + ';' + NL;
+      say('묶음 크기: '+Math.round(text.length/1024)+'KB');
+      fetch('/__bake',{method:'POST',headers:{'Content-Type':'text/plain; charset=utf-8'},body:text})
+        .then(function(r){ return r.text().then(function(t){ if(!r.ok) throw new Error(t); return t; }); })
+        .then(function(){ say('저장 완료 → stationbaked.js','ok'); btn.disabled=false; })
+        .catch(function(e){ say('저장 실패: '+e.message,'err'); btn.disabled=false; });
+      return;
+    }
+    var nm=STATION_PARTS[i++];
+    GunMesh.axes='station'; GunMesh.ready=false; GunMesh.loading=false;
+    GunMesh.load('../Mesh/station/'+nm+'.glb', function(ok){
+      if(!ok){ say(nm+' 실패: '+GunMesh.err,'err'); btn.disabled=false; return; }
+      try{ out[nm]=JSON.parse(GunMesh.serialize('__T').replace(/^[\s\S]*?window\.__T=/,'').replace(/;\s*$/,'')); }
+      catch(e){ say(nm+' 직렬화 실패: '+e.message,'err'); btn.disabled=false; return; }
+      say('✓ '+nm+' — '+GunMesh.info);
+      next();
+    });
+  })();
+}
 document.getElementById('go').addEventListener('click', function(){
   var btn=this; btn.disabled=true; clearLog();
+  if(document.getElementById('target').value==='station'){ bakeStation(btn); return; }
   var url=document.getElementById('url').value.trim();
   var tgt=document.getElementById('target').value;
   // 축 매핑은 굽기 전에 정해야 한다 — 정점 좌표에 그대로 구워지기 때문
