@@ -697,6 +697,7 @@ var BOT_FIRE_CD=0.55;        // 사격 간격(사람보다 느리게 — 완벽�
 var BOT_AIM_ERR=0.10;        // 조준 오차(rad)
 var BOT_RANGE=13;            // 이 거리 안이면 쏜다
 var BOT_EDGE=2.2;            // 이만큼 앞에 바닥이 없으면 물러난다
+var BOT_MIN_CLEAR=2.4;       // 이보다 가까운 게 막고 있으면 사격을 참는다
 /* 발밑에 설 곳이 있는지 — 봇이 스스로 떨어지지 않게 하는 가장 중요한 판정.
    이게 없으면 봇은 상대를 쫓다가 그대로 낭떠러지로 걸어 들어간다. */
 function groundAt(x, z, y){
@@ -707,6 +708,14 @@ function groundAt(x, z, y){
     if(top<=y+1.2 && top>y-6) return top;      // 걸어 내려갈 수 있는 범위
   }
   return null;
+}
+/* 지금 보고 있는 방향으로 뭐가 얼마나 가까이 있나. 벽에 코를 박고 쏘면
+   자기 폭발 반경 안에서 터져 스스로 날아간다 — 봇이 '이상하게' 보이는 큰 원인. */
+function botClear(s){
+  var o=eyePos(s), d=forwardVec(s), t=BLAST_RANGE;
+  for(var i=0;i<LEVEL.boxes.length;i++){ if(!boxSolid(LEVEL.boxes[i])) continue;
+    var h=rayBox(o,d,LEVEL.boxes[i]); if(h<t) t=h; }
+  return t;
 }
 function botTarget(bs){
   var best=null, bd=1e9;
@@ -771,14 +780,29 @@ function botThink(bot, dt){
     var eye=s.p.y+EYE, aimY=tgt.y+0.1;
     s.pitch=Math.atan2(aimY-eye, Math.max(0.6,tgt.d)) + (Math.random()*2-1)*BOT_AIM_ERR;
     s.yaw += (Math.random()*2-1)*BOT_AIM_ERR;
-    if(tgt.d<BOT_RANGE && s.ammo>0 && bot.cd<=0 && ROUND.phase==='live'){
+    /* 코앞이 막혔을 때만 참는다. 봇은 상대 '발밑'을 노리므로 광선이 표적 근처
+       바닥에 닿는 게 정상이다 — 기준을 폭발 반경(4.2m)으로 잡으면 정상 사격까지
+       전부 막혀 사격이 3분의 1로 줄어든다. 자기가 휘말릴 거리만 막는다. */
+    var clear=botClear(s);
+    if(clear < BOT_MIN_CLEAR){ bot.strafe=!bot.strafe; }
+    else if(tgt.d<BOT_RANGE && s.ammo>0 && bot.cd<=0 && ROUND.phase==='live'){
       doFire(s); bot.cd=BOT_FIRE_CD; botBroadcastShot(bot);
     }
   }
   s.pitch=Math.max(-PITCH_LIM, Math.min(PITCH_LIM, s.pitch));
 
-  // 월드 방향 → 시선 기준 입력(전후·좌우)
+  /* 끼임 감지 — 봇은 점프를 안 하므로 계단·벽·탑 앞에서 영영 비벼댄다.
+     가려는데 실제로 안 움직였으면 뛰어넘어 보고, 그래도 안 되면 방향을 튼다. */
   var f=Math.hypot(mx,mz);
+  if(f>1e-3 && s.onGround){
+    var moved=Math.hypot(s.p.x-(bot.px||0), s.p.z-(bot.pz||0));
+    bot.stuck = (moved < 0.03) ? (bot.stuck||0)+dt : 0;
+    if(bot.stuck>0.16){ inp.jump=true; }
+    if(bot.stuck>0.7){ bot.strafe=!bot.strafe; bot.stuck=0; }
+  } else bot.stuck=0;
+  bot.px=s.p.x; bot.pz=s.p.z;
+
+  // 월드 방향 → 시선 기준 입력(전후·좌우)
   if(f>1e-3){
     var fx=Math.sin(s.yaw), fz=Math.cos(s.yaw);
     var fwd=(mx*fx+mz*fz)/f, rgt=(mx*Math.cos(s.yaw)-mz*Math.sin(s.yaw))/f;
@@ -1634,19 +1658,26 @@ function render(dt){
   // 결승 기둥 빛(수직 빌보드 대용: 얇은 발광 구슬 열)
   var g=LEVEL.goal;
   for(var bi=0;bi<8;bi++) bbPush(g.cx, g.cy+0.6+bi*0.9, g.cz, 0.55, 0.42,1.0,0.62, 0.30);
-  // 발사체: 밝은 코어 + 뒤로 늘어지는 트레일
-  for(var pj=0;pj<sim.projectiles.length;pj++){ var pr=sim.projectiles[pj];
-    bbPush(pr.x,pr.y,pr.z, 0.30, 0.95,1.0,1.0, 0.95);
-    for(var tt=1;tt<=4;tt++){ var f2=tt/4;
-      bbPush(pr.x-pr.dx*f2*1.1, pr.y-pr.dy*f2*1.1, pr.z-pr.dz*f2*1.1, 0.24*(1-f2*0.5), 0.55,0.82,1.0, 0.45*(1-f2)); } }
-  // 폭발 구
-  for(var b2=0;b2<sim.blasts.length;b2++){ var bl=sim.blasts[b2];
-    // 리프트 샷(팀원 직격)은 색이 다르다 — 쏜 쪽이 "제대로 맞혔다"를 즉시 알아야 한다
-    if(bl.lift) bbPush(bl.x,bl.y,bl.z, FUSE_R*(1+bl.t*2), 0.45,1.0,0.80, 0.65*(1-bl.t));
-    else        bbPush(bl.x,bl.y,bl.z, BLAST_R*bl.t*1.1, 0.63,0.86,1.0, 0.55*(1-bl.t)); }
-  // 파편
-  for(var pp=0;pp<sim.particles.length;pp++){ var pt=sim.particles[pp];
-    bbPush(pt.x,pt.y,pt.z, 0.16, 0.87,0.94,1.0, Math.max(0,pt.life)*0.9); }
+  /* 연출(탄·폭발·파편)은 내 sim 것만 그리면 봇이 쏜 게 방장 화면에서만 안 보인다
+     — 봇의 탄은 bot.sim 에 들어가기 때문이다(게스트는 bl 을 받아 자기 sim 에 만든다).
+     그래서 방장 화면에서는 봇 sim 들의 연출도 함께 그린다. */
+  var FXS=[sim];
+  for(var _fb=0;_fb<BOTS.length;_fb++) FXS.push(BOTS[_fb].sim);
+  for(var fi=0; fi<FXS.length; fi++){ var fs=FXS[fi];
+    // 발사체: 밝은 코어 + 뒤로 늘어지는 트레일
+    for(var pj=0;pj<fs.projectiles.length;pj++){ var pr=fs.projectiles[pj];
+      bbPush(pr.x,pr.y,pr.z, 0.30, 0.95,1.0,1.0, 0.95);
+      for(var tt=1;tt<=4;tt++){ var f2=tt/4;
+        bbPush(pr.x-pr.dx*f2*1.1, pr.y-pr.dy*f2*1.1, pr.z-pr.dz*f2*1.1, 0.24*(1-f2*0.5), 0.55,0.82,1.0, 0.45*(1-f2)); } }
+    // 폭발 구
+    for(var b2=0;b2<fs.blasts.length;b2++){ var bl=fs.blasts[b2];
+      // 리프트 샷(팀원 직격)은 색이 다르다 — 쏜 쪽이 "제대로 맞혔다"를 즉시 알아야 한다
+      if(bl.lift) bbPush(bl.x,bl.y,bl.z, FUSE_R*(1+bl.t*2), 0.45,1.0,0.80, 0.65*(1-bl.t));
+      else        bbPush(bl.x,bl.y,bl.z, BLAST_R*bl.t*1.1, 0.63,0.86,1.0, 0.55*(1-bl.t)); }
+    // 파편
+    for(var pp=0;pp<fs.particles.length;pp++){ var pt=fs.particles[pp];
+      bbPush(pt.x,pt.y,pt.z, 0.16, 0.87,0.94,1.0, Math.max(0,pt.life)*0.9); }
+  }
   // 총구 섬광
   if((sim.recoil||0)>0.5){ var kk=(sim.recoil-0.5)/0.5;
     var e2={x:sim.p.x,y:sim.p.y+EYE,z:sim.p.z}, g2=sim.tp?GUN_TP:[0,0,0], mw;
