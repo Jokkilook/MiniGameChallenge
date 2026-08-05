@@ -1,12 +1,16 @@
-# 총·투사체 원본(.glb).
-# 예전 ShockWave_Gun 은 텍스처 때문에 6MB 라 올리지 않았다. 지금 쓰는
-# Kenney Blaster Kit 모델은 둘이 합쳐 34KB 에 CC0 라 그대로 올린다 —
+# 3D 원본(.glb).
+# 예전 ShockWave_Gun 은 텍스처 때문에 6MB 라 올리지 않았다. 지금 쓰는 Kenney 킷
+# 모델은 전부 합쳐 200KB 남짓에 CC0 라 그대로 올린다 —
 # 그래야 받은 사람이 tools/bake.html 로 다시 구울 수 있다.
 Mesh/*
 !Mesh/blaster-h.glb
 !Mesh/bullet-foam-tip-thick.glb
 !Mesh/Textures/
 !Mesh/Textures/*.png
+!Mesh/station/
+!Mesh/station/*.glb
+!Mesh/station/Textures/
+!Mesh/station/Textures/*.png
 
 # 미리보기 서버 실행 설정(개인 환경)
 .claude/
