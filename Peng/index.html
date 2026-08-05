@@ -34,7 +34,19 @@
     font-size:12px;font-weight:800;letter-spacing:1.2px;text-transform:uppercase;color:#9dabc4}
   #topbar .pill b{color:#fff;font-family:var(--mono);font-weight:700;letter-spacing:0}
   #topbar .pill.off{display:none}
-  #itemV{color:#3fe0b4;border-color:#3fe0b4}   /* 아이템 칩만 눈에 띄게 */
+  /* 아이템 상태 — 탄창 위. 작동 중은 실선 + 남은 시간 바, 보유 중은 점선 + 사용 키 */
+  #items{position:absolute;right:18px;bottom:56px;display:flex;flex-direction:column;
+    align-items:flex-end;gap:4px}
+  #items .it{position:relative;overflow:hidden;background:rgba(8,11,17,.82);border:1px solid var(--c);
+    padding:6px 11px;display:flex;align-items:center;gap:8px;min-width:176px;
+    font-size:12.5px;font-weight:800;letter-spacing:.4px;color:#fff}
+  #items .it.use{border-style:dashed}
+  #items .it .ic{font-size:14px;line-height:1}
+  #items .it .nm{flex:1;color:var(--c)}
+  #items .it b{font-family:var(--mono);font-weight:700}
+  #items .it kbd{font-family:var(--mono);font-size:10.5px;font-weight:700;
+    border:1px solid var(--line2);padding:1px 5px;color:#9dabc4}
+  #items .it i{position:absolute;left:0;bottom:0;height:2px;background:var(--c)}
   #ammo{position:absolute;right:18px;bottom:18px;display:flex;gap:5px;align-items:flex-end}
   #ammo .p{position:relative;width:7px;height:28px;background:transparent;border:1px solid var(--line2);overflow:hidden}
   #ammo .p.on{background:var(--acc);border-color:var(--acc)}
@@ -197,9 +209,10 @@
     <span class="pill">⏱ <b id="timeV">0.0</b>s</span>
     <span class="pill" id="cpV">체크포인트 0</span>
     <span class="pill" id="mapV">맵</span>
-    <span class="pill off" id="itemV"></span>
     <span class="pill" id="mpV">🎮 솔로</span>
   </div>
+  <!-- 아이템 상태: 작동 중(시간제) / 보유 중(쓸 수 있는 것) -->
+  <div id="items"></div>
   <div id="ammo"></div>
   <div id="msg"></div>
 </div>
@@ -694,13 +707,48 @@ function grantItem(who, padI, item){
   }
   pushChat('', def.icon+' '+(mine?'내가':nameOf(who))+' — '+def.name, false, true);
 }
-function renderItemChip(s){
-  var el=document.getElementById('itemV'); if(!el) return;
-  var parts=[], k;
-  for(k in s.items) if(ITEMS[k]) parts.push(ITEMS[k].icon+' '+ITEMS[k].name+' '+Math.ceil(s.items[k]));
-  for(k in s.charges) if(s.charges[k]>0 && ITEMS[k]) parts.push(ITEMS[k].icon+' '+ITEMS[k].name+' ×'+s.charges[k]);
-  el.textContent=parts.join('   ');
-  el.classList.toggle('off', parts.length===0);
+/* 아이템 HUD — 두 종류를 구분해서 보여준다.
+   · 작동 중  : 시간이 흐르는 버프. 남은 초 + 아래 진행 바.
+   · 보유 중  : 내가 눌러야 나가는 것(펄스 F, 글라이딩 Space). 어떤 키인지 같이 띄운다.
+   매 프레임 innerHTML 을 다시 쓰면 레이아웃이 계속 다시 계산된다 → 줄 구성이 바뀔 때만
+   다시 만들고, 평소엔 숫자와 바 길이만 갱신한다. */
+var itemsSig='';
+function renderItems(s){
+  var host=document.getElementById('items'); if(!host) return;
+  var live=[], k, def;
+  for(k in s.items){ def=ITEMS[k]; if(def) live.push({k:k, def:def, t:s.items[k], max:def.dur}); }
+  if(s.glide>0) live.push({k:'_gliding', def:{icon:'🪂', name:'활공 중', col:ITEMS.feather.col},
+    t:s.glide, max:GLIDE_T});
+  var hold=[];
+  for(k in s.charges){ if(!(s.charges[k]>0)) continue; def=ITEMS[k]; if(!def) continue;
+    hold.push({k:k, def:def, n:s.charges[k], key:'F'}); }
+  if(s.items.feather && (s.glideLeft||0)>0 && !(s.glide>0))
+    hold.push({k:'_glide', def:{icon:'🪂', name:'글라이딩', col:ITEMS.feather.col},
+      n:s.glideLeft, key:'Space'});
+
+  var sig=live.map(function(r){return r.k;}).join(',')+'|'+hold.map(function(r){return r.k+r.n;}).join(',');
+  if(sig!==itemsSig){
+    itemsSig=sig;
+    var html='';
+    live.forEach(function(r){
+      html+='<div class="it on" style="--c:'+r.def.col+'" data-k="'+r.k+'">'
+        +'<span class="ic">'+r.def.icon+'</span><span class="nm">'+r.def.name+'</span>'
+        +'<b>0</b><i></i></div>';
+    });
+    hold.forEach(function(r){
+      html+='<div class="it use" style="--c:'+r.def.col+'">'
+        +'<span class="ic">'+r.def.icon+'</span><span class="nm">'+r.def.name+'</span>'
+        +'<kbd>'+r.key+'</kbd><b>×'+r.n+'</b></div>';
+    });
+    host.innerHTML=html;
+  }
+  // 숫자·바만 갱신(작동 중인 줄이 앞쪽에 순서대로 들어 있다)
+  var rows=host.querySelectorAll('.it.on');
+  for(var i=0;i<rows.length && i<live.length;i++){
+    var r=live[i];
+    rows[i].querySelector('b').textContent=r.t.toFixed(1);
+    rows[i].querySelector('i').style.width=(Math.max(0,Math.min(1,r.t/r.max))*100).toFixed(1)+'%';
+  }
 }
 function padTick(dt){
   if(!PADS.length || !sim || sim.practice || mode!=='play') return;
@@ -1275,12 +1323,13 @@ function render(){
   // 협동 관문 표식(한계 기둥·가장자리 테두리). 순수 장식이라 충돌·광선 훑기에는 없다.
   for(var mi=0;mi<MARKS.length;mi++) meshGL(boxFaces(MARKS[mi]), MARKS[mi].col, true);
   /* 아이템 패드 — 충돌 박스가 아니라 그리기만 한다(LEVEL.boxes 에 넣으면 밟고 올라서게 된다).
-     들어 있는 아이템이 표식으로 그대로 보인다: 뭘 주우러 갈지 보고 판단하게 하려는 것.
-     쿨다운 중에는 원판도 표식도 어둡게 죽여 멀리서 한눈에 구분된다. */
+     원판은 어느 패드든 똑같이 생겼다 — 무작위인 건 위에 떠 있는 '내용물 표식'뿐이다.
+     뭘 주우러 갈지 보고 판단하게 하려는 것. 쿨다운 중에는 원판도 표식도 어둡게 죽인다
+     (표식은 쿨다운이 끝나면 나올 '다음 내용물'이라 미리 보여주는 게 맞다). */
   var padT=performance.now()*0.001;
   for(var pdi=0;pdi<PADS.length;pdi++){ var pd=PADS[pdi], rdy=pd.cd<=0;
     var def=ITEMS[pd.item];
-    discGL(pd.x, pd.y+0.035, pd.z, PAD_VIS_R, rdy?(def?def.col:'#3fe0b4'):'#2b3a4e', rdy?1:0.45);
+    discGL(pd.x, pd.y+0.035, pd.z, PAD_VIS_R, rdy?'#3fe0b4':'#2b3a4e', rdy?1:0.45);
     if(def){
       var bob=0.62+Math.sin(padT*2.2+pdi)*0.07;
       var ang=(def.spin===false)?0:padT*1.4+pdi;
@@ -2197,7 +2246,7 @@ function loop(now){ if(!last)last=now; var dt=Math.min(0.05,(now-last)/1000); la
     }
     else document.getElementById('cpV').textContent='체크포인트 '+sim.cpIdx;
     document.getElementById('mapV').textContent = '🗺 '+(LEVEL.name||CURLEVEL);
-    renderItemChip(sim);
+    renderItems(sim);
     renderAmmo(sim.ammo, sim.ammo<AMMO_MAX ? sim.ammoT/AMMO_REGEN : 0);
     if(sim.win){ document.getElementById('winMsg').textContent='기록 '+sim.t.toFixed(1)+'초!'; showScreen('win'); sndWin(); if(locked)document.exitPointerLock(); }
     if(mode==='play') showHint(sim); else showHint(null);
