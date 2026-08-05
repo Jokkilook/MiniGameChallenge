@@ -404,7 +404,9 @@ PENG.rng32 = function(seed){          // mulberry32 — 짧고 분포가 고르�
 };
 
 /* C: collapse 스펙(size·radius). seed: 32비트 정수.
- * 반환: {cells:[{i,j,h}], pillars:[{i,j,h,top}], spawns:[{i,j,h}], pads:[{i,j,h}], maxRing}
+ * 반환: {cells, slabs, structures, spawns, pads, maxRing}
+ *   slabs      — 같은 고리·같은 높이의 칸을 직사각형으로 합친 바닥(월드 좌표)
+ *   structures — 탑·계단탑·아치 등. {ring, boxes:[...]} 로 통째로 한 고리에 속한다
  * 좌표는 타일 인덱스다 — 월드 변환은 부르는 쪽이 한다(size 를 곱하면 된다). */
 PENG.genArena = function(C, seed){
   /* 너무 휑한 판이 나오면 다시 굴린다. 연산자가 겹치면(해자+협곡+침식) 발판이 20장까지
@@ -513,21 +515,72 @@ PENG.genArenaOnce = function(C, seed){
   }
   liveList.forEach(function(c){ if(!ok[K(c.i,c.j)]) c.live = false; });
 
-  /* (6) 기둥 — 살아남은 칸 위에 세운다. 시야를 끊고 밀려날 때 걸릴 곳이 된다. */
-  var pillars = [];
+  /* (6) 구조물 — 격자 발판만 있으면 '구멍 뚫린 바둑판'이지 건축물이 아니다.
+     탑·계단탑·아치·벽·고가 발판을 궤도 단위로 세운다(4겹이라 네 곳에 똑같이 선다).
+     구조물은 통째로 한 고리에 속하게 해서 무너질 때 반쪽만 남지 않는다. */
+  var COL_W = '#8a94ad', COL_R = '#c0895a', COL_D = '#6d7party';
+  COL_D = '#6d7a95';
+  function bx(cx, cy, cz, hx, hy, hz, col){
+    return { cx:cx, cy:cy, cz:cz, hx:hx, hy:hy, hz:hz, col:col };
+  }
+  var KINDS = ['tower','zig','gate','wall','sky'];
+  function build(kind, x, z, y0, S, r2){
+    var o = [], H;
+    if(kind === 'tower'){                       // 포탑 — 벽 넷 중 하나를 터서 드나든다
+      H = 2.6 + r2() * 1.8;
+      var t = S*0.11, e = S*0.46, door = Math.floor(r2()*4);
+      var sides = [[0,  e],[0, -e],[ e, 0],[-e, 0]];
+      for(var k=0;k<4;k++){
+        if(k === door) continue;
+        var sx = sides[k][0], sz = sides[k][1];
+        o.push(bx(x+sx, y0+H*0.5, z+sz,
+                  sz ? e : t, H*0.5, sz ? t : e, COL_W));
+      }
+      o.push(bx(x, y0+H+0.14, z, e+t, 0.14, e+t, COL_R));   // 옥상 — 여기가 명당이다
+    } else if(kind === 'zig'){                  // 계단탑 — 걸어서 올라간다
+      for(var q=0;q<3;q++){
+        var hh = S*(0.48 - q*0.13);
+        o.push(bx(x, y0+0.35+q*0.7, z, hh, 0.35, hh, q===2?COL_R:COL_W));
+      }
+    } else if(kind === 'gate'){                 // 아치 — 밑으로 지나가고 위에 올라선다
+      H = 2.2 + r2()*0.8;
+      var pw = S*0.13, px = S*0.36;
+      o.push(bx(x-px, y0+H*0.5, z, pw, H*0.5, pw, COL_W));
+      o.push(bx(x+px, y0+H*0.5, z, pw, H*0.5, pw, COL_W));
+      o.push(bx(x, y0+H+0.16, z, S*0.5, 0.16, pw*1.4, COL_R));
+    } else if(kind === 'wall'){                 // 벽 — 시야를 끊고 밀려날 때 걸린다
+      H = 1.8 + r2()*1.0;
+      var ax = r2() < 0.5;
+      o.push(bx(x, y0+H*0.5, z, ax?S*0.5:S*0.12, H*0.5, ax?S*0.12:S*0.5, COL_D));
+    } else {                                    // sky — 로켓점프로만 닿는 고가 발판
+      var sh = 3.0 + r2()*1.2;
+      o.push(bx(x, y0+sh, z, S*0.44, 0.16, S*0.44, COL_R));
+      o.push(bx(x, y0+sh*0.5, z, S*0.09, sh*0.5, S*0.09, COL_D));   // 가느다란 지주
+    }
+    return o;
+  }
+  var structures = [], taken = [];
   var cand = orbits.filter(function(g){
     return g.ring >= 1 && g.ring <= maxRing - 1 && g.every(function(c){ return c.live; });
   });
-  var pn = Math.min(cand.length, ri(1, 3));
-  for(var p = 0; p < pn; p++){
+  var sn = Math.min(cand.length, ri(3, 6));
+  for(var p = 0; p < sn; p++){
     var g2 = cand.splice(Math.floor(rnd() * cand.length), 1)[0];
-    var top = 1.0 + rnd() * 1.4;
-    g2.forEach(function(c){ pillars.push({ i:c.i, j:c.j, h:c.h, top:top }); });
+    taken.push(g2);
+    var kind = KINDS[Math.floor(rnd() * KINDS.length)];
+    /* 네 칸이 똑같이 생겨야 하므로 난수를 한 번만 뽑아 네 번 재사용한다.
+       칸마다 새로 뽑으면 4겹 대칭이 깨져 한쪽만 높은 탑이 선다. */
+    var seq = [rnd(), rnd(), rnd(), rnd()], si = 0;
+    g2.forEach(function(c){
+      si = 0;
+      var r2 = function(){ return seq[(si++) % seq.length]; };
+      structures.push({ ring:c.ring, boxes:build(kind, c.i*size, c.j*size, c.h, size, r2) });
+    });
   }
 
   /* (7) 스폰 — 살아남은 궤도 중 가장 바깥. 네 칸이 모두 살아 있어야 공평하다. */
   var full = orbits.filter(function(g){
-    return g.length === 4 && g.every(function(c){ return c.live; });
+    return g.length === 4 && g.every(function(c){ return c.live; }) && taken.indexOf(g) < 0;
   });
   full.sort(function(a, b){ return b.ring - a.ring; });
   var spawnG = full[0] || [cells[K(0,0)]];
@@ -549,10 +602,46 @@ PENG.genArenaOnce = function(C, seed){
     if(pool.length) padGs.push(pool[Math.floor(rnd() * pool.length)]);
   } else padGs.push(spawnG);
 
+  /* (9) 바닥 병합 — 2.6m 정사각형이 낱개로 깔리면 아무리 파내도 '바둑판'으로 읽힌다.
+     같은 고리·같은 높이의 칸을 최대 직사각형으로 묶어 이음매 없이(틈 0) 깐다.
+     고리별로만 묶는 이유: 여러 고리에 걸친 슬랩은 그 고리가 무너질 때 반쪽만
+     남길 수 없어서, 통째로 이르게 사라지거나 늦게까지 버티거나 둘 중 하나가 된다. */
+  var slabs = [];
+  var groups = {};
+  liveList.forEach(function(c){
+    if(!c.live) return;
+    var gk = c.ring + '#' + c.h;
+    (groups[gk] || (groups[gk] = [])).push(c);
+  });
+  Object.keys(groups).forEach(function(gk){
+    var set = {}, arr = groups[gk];
+    arr.forEach(function(c){ set[c.i + ',' + c.j] = c; });
+    var used = {};
+    arr.slice().sort(function(a,b){ return (a.i-b.i) || (a.j-b.j); }).forEach(function(c){
+      if(used[c.i + ',' + c.j]) return;
+      var w = 1;
+      while(set[c.i + ',' + (c.j+w)] && !used[c.i + ',' + (c.j+w)]) w++;
+      var hgt = 1, grow = true;
+      while(grow){
+        for(var q = 0; q < w; q++){
+          var kk = (c.i+hgt) + ',' + (c.j+q);
+          if(!set[kk] || used[kk]){ grow = false; break; }
+        }
+        if(grow) hgt++;
+      }
+      for(var a = 0; a < hgt; a++) for(var b = 0; b < w; b++) used[(c.i+a) + ',' + (c.j+b)] = 1;
+      slabs.push({
+        cx: (c.i + (hgt-1)/2) * size, cz: (c.j + (w-1)/2) * size,
+        hx: hgt*size/2, hz: w*size/2, h: c.h, ring: c.ring
+      });
+    });
+  });
+
   return {
     cells:   liveList.filter(function(c){ return c.live; })
                      .map(function(c){ return { i:c.i, j:c.j, h:c.h, ring:c.ring }; }),
-    pillars: pillars,
+    slabs:   slabs,
+    structures: structures,
     spawns:  spawnG.map(function(c){ return { i:c.i, j:c.j, h:c.h }; }),
     pads:    [{ i:0, j:0, h:(c0 ? c0.h : 0), center:true }].concat(
                padGs.reduce(function(acc, g){

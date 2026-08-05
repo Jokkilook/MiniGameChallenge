@@ -431,12 +431,22 @@ function buildCollapseFloor(){
     /* 절차적 판 — 시드 하나로 전원이 같은 지형을 만든다(릴레이라 지형 권위가 없다).
        FLOOR_SEED 는 라운드마다 바뀐다: 경기 시드 + 라운드 번호. */
     var G=PENG.genArena(C, FLOOR_SEED);
-    G.cells.forEach(function(c){
-      tile(c.i*C.size, C.y+c.h, c.j*C.size, c.ring, c.h>0?(C.platCol||'#6b8fc4'):C.col);
+    /* 바닥은 병합된 슬랩으로 깐다. 낱개 타일이면 2.6m 정사각형 눈금이 그대로 보여
+       아무리 파내도 '바둑판'으로 읽힌다. 슬랩은 틈 없이 맞물리므로 이음매가 안 보인다
+       — 어느 고리가 무너질지는 예고 깜빡임이 고리 전체를 물들여서 그대로 읽힌다. */
+    G.slabs.forEach(function(sl){
+      var col=sl.h>0?(C.platCol||'#6b8fc4'):C.col;
+      LEVEL.boxes.push({ cx:sl.cx, cy:C.y+sl.h, cz:sl.cz,
+        hx:sl.hx, hy:C.hy, hz:sl.hz, col:col, _tile:true, _ring:sl.ring, _col0:col });
+      if(sl.ring>maxR) maxR=sl.ring;
     });
-    G.pillars.forEach(function(p){
-      LEVEL.boxes.push({ cx:p.i*C.size, cy:p.h+p.top*0.5, cz:p.j*C.size,
-        hx:TH*0.62, hy:p.top*0.5, hz:TH*0.62, col:'#7a86a8' });
+    // 구조물 — 통째로 한 고리에 속하게 해서 무너질 때 반쪽만 남지 않는다
+    G.structures.forEach(function(st){
+      st.boxes.forEach(function(b){
+        b.cy+=C.y+C.hy;                       // 바닥 윗면 기준으로 올린다
+        b._ring=st.ring; b._col0=b.col;
+        LEVEL.boxes.push(b);
+      });
     });
     // 스폰·패드도 생성 결과를 따른다 — 없어진 칸 위에 서면 시작하자마자 떨어진다
     LEVEL.spawns = G.spawns.map(function(s){ return {x:s.i*C.size, y:s.h, z:s.j*C.size}; });
@@ -452,7 +462,7 @@ function buildCollapseFloor(){
     }
   }
   for(i=0;i<LEVEL.boxes.length;i++){ var b=LEVEL.boxes[i];
-    if(b._tile||b.deco) continue;
+    if(b._tile||b.deco||b._ring!=null) continue;   // 구조물은 이미 제 고리를 들고 있다
     b._ring=Math.round(Math.hypot(b.cx,b.cz)/C.size); b._col0=b.col;
   }
   LEVEL._maxRing=maxR; LEVEL._gone=0;
