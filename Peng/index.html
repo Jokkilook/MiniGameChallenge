@@ -369,6 +369,11 @@ var MARKS=[];
 /* 아이템 패드 — setLevel 이 로드 시점에 buildPads() 를 부르므로 선언이 여기 있어야 한다.
    아래 아이템 구역에 두면 그 시점엔 아직 undefined 라 터진다(var 는 선언만 끌어올려진다). */
 var PADS=[];
+/* 절차적 아레나 시드. MATCH_SEED 는 방장이 굴려 start 에 실어 보내고(전원이 같은 지형을
+   봐야 한다), FLOOR_SEED 는 거기에 라운드 번호를 섞은 값이라 라운드마다 판이 바뀐다.
+   선언이 여기 있어야 한다 — setLevel 이 로드 시점에 buildCollapseFloor 를 부른다. */
+var MATCH_SEED=1, FLOOR_SEED=1;
+function roundSeed(n){ return ((MATCH_SEED>>>0) ^ Math.imul(n+1, 0x9E3779B1)) >>> 0; }
 /* 등록된 레벨 데이터는 원본 그대로 둬야 한다 — 무너지는 아레나가 boxes 를 실시간으로
    고치기 때문에, 예전처럼 LEVEL 이 원본을 그대로 가리키면 한 판 하고 나면 맵이
    영구히 부서진 채로 남는다. 얕은 복사 + 박스만 복사하면 충분하다(박스 ≤ 100). */
@@ -403,16 +408,38 @@ function buildCollapseFloor(){
   var src=PENG.getLevel(CURLEVEL);
   LEVEL.boxes = src ? cloneLevel(src).boxes
                     : LEVEL.boxes.filter(function(b){ return !b._tile; });
-  var n=Math.ceil(C.radius/C.size), maxR=0, i, j;
-  for(i=-n;i<=n;i++) for(j=-n;j<=n;j++){
-    var cx=i*C.size, cz=j*C.size;
-    if(Math.hypot(cx,cz)>C.radius) continue;
-    var ring=Math.round(Math.hypot(cx,cz)/C.size);
+  var maxR=0, i, j;
+  // 타일 사이에 살짝 틈을 준다 — 경계가 보여야 어디가 무너질지 읽힌다.
+  // 틈(0.08m)은 몸 반지름(0.35m)보다 훨씬 좁아 사이로 빠지지 않는다.
+  var TH=C.size*0.48;
+  function tile(cx,cy,cz,ring,col){
+    LEVEL.boxes.push({ cx:cx, cy:cy, cz:cz, hx:TH, hy:C.hy, hz:TH,
+      col:col, _tile:true, _ring:ring, _col0:col });
     if(ring>maxR) maxR=ring;
-    // 타일 사이에 살짝 틈을 준다 — 경계가 보여야 어디가 무너질지 읽힌다.
-    // 틈(0.08m)은 몸 반지름(0.35m)보다 훨씬 좁아 사이로 빠지지 않는다.
-    LEVEL.boxes.push({ cx:cx, cy:C.y, cz:cz, hx:C.size*0.48, hy:C.hy, hz:C.size*0.48,
-      col:C.col, _tile:true, _ring:ring, _col0:C.col });
+  }
+  if(C.gen){
+    /* 절차적 판 — 시드 하나로 전원이 같은 지형을 만든다(릴레이라 지형 권위가 없다).
+       FLOOR_SEED 는 라운드마다 바뀐다: 경기 시드 + 라운드 번호. */
+    var G=PENG.genArena(C, FLOOR_SEED);
+    G.cells.forEach(function(c){
+      tile(c.i*C.size, C.y+c.h, c.j*C.size, c.ring, c.h>0?(C.platCol||'#6b8fc4'):C.col);
+    });
+    G.pillars.forEach(function(p){
+      LEVEL.boxes.push({ cx:p.i*C.size, cy:p.h+p.top*0.5, cz:p.j*C.size,
+        hx:TH*0.62, hy:p.top*0.5, hz:TH*0.62, col:'#7a86a8' });
+    });
+    // 스폰·패드도 생성 결과를 따른다 — 없어진 칸 위에 서면 시작하자마자 떨어진다
+    LEVEL.spawns = G.spawns.map(function(s){ return {x:s.i*C.size, y:s.h, z:s.j*C.size}; });
+    LEVEL.pads   = G.pads.map(function(p){ return {x:p.i*C.size, y:p.h+(p.center?0.7:0), z:p.j*C.size}; });
+    LEVEL.start  = LEVEL.spawns[0];
+    LEVEL._gen   = G.used;
+  } else {
+    var n=Math.ceil(C.radius/C.size);
+    for(i=-n;i<=n;i++) for(j=-n;j<=n;j++){
+      var cx=i*C.size, cz=j*C.size;
+      if(Math.hypot(cx,cz)>C.radius) continue;
+      tile(cx, C.y, cz, Math.round(Math.hypot(cx,cz)/C.size), C.col);
+    }
   }
   for(i=0;i<LEVEL.boxes.length;i++){ var b=LEVEL.boxes[i];
     if(b._tile||b.deco) continue;
@@ -437,7 +464,8 @@ function collapseTick(dt){
   if(ROUND.phase==='live' && LEVEL._maxRing){
     var want = ROUND.t<C.first ? 0 : Math.floor((ROUND.t-C.first)/C.every)+1;
     // 고리 0(가운데 단)은 남긴다 — 마지막에 설 자리가 없으면 라운드가 무승부로 끝난다
-    while(LEVEL._gone<want && LEVEL._maxRing-LEVEL._gone>=1){
+    var keep=C.keepRings||1;
+    while(LEVEL._gone<want && LEVEL._maxRing-LEVEL._gone>=keep){
       dropRing(LEVEL._maxRing-LEVEL._gone); LEVEL._gone++;
     }
     // 다음에 무너질 고리를 깜빡여 예고한다(피할 시간을 주지 않으면 그냥 사고사다)
@@ -1646,7 +1674,9 @@ function myIdx(){
 }
 function roundStart(){
   ROUND.n++; ROUND.t=0; ROUND.pause=0; ROUND.phase='live';
+  FLOOR_SEED=roundSeed(ROUND.n);              // 라운드마다 새 지형
   buildCollapseFloor();                       // 무너진 바닥을 되돌린다
+  buildPads();                                // 생성 결과에 맞춰 패드도 옮긴다
   if(sim){
     var sp=(LEVEL.spawns&&LEVEL.spawns.length)
       ? LEVEL.spawns[(ROUND.n+myIdx())%LEVEL.spawns.length] : LEVEL.start;
@@ -1789,7 +1819,7 @@ function mpHandle(m){
   // 재시작 때 일부만 새 판으로 넘어가는 동기화 깨짐이 없다.
   // 맵 id 를 함께 받는다. 맵이 여러 개가 된 뒤로는 이게 없으면 둘이 서로 다른
   // 코스에서 뛰게 된다(상대는 허공을 달리는 것처럼 보인다).
-  else if(m.t==='start'){ startGame(m.level); }
+  else if(m.t==='start'){ if(m.seed!=null) MATCH_SEED=m.seed>>>0; startGame(m.level); }
   // 호스트가 대기방에서 고른 맵 — 기다리는 동안에도 같은 코스를 보도록 즉시 반영
   // 팀원 몸통 색
   else if(m.t==='col'){ if(m.id===MP.id) return;
@@ -2001,7 +2031,8 @@ function doJoin(){ ensureAudio();
 document.getElementById('lobbyStartBtn').addEventListener('click',function(){
   if(!mpIsHost()||MP.players.length<2)return; mpSend({t:'gm', mode:GAMEMODE});
   // 패드 개수는 맵마다 다르다 — 서버가 내용물을 채우려면 몇 개인지 알아야 한다
-  mpSend({t:'start', level:CURLEVEL, pads:(LEVEL.pads||[]).length});
+  MATCH_SEED=(Math.random()*0xFFFFFFFF)>>>0;   // 경기 시드 — 전원이 같은 지형을 만든다
+  mpSend({t:'start', level:CURLEVEL, pads:(LEVEL.pads||[]).length, seed:MATCH_SEED});
   startGame(CURLEVEL); });
 document.getElementById('lobbyLeaveBtn').addEventListener('click',function(){ mpDisconnect(); showScreen('title'); });
 document.getElementById('copyCode').addEventListener('click',function(e){ e.preventDefault(); var c=MP.room||'';
@@ -2403,6 +2434,7 @@ window.__peng={ makeSim:makeSim, stepSim:stepSim, doFire:doFire,
   get lenses(){ return lensList; }, get round(){ return ROUND; },
   get pads(){ return PADS; }, get items(){ return ITEMS; },   // 아이템 패드 검증용
   get cam(){ return CAMPOS; }, get camLen(){ return CAM_LEN; },   // 3인칭 카메라 충돌 검증용
+  get matchSeed(){ return MATCH_SEED; }, get floorSeed(){ return FLOOR_SEED; },  // 절차 생성 검증용
   get vertCount(){ return TRI.length/6; },  // 이번 프레임에 쌓인 정점 수(렌더 검증용)
   // 프레임 강제 실행 — 검증 환경(탭이 숨겨진 상태)에선 rAF 가 멈춰 렌더가 안 돈다
   frame:function(now){ loop(now!=null?now:performance.now()); },

@@ -384,3 +384,168 @@ PENG.serialize = function(id, d){
   L.push('});');
   return L.join('\n') + '\n';
 };
+
+/* ---------- 절차적 아레나 생성 ----------
+ * 시드 하나로 같은 판을 재현한다. 릴레이 넷코드라 지형에 권위가 없어서, 각자 굴리면
+ * 서로 다른 맵에서 싸우게 된다 — 그래서 Math.random 을 쓰지 않고 시드를 받아 돌린다.
+ *
+ * 핵심 규칙: 90도 한 조각만 굴리고 4겹 회전 대칭으로 복제한다.
+ * 밀어 떨어뜨리는 경기에서 비대칭은 곧 불공정이다(한쪽 스폰만 낭떠러지 옆이면 게임이
+ * 망가진다). 대칭으로 만들면 공정성이 공짜로 따라오고, 모양은 여전히 유기적으로 나온다.
+ */
+PENG.rng32 = function(seed){          // mulberry32 — 짧고 분포가 고르다
+  var a = seed >>> 0;
+  return function(){
+    a = (a + 0x6D2B79F5) >>> 0;
+    var t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+};
+
+/* C: collapse 스펙(size·radius). seed: 32비트 정수.
+ * 반환: {cells:[{i,j,h}], pillars:[{i,j,h,top}], spawns:[{i,j,h}], pads:[{i,j,h}], maxRing}
+ * 좌표는 타일 인덱스다 — 월드 변환은 부르는 쪽이 한다(size 를 곱하면 된다). */
+PENG.genArena = function(C, seed){
+  /* 너무 휑한 판이 나오면 다시 굴린다. 연산자가 겹치면(해자+협곡+침식) 발판이 20장까지
+     줄어드는데, 그건 아레나가 아니라 징검다리다. 시드를 파생시켜 다시 굴리므로
+     결정론은 유지된다 — 전원이 같은 순서로 같은 판에 도달한다. */
+  var Rt = C.radius / C.size;                       // 타일 단위 반경
+  var minCells = (C.minCells == null) ? Math.round(Math.PI*Rt*Rt*0.45) : C.minCells;
+  var best = null;
+  for(var att = 0; att < 6; att++){
+    var g = PENG.genArenaOnce(C, (seed + Math.imul(att, 0x85EBCA6B)) >>> 0);
+    if(!best || g.cells.length > best.cells.length) best = g;
+    if(g.cells.length >= minCells){ g.tries = att + 1; return g; }
+  }
+  best.tries = 6; return best;
+};
+PENG.genArenaOnce = function(C, seed){
+  var size = C.size, R = C.radius / size, n = Math.ceil(R);
+  var PLAT_H = (C.platH == null) ? 1.3 : C.platH;   // 고지대 단 높이(점프 도달 1.68m 이내)
+  var rnd = PENG.rng32(seed);
+  var ri = function(a, b){ return a + Math.floor(rnd() * (b - a + 1)); };
+
+  var K = function(i, j){ return i + ',' + j; };
+  var cells = {}, all = [], maxRing = 0;
+  for(var i = -n; i <= n; i++) for(var j = -n; j <= n; j++){
+    var d = Math.hypot(i, j); if(d > R) continue;
+    var c = { i:i, j:j, h:0, ring:Math.round(d), live:true };
+    if(c.ring > maxRing) maxRing = c.ring;
+    cells[K(i,j)] = c; all.push(c);
+  }
+
+  /* 회전 궤도로 묶는다. (i,j) -> (-j,i) 를 네 번 돌면 제자리.
+     결정은 궤도당 한 번만 내리고 네 칸에 똑같이 적용한다 = 4겹 대칭. */
+  var orbits = [], seen = {};
+  all.forEach(function(c){
+    var o = [[c.i,c.j], [-c.j,c.i], [-c.i,-c.j], [c.j,-c.i]];
+    var best = o[0];
+    for(var k = 1; k < 4; k++)
+      if(o[k][0] < best[0] || (o[k][0] === best[0] && o[k][1] < best[1])) best = o[k];
+    var ck = best[0] + ',' + best[1];
+    if(seen[ck]) return;
+    seen[ck] = 1;
+    var grp = [];
+    for(var k2 = 0; k2 < 4; k2++){
+      var cc = cells[K(o[k2][0], o[k2][1])];
+      if(cc && grp.indexOf(cc) < 0) grp.push(cc);
+    }
+    grp.ring = c.ring;
+    grp.ang  = Math.atan2(c.j, c.i);
+    orbits.push(grp);
+  });
+  var atRing = function(r){ return orbits.filter(function(g){ return g.ring === r; }); };
+  var kill   = function(g){ g.forEach(function(c){ if(c.ring > 0) c.live = false; }); };
+
+  var used = [];   // 어떤 연산자가 걸렸는지 — 로그·디버그용
+
+  /* (1) 해자 — 한 고리를 통째로 비우고 다리만 남긴다.
+     건너는 길이 좁아져서 그 위에서의 밀어내기가 곧 승부가 된다. */
+  if(maxRing >= 3 && rnd() < 0.75){
+    var mr = ri(2, maxRing - 1), band = atRing(mr);
+    if(band.length > 1){
+      var keep = ri(0, band.length - 1);
+      band.forEach(function(g, idx){ if(idx !== keep) kill(g); });
+      used.push('해자 r' + mr);
+    }
+  }
+
+  /* (2) 협곡 — 바깥으로 뻗는 쐐기를 판다. 안쪽에도 떨어뜨릴 가장자리가 생긴다. */
+  if(maxRing >= 3 && rnd() < 0.6){
+    var a0 = rnd() * Math.PI * 0.5, w = 0.18 + rnd() * 0.16;
+    var from = ri(2, 3);
+    orbits.forEach(function(g){
+      if(g.ring < from) return;
+      var da = Math.abs(((g.ang % (Math.PI/2)) + Math.PI/2) % (Math.PI/2) - a0);
+      if(da < w) kill(g);
+    });
+    used.push('협곡');
+  }
+
+  /* (3) 고지대 — 가운데 근처 고리 몇 겹을 올린다. 높이 우위와 시야가 생긴다. */
+  if(maxRing >= 4 && rnd() < 0.7){
+    // 고리 0·1 은 건드리지 않는다 — 마지막에 남는 결전장이라 턱이 지면 싸움이 이상해진다
+    var lo = ri(2, Math.max(2, maxRing - 2)), hi = Math.min(maxRing - 1, lo + ri(0, 1));
+    orbits.forEach(function(g){
+      if(g.ring >= lo && g.ring <= hi) g.forEach(function(c){ c.h = PLAT_H; });
+    });
+    used.push('고지대 r' + lo + '~' + hi);
+  }
+
+  /* (4) 가장자리 침식 — 바깥 테두리를 들쭉날쭉하게. 완벽한 원은 인공적으로 보인다. */
+  atRing(maxRing).forEach(function(g){ if(rnd() < 0.35) kill(g); });
+
+  /* (5) 연결성 — 가운데에서 로켓점프로 닿지 않는 조각은 지운다.
+     대칭 지형이라 도달 가능성도 대칭이므로 이 정리는 대칭을 깨지 않는다. */
+  var liveList = all.filter(function(c){ return c.live; });
+  var ok = {}, q = [];
+  var c0 = cells[K(0,0)];
+  if(c0 && c0.live){ ok[K(0,0)] = 1; q.push(c0); }
+  while(q.length){
+    var cur = q.shift();
+    for(var t = 0; t < liveList.length; t++){
+      var tc = liveList[t]; if(ok[K(tc.i,tc.j)]) continue;
+      var gap = Math.hypot(tc.i - cur.i, tc.j - cur.j) * size - size;   // 표면 사이 대략 간격
+      var span = PENG.reach.rocket(tc.h - cur.h);
+      if(span > 0 && gap <= span * 0.8){ ok[K(tc.i,tc.j)] = 1; q.push(tc); }
+    }
+  }
+  liveList.forEach(function(c){ if(!ok[K(c.i,c.j)]) c.live = false; });
+
+  /* (6) 기둥 — 살아남은 칸 위에 세운다. 시야를 끊고 밀려날 때 걸릴 곳이 된다. */
+  var pillars = [];
+  var cand = orbits.filter(function(g){
+    return g.ring >= 1 && g.ring <= maxRing - 1 && g.every(function(c){ return c.live; });
+  });
+  var pn = Math.min(cand.length, ri(1, 3));
+  for(var p = 0; p < pn; p++){
+    var g2 = cand.splice(Math.floor(rnd() * cand.length), 1)[0];
+    var top = 1.0 + rnd() * 1.4;
+    g2.forEach(function(c){ pillars.push({ i:c.i, j:c.j, h:c.h, top:top }); });
+  }
+
+  /* (7) 스폰 — 살아남은 궤도 중 가장 바깥. 네 칸이 모두 살아 있어야 공평하다. */
+  var full = orbits.filter(function(g){
+    return g.length === 4 && g.every(function(c){ return c.live; });
+  });
+  full.sort(function(a, b){ return b.ring - a.ring; });
+  var spawnG = full[0] || [cells[K(0,0)]];
+  /* (8) 패드 — 스폰과 가운데 사이 고리에서 고른다. 집으러 가려면 자리를 비워야 한다.
+     가운데 하나 + 대칭 4개 = 항상 5개(서버가 패드 번호로 쿨다운을 재므로 개수가 고정이어야 한다). */
+  var mid = full.filter(function(g){
+    return g !== spawnG && g.ring >= 1 && g.ring < spawnG.ring;
+  });
+  var padG = mid.length ? mid[Math.floor(rnd() * mid.length)] : spawnG;
+
+  return {
+    cells:   liveList.filter(function(c){ return c.live; })
+                     .map(function(c){ return { i:c.i, j:c.j, h:c.h, ring:c.ring }; }),
+    pillars: pillars,
+    spawns:  spawnG.map(function(c){ return { i:c.i, j:c.j, h:c.h }; }),
+    pads:    [{ i:0, j:0, h:(c0 ? c0.h : 0), center:true }]
+               .concat(padG.map(function(c){ return { i:c.i, j:c.j, h:c.h }; })),
+    maxRing: maxRing,
+    used:    used
+  };
+};

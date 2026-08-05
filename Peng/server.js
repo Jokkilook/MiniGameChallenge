@@ -270,7 +270,11 @@ server.on('upgrade', function(req, socket){
       if(lv) roomLevel[room] = lv;
       // 새 경기 — 패드 내용물을 새로 굴려 전원에게 알린다(표식이 서로 달라지면 안 된다)
       var st0 = fillPads(room, m.pads);
-      broadcast(room, id, JSON.stringify({ t:'start', level:lv }));
+      /* 절차적 아레나 시드를 반드시 함께 넘긴다. 예전엔 여기서 메시지를 {t,level} 로
+         다시 만드느라 seed 가 통째로 버려졌고, 게스트는 기본 시드로 자기만의 지형을
+         만들어 "같은 방인데 서로 다른 판에서 싸우는" 상태가 됐다. */
+      var sd = (typeof m.seed === 'number' && isFinite(m.seed)) ? (m.seed >>> 0) : 0;
+      broadcast(room, id, JSON.stringify({ t:'start', level:lv, seed:sd }));
       padsetLines(st0).forEach(function(ln){ broadcast(room, id, ln); send(socket, ln); });
       return;
     }
