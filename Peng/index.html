@@ -1757,7 +1757,10 @@ function buildStation(pieces){
    모델은 y -1..+1(발이 -1), +Z 를 본다. 게임 키 1.8m 에 맞추려 0.9 배로 줄이고
    발이 p.y 에 오도록 +0.9 올린다. 캐릭터는 매 프레임 움직여 정적 VBO 를 못 쓰므로
    삼각형 1만개를 CPU 로 옮긴다 — 한 판에 사람+봇 몇 명이라 감당된다. */
-var PLAYER_MESH=null, PLAYER_SCALE=0.9, PLAYER_LIFT=0.9;
+/* PLAYER_LIFT 는 '미터'가 아니라 '모델 로컬 단위'다. 모델의 발이 로컬 y=-1 이므로
+   1.0 을 더해야 발이 정확히 p.y 에 온다 — 0.9 로 두면 (−1+0.9)×0.9 = −0.09,
+   즉 발이 바닥에 9cm 묻힌다. */
+var PLAYER_MESH=null, PLAYER_SCALE=0.9, PLAYER_LIFT=1.0;
 try{
   if(window.PLAYER_BAKED && window.GunMesh && GunMesh.decodeBaked)
     PLAYER_MESH=GunMesh.decodeBaked(window.PLAYER_BAKED);
@@ -2167,9 +2170,11 @@ function sphereGL(cx,cy,cz,r,col){
 /* 눈 배치·굴림 — 디버그 패널에서 조절할 수 있게 변수로 뺀다.
    주의: 눈 중심이 몸통 반지름(0.35) 안쪽이면 흰자가 몸에 파묻혀 눈동자만 검게 보인다.
    중심의 축 거리 = sqrt(EYE_X^2 + EYE_Z^2) 가 몸통 반지름보다 살짝 크도록 잡는다. */
-/* 눈 위치. EYE_Z 는 눈높이에서의 몸통 반경보다 커야 흰자가 몸에 파묻히지 않는다.
-   SK_Player 는 눈높이(1.42m)에서 반경이 약 0.40m 라 0.33 이면 묻힌다 → 0.44. */
-var EYE_Y=1.42, EYE_X=0.16, EYE_Z=0.44,  EYE_R=0.115, EYE_PUPIL_R=0.058, EYE_ROLL=0.85;
+/* 눈 위치. 기준은 '그 높이의 최대 반경'이 아니라 '눈이 놓일 지점의 실제 표면'이다.
+   SK_Player 는 눈높이(1.42m)·좌우 0.16 지점의 표면이 z=0.382m 다. 0.44 로 뒀더니
+   눈알이 0.17m 나 튀어나와 붙여 놓은 것처럼 보였다.
+   0.34 면 중심이 표면보다 살짝 안쪽이라 0.07m 만 나온다 — 얼굴에 박힌 눈이 된다. */
+var EYE_Y=1.42, EYE_X=0.16, EYE_Z=0.34,  EYE_R=0.115, EYE_PUPIL_R=0.058, EYE_ROLL=0.85;
 var OUTLINE_BODY=0.022, OUTLINE_EYE=0.012;   // 윤곽선 두께(월드 단위)
 var EYE_PUPIL_SINK=0.88;   // 눈동자가 흰자 안으로 얼마나 들어가는지(1에 가까울수록 깊이 박힘)
 /* 내 몸통 색 — 대기방에서 고르고 저장한다. 팀원에게도 전송해 각자 자기 색으로 보인다. */
