@@ -12,9 +12,36 @@ Mesh/*
 !Mesh/station/Textures/
 !Mesh/station/Textures/*.png
 
-# 아이템 아이콘 원본(.png) — 장당 1.4MB 라 6장이면 9MB 다.
-# 게임이 읽는 건 구워진 itemicons.js(105KB) 뿐이라 원본은 올리지 않는다.
-# 그림을 바꿀 때만 필요하다 — README 의 "HUD 아이콘 굽기" 참고.
+# 아이템 표식·HUD 아이콘의 원본(Kenney Food Kit, CC0).
+# 킷 전체는 16MB(FBX·OBJ 까지 들어 있다)라 통째로는 안 올리고,
+# **실제로 굽는 6종 + 텍스처 + 미리보기만** 올린다(합쳐 190KB).
+# 다른 음식으로 바꾸려면 킷을 다시 받아 tools/bakefood.js 의 MAP 을 고친다.
+!Mesh/kenney_food-kit/
+Mesh/kenney_food-kit/*
+!Mesh/kenney_food-kit/License.txt
+!Mesh/kenney_food-kit/Models/
+Mesh/kenney_food-kit/Models/*
+!Mesh/kenney_food-kit/Models/GLB format/
+Mesh/kenney_food-kit/Models/GLB format/*
+!Mesh/kenney_food-kit/Models/GLB format/Textures/
+!Mesh/kenney_food-kit/Models/GLB format/Textures/colormap.png
+!Mesh/kenney_food-kit/Models/GLB format/banana.glb
+!Mesh/kenney_food-kit/Models/GLB format/burger.glb
+!Mesh/kenney_food-kit/Models/GLB format/croissant.glb
+!Mesh/kenney_food-kit/Models/GLB format/sub.glb
+!Mesh/kenney_food-kit/Models/GLB format/sushi-egg.glb
+!Mesh/kenney_food-kit/Models/GLB format/wholer-ham.glb
+!Mesh/kenney_food-kit/Previews/
+Mesh/kenney_food-kit/Previews/*
+!Mesh/kenney_food-kit/Previews/banana.png
+!Mesh/kenney_food-kit/Previews/burger.png
+!Mesh/kenney_food-kit/Previews/croissant.png
+!Mesh/kenney_food-kit/Previews/sub.png
+!Mesh/kenney_food-kit/Previews/sushi-egg.png
+!Mesh/kenney_food-kit/Previews/wholer-ham.png
+
+# 옛 아이템 아트(생성형 AI). 지금은 안 쓰지만 지우지는 않았다 —
+# 되돌리려면 git 에서 tools/bakeicons.js 와 itemmesh.js 의 loadAll 을 꺼내면 된다.
 Image/
 
 # 미리보기 서버 실행 설정(개인 환경)
