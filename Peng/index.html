@@ -442,7 +442,7 @@ function buildCollapseFloor(){
     /* 충돌체는 조각 '모양'에서 뽑는다 — 목록을 따로 받지 않는다.
        그래야 문 구멍으로 지나가고 탁자 밑으로 들어갈 수 있다. */
     ST.pieces.forEach(function(pc){
-      if(pc.deco) return;                       // 난간은 통과(안 그러면 아무도 안 떨어진다)
+      if(pc.deco) return;                       // 순수 장식(지금은 없다)
       var m=PP[pc.t]; if(!m) return;
       var bs=pieceBoxes(m, pc.t), r=pc.rot&3;
       for(var q=0;q<bs.length;q++){
@@ -1633,12 +1633,21 @@ var PIECE_RES=8;                       // 1칸을 몇 등분해 훑을지
    요철까지 판정에 넣으면 데크에 15~30cm 턱이 흩어져 달리다 걸린다 —
    빠르게 밀고 밀리는 경기에서 그건 그냥 사고다. 두께는 킷 규격(0.3)으로 고정한다. */
 var PIECE_FLAT={ 'floor':0.3, 'floor-detail':0.3, 'floor-panel':0.3 };
+/* 난간은 기둥과 가로대뿐이라 기둥 방식으로 뽑으면 사이가 숭숭 빈다.
+   막을 거면 통짜 한 장이어야 몸이 새지 않는다(높이는 원본 그대로 0.4유닛). */
+var PIECE_SOLID={ 'rail':1 };
+var RAIL_SOLID=1;                      // 0 이면 난간을 장식으로(통과) 되돌린다
 function pieceBoxes(m, name){
   if(m._boxes) return m._boxes;
   if(name && PIECE_FLAT[name]!=null){
     var t=PIECE_FLAT[name];
     m._boxes=[{ cx:(m.min[0]+m.max[0])/2, cy:t/2, cz:(m.min[2]+m.max[2])/2,
                 hx:(m.max[0]-m.min[0])/2, hy:t/2, hz:(m.max[2]-m.min[2])/2 }];
+    return m._boxes;
+  }
+  if(name && PIECE_SOLID[name]){       // 바운딩박스 통짜
+    m._boxes=[{ cx:(m.min[0]+m.max[0])/2, cy:(m.min[1]+m.max[1])/2, cz:(m.min[2]+m.max[2])/2,
+                hx:(m.max[0]-m.min[0])/2, hy:(m.max[1]-m.min[1])/2, hz:(m.max[2]-m.min[2])/2 }];
     return m._boxes;
   }
   var mn=m.min, mx=m.max;

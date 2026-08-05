@@ -734,11 +734,20 @@ PENG.genStation = function(seed){
     /* 이 궤도의 결정을 여기서 전부 뽑아 둔다 — 아래 네 칸이 같은 값을 쓴다 */
     var floorT = rnd()<0.18 ? 'floor-detail' : (rnd()<0.3 ? 'floor-panel' : 'floor');
     var floorR = ri(0,3);
+    /* 가장자리는 셋 중 하나: 벽 / 난간 / 아무것도 없음.
+       난간도 '보이면 막히는' 낮은 벽이다(실측: 난간이 막으면 폭발로도 못 넘는다).
+       그래서 떨어져야 할 가장자리는 아예 비운다 — 우주 정거장 캣워크에 난간이 없는 게
+       보기에도 맞고, 보이는 것과 부딪히는 것이 어긋나지도 않는다.
+       복도는 대부분 뚫어 둬야 밀어내기가 성립한다. */
     var edge=[];                                   // 방향별: null | {wall:true,t:..} | {rail:true}
     for(var d=0; d<4; d++){
       if(has(c.i+DIR[d][0], c.j+DIR[d][1])){ edge.push(null); continue; }
-      var wall = (c.kind==='pod') ? rnd()<0.55 : (c.kind==='core' ? rnd()<0.25 : rnd()<0.08);
-      edge.push(wall ? {wall:true, t:pick(['wall','wall','wall-window','wall-door'])} : {rail:true});
+      var u=rnd(), e2=null;
+      if(c.kind==='pod'){       e2 = u<0.50 ? {wall:true} : (u<0.68 ? {rail:true} : null); }
+      else if(c.kind==='core'){ e2 = u<0.22 ? {wall:true} : (u<0.40 ? {rail:true} : null); }
+      else {                    e2 = u<0.06 ? {wall:true} : (u<0.16 ? {rail:true} : null); }
+      if(e2 && e2.wall) e2.t=pick(['wall','wall','wall-window','wall-door']);
+      edge.push(e2);
     }
     // 소품 — 코어 정중앙은 비워 둔다(최후의 결전장)
     var prop=null;
@@ -760,8 +769,7 @@ PENG.genStation = function(seed){
           var ax=(dd%2===0);                       // 0·2 는 X 로 넓고 1·3 은 Z 로 넓다
           colliders.push({i:ei, j:ej, cy:0.5, hx:ax?0.5:0.15, hy:0.5, hz:ax?0.15:0.5, order:cell.order});
         } else {
-          // 난간은 장식이다 — 충돌을 주면 아무도 안 떨어져 경기가 성립하지 않는다
-          pieces.push({t:'rail', i:ei, j:ej, y:0, rot:dd, order:cell.order, deco:true});
+          pieces.push({t:'rail', i:ei, j:ej, y:0, rot:dd, order:cell.order});
         }
       }
       if(prop){
