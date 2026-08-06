@@ -139,6 +139,9 @@
 <script src="gunmesh.js"></script>
 <script src="survivalbaked.js"></script>
 <script src="stationbaked.js"></script>
+<script src="factorybaked.js"></script>
+<script src="forestbaked.js"></script>
+<script src="protobaked.js"></script>
 <script>
 "use strict";
 /* =========================================================================
@@ -172,20 +175,31 @@ PROG.uVP=gl.getUniformLocation(PROG,'uVP');  PROG.uFade=gl.getUniformLocation(PR
 gl.enable(gl.DEPTH_TEST); gl.clearColor(0.055,0.086,0.153,1);
 
 /* ---------- 킷 조각 ----------
-   테마(킷)별로 나눠 담는다. 조각 이름은 킷끼리 안 겹치므로(확인함) 사전 하나에
-   그대로 합쳐도 되고, 게임의 stationParts() 도 같은 방식으로 둘을 합친다. */
+   테마(킷)별로 나눠 담는다. 킷이 다섯이 되면서 이름이 겹치기 시작했다
+   (factory/floor 와 station/floor, forest/tree 와 survival/tree …).
+   그래서 조각 키를 'kit/name' 으로 쓰고, 짧은 이름은 아직 안 쓰인 경우에만
+   같이 등록한다 — 게임의 stationParts() 와 정확히 같은 규칙이라, 예전에 짧은
+   이름으로 저장해 둔 맵도 그대로 열린다(정거장·서바이벌을 먼저 넣는다). */
 var PARTS={}, NAMES=[];
 var KITS=[
-  { id:'mark',     label:'표식',     names:[] },
-  { id:'survival', label:'서바이벌', names:[], src:'SURVIVAL_BAKED' },
-  { id:'station',  label:'우주 정거장', names:[], src:'STATION_BAKED' }
+  { id:'mark',     label:'표식',       names:[] },
+  { id:'survival', label:'서바이벌',   names:[], src:'SURVIVAL_BAKED' },
+  { id:'station',  label:'우주 정거장', names:[], src:'STATION_BAKED' },
+  { id:'factory',  label:'공장',       names:[], src:'FACTORY_BAKED' },
+  { id:'forest',   label:'숲',         names:[], src:'FOREST_BAKED' },
+  { id:'proto',    label:'프로토타입', names:[], src:'PROTO_BAKED' }
 ];
+function baseName(t){ var i=t.lastIndexOf('/'); return i<0?t:t.slice(i+1); }
 (function(){
   if(!window.GunMesh) return;
   KITS.forEach(function(K){
     var bag=K.src && window[K.src]; if(!bag) return;
     for(var k in bag){
-      try{ PARTS[k]=GunMesh.decodeBaked(bag[k]); K.names.push(k); NAMES.push(k); }catch(e){}
+      try{ var m=GunMesh.decodeBaked(bag[k]);
+        var key=K.id+'/'+k;
+        PARTS[key]=m; if(!(k in PARTS)) PARTS[k]=m;
+        K.names.push(key); NAMES.push(key);
+      }catch(e){}
     }
     K.names.sort();
   });
@@ -910,7 +924,7 @@ function trayItem(t, isMark){
   if(isMark) d.style.borderColor='#2f6b52';
   d.appendChild(isMark ? markThumb(t) : thumb(t));
   var sp=document.createElement('span');
-  sp.textContent=isMark?MARKDEF[t].label:t;
+  sp.textContent=isMark?MARKDEF[t].label:baseName(t);
   sp.title=t; d.appendChild(sp);
   d.addEventListener('dragstart',function(e){ e.dataTransfer.setData('text/plain',t); });
   return d;
@@ -977,7 +991,7 @@ function place(t,mx,my){
   OBJ.push({ t:t, x:p.x, y:p.y, z:p.z, rx:0, ry:0, rz:0, sx:1, sy:1, sz:1,
              deco:false, mark:!!MARKDEF[t] });
   SEL=OBJ.length-1;
-  rebuild(); syncPanel(); toast((MARKDEF[t]?MARKDEF[t].label:t)+' 배치');
+  rebuild(); syncPanel(); toast((MARKDEF[t]?MARKDEF[t].label:baseName(t))+' 배치');
 }
 
 /* ---------- 오른쪽 패널 ---------- */
@@ -987,7 +1001,7 @@ function syncPanel(){
   var has=SEL>=0 && OBJ[SEL], mk=has&&isMark(OBJ[SEL]);
   document.getElementById('props').style.display=has?'':'none';
   document.getElementById('selName').innerHTML=has
-    ? '<span class="sel">'+(mk?MARKDEF[OBJ[SEL].t].label:OBJ[SEL].t)+'</span> · '+
+    ? '<span class="sel">'+(mk?MARKDEF[OBJ[SEL].t].label:baseName(OBJ[SEL].t))+'</span> · '+
       OBJ.length+'개 중 '+(SEL+1)+'번'
     : (OBJ.length? OBJ.length+'개 배치됨 — 클릭해서 선택' : '없음');
   // 표식은 회전·크기·충돌이 없다 — 위치만 보여 준다

@@ -313,6 +313,9 @@
 <script src="bulletbaked.js"></script>
 <script src="stationbaked.js"></script>
 <script src="survivalbaked.js"></script>
+<script src="factorybaked.js"></script>
+<script src="forestbaked.js"></script>
+<script src="protobaked.js"></script>
 <!-- 아이템 6종의 표식 메시와 HUD 아이콘(Kenney Food Kit, CC0).
      itembaked.js/itemicons.js 는 tools/bakefood.js 가 미리 구워둔 데이터다 —
      둘 중 뭐가 빠져도 그것만 예전 모습(큐브 표식·이모지)으로 떨어진다. -->
@@ -1722,6 +1725,7 @@ var PIECE_SCALE={ 'wall-corner':0.97 };
 var RAIL_SOLID=1;                      // 0 이면 난간을 장식으로(통과) 되돌린다
 function pieceBoxes(m, name){
   if(m._boxes) return m._boxes;
+  name=name?baseName(name):name;      // PIECE_* 표는 킷 접두사 없는 이름으로 적혀 있다
   if(name && PIECE_FLAT[name]!=null){
     var fl=PIECE_FLAT[name], t=(fl.length?fl[0]:fl), ins=(fl.length?fl[1]:1);
     m._boxes=[{ cx:(m.min[0]+m.max[0])/2, cy:t/2, cz:(m.min[2]+m.max[2])/2,
@@ -1791,16 +1795,25 @@ function pieceBoxes(m, name){
   m._boxes=out;
   return out;
 }
-/* 킷 두 벌(정거장·서바이벌)을 한 사전에 담는다. 조각 이름이 겹치지 않아 접두사가
-   필요 없다 — 정거장은 floor/wall/rail 계열, 서바이벌은 rock/tree/tent 계열이다. */
+/* 킷 여러 벌을 한 사전에 담는다. 킷이 둘일 때는 이름이 안 겹쳐서 그냥 합쳤는데,
+   다섯이 되니 factory/floor 와 station/floor, forest/tree 와 survival/tree 처럼
+   겹치는 이름이 나온다. 그래서 'kit/name' 으로 넣고, 짧은 이름은 아직 안 쓰인
+   경우에만 같이 등록한다 — 예전 레벨과 생성기가 'floor'·'rock-flat' 처럼 짧게
+   쓰고 있어서(정거장·서바이벌을 먼저 넣으므로 그쪽으로 붙는다). */
+var KIT_ORDER=[['station','STATION_BAKED'],['survival','SURVIVAL_BAKED'],
+               ['factory','FACTORY_BAKED'],['forest','FOREST_BAKED'],['proto','PROTO_BAKED']];
+function baseName(t){ var i=t.lastIndexOf('/'); return i<0?t:t.slice(i+1); }
 function stationParts(){
   if(STATION.parts) return STATION.parts;
   var out={};
   try{
     if(window.GunMesh && GunMesh.decodeBaked){
-      [window.STATION_BAKED, window.SURVIVAL_BAKED].forEach(function(kit){
-        if(!kit) return;
-        for(var k in kit) out[k]=GunMesh.decodeBaked(kit[k]);
+      KIT_ORDER.forEach(function(e){
+        var bag=window[e[1]]; if(!bag) return;
+        for(var k in bag){ var m=GunMesh.decodeBaked(bag[k]);
+          out[e[0]+'/'+k]=m;
+          if(!(k in out)) out[k]=m;
+        }
       });
     }
   }catch(e){ out={}; }
@@ -1814,7 +1827,7 @@ function stationParts(){
      s / sx,sy,sz — 균일 / 축별 배율.
    열 우선 3x3(m[열*3+행]). 회전 순서는 Ry*Rx*Rz. */
 function pieceBasis(pc){
-  var pu=PIECE_SCALE[pc.t]||1, s0=pc.s||1;
+  var bn=baseName(pc.t), pu=PIECE_SCALE[bn]||1, s0=pc.s||1;
   var kx=pu*(pc.sx!=null?pc.sx:s0), ky=pu*(pc.sy!=null?pc.sy:s0), kz=pu*(pc.sz!=null?pc.sz:s0);
   var D=Math.PI/180;
   var ay=(((pc.rot||0)&3)*90+(pc.ry||0))*D, ax=(pc.rx||0)*D, az=(pc.rz||0)*D;
@@ -1836,7 +1849,7 @@ function xf3(M,x,y,z){ return [M[0]*x+M[3]*y+M[6]*z, M[1]*x+M[4]*y+M[7]*z, M[2]*
    90도 배수일 때는 이 바운딩박스가 원래 상자와 정확히 같아서 손해가 없다. */
 function pieceColliders(pc, m, U, extra){
   var M=pieceBasis(pc), bs=pieceBoxes(m, pc.t), out=[];
-  var off=PIECE_OFF[pc.t], ox=off?off[0]:0, oz=off?off[1]:0;
+  var off=PIECE_OFF[baseName(pc.t)], ox=off?off[0]:0, oz=off?off[1]:0;
   for(var q=0;q<bs.length;q++){
     var b=bs[q], mn=[1e9,1e9,1e9], mx=[-1e9,-1e9,-1e9];
     for(var k=0;k<8;k++){
@@ -1859,7 +1872,7 @@ function buildStation(pieces){
     var pc=pieces[p]; if(pc._gone) continue;
     var m=P[pc.t]; if(!m) continue;
     var ox=pc.i*S, oy=pc.y*S, oz=pc.j*S;
-    var off=PIECE_OFF[pc.t], offx=off?off[0]:0, offz=off?off[1]:0;
+    var off=PIECE_OFF[baseName(pc.t)], offx=off?off[0]:0, offz=off?off[1]:0;
     var M=pieceBasis(pc);
     /* 법선은 변환의 역전치로 보내야 한다. 배율만 있을 때는 축별 역수와 같은데,
        세로로 14배 늘린 기둥에서 이걸 빼먹으면 옆면이 위를 보는 것처럼 밝아져

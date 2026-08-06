@@ -1,7 +1,10 @@
 # 3D 원본(.glb).
-# 예전 ShockWave_Gun 은 텍스처 때문에 6MB 라 올리지 않았다. 지금 쓰는 Kenney 킷
-# 모델은 전부 합쳐 200KB 남짓에 CC0 라 그대로 올린다 —
-# 그래야 받은 사람이 tools/bake.html 로 다시 구울 수 있다.
+# 예전 ShockWave_Gun 은 텍스처 때문에 6MB 라 올리지 않았다. 지금 쓰는 Kenney 킷은
+# 전부 CC0 이고, 받은 사람이 tools/bake.html 로 다시 구울 수 있어야 하므로 올린다.
+# 킷이 다섯이 되면서 합계 8MB 쯤 된다(공장 3.3M · 프로토타입 2.2M · 정거장 1.2M ·
+# 숲 0.9M · 서바이벌 0.5M). 게임이 실제로 읽는 건 구워진 *baked.js 뿐이다.
+# 킷을 하나 더 넣으려면: Mesh/<id>/ 에 .glb 와 Textures/colormap.png 를 두고
+# tools/bake.html 의 KITS 에 한 줄 — 목록은 서버가 폴더를 훑어 준다.
 Mesh/*
 !Mesh/blaster-h.glb
 !Mesh/bullet-foam-tip-thick.glb
@@ -15,6 +18,18 @@ Mesh/*
 !Mesh/survival/*.glb
 !Mesh/survival/Textures/
 !Mesh/survival/Textures/*.png
+!Mesh/factory/
+!Mesh/factory/*.glb
+!Mesh/factory/Textures/
+!Mesh/factory/Textures/*.png
+!Mesh/forest/
+!Mesh/forest/*.glb
+!Mesh/forest/Textures/
+!Mesh/forest/Textures/*.png
+!Mesh/proto/
+!Mesh/proto/*.glb
+!Mesh/proto/Textures/
+!Mesh/proto/Textures/*.png
 
 # 아이템 표식·HUD 아이콘의 원본(Kenney Food Kit, CC0).
 # 킷 전체는 16MB(FBX·OBJ 까지 들어 있다)라 통째로는 안 올리고,

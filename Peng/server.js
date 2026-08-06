@@ -117,6 +117,9 @@ function handleBake(req, res){
     else if(body.indexOf('window.BULLET_BAKED=') >= 0) name = 'bulletbaked.js';
     else if(body.indexOf('window.STATION_BAKED=') >= 0) name = 'stationbaked.js';
     else if(body.indexOf('window.SURVIVAL_BAKED=') >= 0) name = 'survivalbaked.js';
+    else if(body.indexOf('window.FACTORY_BAKED=') >= 0) name = 'factorybaked.js';
+    else if(body.indexOf('window.FOREST_BAKED=') >= 0) name = 'forestbaked.js';
+    else if(body.indexOf('window.PROTO_BAKED=') >= 0) name = 'protobaked.js';
     if(!name) return fail(400, '구운 데이터가 아닙니다.');
     fs.writeFile(path.join(ROOT, name), body, function(err){
       if(err) return fail(500, '저장 실패: ' + err.message);
@@ -135,6 +138,20 @@ var server = http.createServer(function(req, res){
   if(urlPath === '/__save'){
     if(req.method !== 'POST'){ res.writeHead(405); res.end('POST only'); return; }
     handleSave(req, res); return;
+  }
+  /* 킷 폴더의 .glb 목록. 킷을 하나 추가할 때마다 tools/bake.html 에 이름 143개를
+     손으로 적는 건 못 할 짓이다 — 폴더를 훑어 알려 준다. Mesh/ 아래로만 제한한다. */
+  if(urlPath === '/__kit'){
+    var qs = req.url.split('?')[1] || '';
+    var q = (/(?:^|&)dir=([^&]*)/.exec(qs) || [,''])[1];
+    if(!/^[a-zA-Z0-9_-]{1,40}$/.test(q)){ res.writeHead(400); res.end('bad dir'); return; }
+    fs.readdir(path.join(ROOT, 'Mesh', q), function(err, fl){
+      if(err){ res.writeHead(404); res.end('[]'); return; }
+      res.writeHead(200, {'Content-Type':'application/json'});
+      res.end(JSON.stringify(fl.filter(function(f){ return /\.glb$/i.test(f); })
+        .map(function(f){ return f.replace(/\.glb$/i,''); }).sort()));
+    });
+    return;
   }
   if(urlPath === '/__bake'){
     if(req.method !== 'POST'){ res.writeHead(405); res.end('POST only'); return; }

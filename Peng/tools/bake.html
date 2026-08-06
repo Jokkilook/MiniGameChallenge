@@ -35,8 +35,11 @@
   <select id="target">
     <option value="gun">총 (gunbaked.js)</option>
     <option value="bullet">투사체 (bulletbaked.js)</option>
-    <option value="station">정거장 킷 전체 (stationbaked.js)</option>
-    <option value="survival">서바이벌 킷 전체 (survivalbaked.js)</option>
+    <option value="station">우주 정거장 킷 (stationbaked.js)</option>
+    <option value="survival">서바이벌 킷 (survivalbaked.js)</option>
+    <option value="factory">공장 킷 (factorybaked.js)</option>
+    <option value="forest">미니 숲 킷 (forestbaked.js)</option>
+    <option value="proto">프로토타입 킷 (protobaked.js)</option>
   </select>
   <label>원본 GLB 경로</label>
   <input type="text" id="url" value="../Mesh/blaster-h.glb">
@@ -59,48 +62,30 @@ function clearLog(){ logEl.textContent=''; logN=0; }
 
 /* 정거장 킷 — 조각을 하나씩 구워 한 파일로 묶는다. 축은 원본 그대로 쓴다
    (킷 전체가 같은 규약: 1x1 격자, 원점 중심, Y=0 바닥). */
-/* 정거장 킷 전체(97종). 앞의 14개는 아레나 생성기(genStation)가 쓰는 것이고,
-   나머지는 에디터에서 손으로 놓으려고 굽는다. */
-var STATION_PARTS=[
-  'floor','floor-detail','floor-panel','wall','wall-window','wall-door','wall-corner','rail',
-  'container','container-wide','skip','computer-system','table','pipe','balcony-floor',
-  'balcony-floor-center','balcony-floor-corner','balcony-rail','balcony-rail-center',
-  'balcony-rail-corner','bed-double','bed-double-cover','bed-single','bed-single-cover',
-  'chair','chair-armrest','chair-armrest-headrest','chair-cushion','chair-cushion-headrest',
-  'chair-headrest','computer','computer-screen','computer-wide','container-flat',
-  'container-flat-open','container-tall','display-wall','display-wall-wide','door-double',
-  'door-double-closed','door-double-half','door-single','door-single-closed',
-  'door-single-half','floor-corner','floor-panel-corner','floor-panel-end',
-  'floor-panel-straight','pipe-bend','pipe-bend-diagonal','pipe-end','pipe-end-colored',
-  'pipe-ring','pipe-ring-colored','rail-narrow','rocks','skip-rocks','stairs',
-  'stairs-corner','stairs-corner-inner','stairs-handrail','stairs-handrail-single',
-  'stairs-ramp','stairs-small-center','stairs-small-corner','stairs-small-corner-inner',
-  'stairs-small-edge','stairs-small-edge-handrail','stairs-small-edges',
-  'stairs-small-edges-handrail','structure','structure-barrier','structure-barrier-high',
-  'structure-panel','table-display','table-display-planet','table-display-small',
-  'table-inset','table-inset-small','table-large','wall-banner','wall-corner-banner',
-  'wall-corner-round','wall-corner-round-banner','wall-detail','wall-door-banner',
-  'wall-door-center','wall-door-edge','wall-door-edge-banner','wall-door-wide',
-  'wall-door-wide-banner','wall-pillar','wall-pillar-banner','wall-switch',
-  'wall-window-banner','wall-window-frame','wall-window-shutters'];
-/* 서바이벌 킷 — 절벽 위 평지(피크) 맵의 재료. 격자 조각이 아니라 '소품'이라
-   회전만 90도 단위로 쓰고 위치는 생성기가 미터로 정한다. */
-var SURVIVAL_PARTS=['rock-a','rock-b','rock-c','rock-sand-a','rock-sand-b','rock-sand-c',
-  'rock-flat','rock-flat-grass',
-  'tree','tree-tall','tree-autumn','tree-trunk','tree-log','tent','campfire-pit','chest',
-  'barrel','box','workbench','signpost','fence','fence-doorway','fence-fortified',
-  'grass-large','structure-metal-wall'];
+/* 킷 굽기 — 조각 목록은 서버가 폴더를 훑어 준다(/__kit?dir=…).
+   킷마다 이름을 백 개씩 손으로 적을 수는 없다. 새 킷은 Mesh/<id>/ 에 .glb 와
+   Textures/colormap.png 를 넣고 아래 KITS 에 한 줄만 더하면 된다. */
 var KITS={
-  station : {list:STATION_PARTS,  dir:'../Mesh/station/',  global:'STATION_BAKED',  file:'stationbaked.js'},
-  survival: {list:SURVIVAL_PARTS, dir:'../Mesh/survival/', global:'SURVIVAL_BAKED', file:'survivalbaked.js'}
+  station : {dir:'station',  global:'STATION_BAKED',  file:'stationbaked.js'},
+  survival: {dir:'survival', global:'SURVIVAL_BAKED', file:'survivalbaked.js'},
+  factory : {dir:'factory',  global:'FACTORY_BAKED',  file:'factorybaked.js'},
+  forest  : {dir:'forest',   global:'FOREST_BAKED',   file:'forestbaked.js'},
+  proto   : {dir:'proto',    global:'PROTO_BAKED',    file:'protobaked.js'}
 };
 function bakeStation(btn, kit){
-  var K=KITS[kit], PARTS=K.list;
+  var K=KITS[kit];
+  fetch('/__kit?dir='+K.dir,{cache:'no-store'})
+    .then(function(r){ return r.ok?r.json():Promise.reject(new Error('목록 실패')); })
+    .then(function(list){ if(!list.length) throw new Error('Mesh/'+K.dir+' 에 .glb 가 없습니다');
+      say(K.dir+' 킷 '+list.length+'개'); bakeList(btn, K, list); })
+    .catch(function(e){ say('실패: '+e.message,'err'); btn.disabled=false; });
+}
+function bakeList(btn, K, PARTS){
   var out={}, i=0;
   (function next(){
     if(i>=PARTS.length){
       var NL=String.fromCharCode(10);
-      var text='/* 자동 생성 — tools/bake.html [' + kit + ' 킷 전체]. Kenney (CC0) */' + NL
+      var text='/* 자동 생성 — tools/bake.html [' + K.dir + ' 킷 전체]. Kenney (CC0) */' + NL
         + 'window.' + K.global + '=' + JSON.stringify(out) + ';' + NL;
       say('묶음 크기: '+Math.round(text.length/1024)+'KB');
       fetch('/__bake',{method:'POST',headers:{'Content-Type':'text/plain; charset=utf-8'},body:text})
@@ -111,7 +96,7 @@ function bakeStation(btn, kit){
     }
     var nm=PARTS[i++];
     GunMesh.axes='station'; GunMesh.ready=false; GunMesh.loading=false;
-    GunMesh.load(K.dir+nm+'.glb', function(ok){
+    GunMesh.load('../Mesh/'+K.dir+'/'+nm+'.glb', function(ok){
       if(!ok){ say(nm+' 실패: '+GunMesh.err,'err'); btn.disabled=false; return; }
       try{ out[nm]=JSON.parse(GunMesh.serialize('__T').replace(/^[\s\S]*?window\.__T=/,'').replace(/;\s*$/,'')); }
       catch(e){ say(nm+' 직렬화 실패: '+e.message,'err'); btn.disabled=false; return; }
@@ -123,7 +108,7 @@ function bakeStation(btn, kit){
 document.getElementById('go').addEventListener('click', function(){
   var btn=this; btn.disabled=true; clearLog();
   var tgt=document.getElementById('target').value;
-  if(tgt==='station'||tgt==='survival'){ bakeStation(btn, tgt); return; }
+  if(KITS[tgt]){ bakeStation(btn, tgt); return; }
   var url=document.getElementById('url').value.trim();
   // 축 매핑은 굽기 전에 정해야 한다 — 정점 좌표에 그대로 구워지기 때문
   GunMesh.axes = (tgt==='bullet') ? 'bullet' : 'kenney';
