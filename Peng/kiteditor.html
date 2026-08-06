@@ -67,14 +67,17 @@
 
     <h2>기즈모</h2>
     <div class="grid3">
-      <button id="mT" class="on">이동 Q</button>
+      <button id="mT" class="on">이동 W</button>
       <button id="mR">회전 R</button>
       <button id="mS">크기 E</button>
     </div>
     <div class="row" style="margin-top:6px">
       <button id="btnSnap" style="flex:1">격자 스냅: 끔</button>
     </div>
-    <p class="hint">축 <b>막대</b>는 그 축만, 모서리의 <b>작은 네모</b>는 그 면(두 축)만,
+    <p class="hint"><b>우클릭 드래그</b>로 둘러보고, 그동안 <b>WASD</b>로 날아다닙니다.
+    누르지 않을 때 <b>W/E/R</b>은 기즈모 전환입니다(언리얼과 같은 규칙).
+    <b>휠</b>로 비행 속도를 조절하세요.<br>
+    축 <b>막대</b>는 그 축만, 모서리의 <b>작은 네모</b>는 그 면(두 축)만,
     가운데 <b>큐브</b>는 세 축 전부에 걸립니다. 회전 모드에서는 막대가 고리가 되고,
     면 네모는 그 면의 <b>법선 축</b>을 중심으로 돌립니다.</p>
 
@@ -727,17 +730,18 @@ function draw(){
 }
 
 /* ---------- 카메라 조작 ---------- */
-var keys={}, drag=null, moved=false;
+var keys={}, drag=null, moved=false, LOOKING=false;
+var FLY=14;                                   // 비행 속도(m/s) — 휠로 바꾼다
 window.addEventListener('keydown',function(e){
   var tag=(e.target.tagName||'').toLowerCase();
   if(tag==='input'||tag==='textarea') return;
   var K=e.key.toLowerCase();
   keys[K]=true;
   if(e.key===' ') e.preventDefault();                 // 위로 이동(페이지 스크롤 방지)
-  /* 기즈모 전환은 언리얼과 같은 자리 — Q 이동 / E 크기 / R 회전.
-     Q·E 는 예전에 카메라 상하였는데, 그건 Space(위)·Ctrl(아래)로 옮겼다. */
-  if(!e.ctrlKey && !e.metaKey){
-    if(K==='q'){ setMode('T'); e.preventDefault(); }
+  /* 기즈모 전환 — W 이동 / E 크기 / R 회전.
+     우클릭으로 둘러보는 중에는 같은 키가 비행이라 전환하지 않는다(언리얼과 같다). */
+  if(!e.ctrlKey && !e.metaKey && !LOOKING){
+    if(K==='w'){ setMode('T'); e.preventDefault(); }
     if(K==='e'){ setMode('S'); e.preventDefault(); }
     if(K==='r'){ setMode('R'); e.preventDefault(); }
   }
@@ -752,13 +756,19 @@ window.addEventListener('keydown',function(e){
 window.addEventListener('keyup',function(e){ keys[e.key.toLowerCase()]=false; });
 window.addEventListener('blur',function(){ keys={}; });
 
+/* 언리얼과 같은 규칙: 시점은 우클릭 드래그, 좌클릭은 선택·기즈모 전용.
+   덕분에 W/E/R 을 기즈모 전환에 내줄 수 있다 — WASD 비행은 우클릭을 누른 동안만
+   먹으므로 서로 안 부딪힌다. */
 cv.addEventListener('mousedown',function(e){
-  if(e.button!==0) return;
   var r=cv.getBoundingClientRect(), mx=e.clientX-r.left, my=e.clientY-r.top;
+  if(e.button===2){ e.preventDefault();
+    LOOKING=true; drag={kind:'look', x:e.clientX, y:e.clientY};
+    cv.classList.add('looking'); return; }
+  if(e.button!==0) return;
   moved=false;
   var h=(SEL>=0)?pickHandle(mx,my):null;
   if(h){ beginGrab(h,mx,my); drag={kind:'gizmo'}; }
-  else { drag={kind:'look', x:e.clientX, y:e.clientY}; cv.classList.add('looking'); }
+  else drag={kind:'pick'};
 });
 window.addEventListener('mousemove',function(e){
   var r=cv.getBoundingClientRect(), mx=e.clientX-r.left, my=e.clientY-r.top;
@@ -767,6 +777,7 @@ window.addEventListener('mousemove',function(e){
     if(!sameH(h,HOVER)){ HOVER=h; cv.style.cursor=h?'grab':''; }
     return;
   }
+  if(drag.kind==='pick'){ moved=true; return; }   // 좌클릭은 시점을 돌리지 않는다
   if(drag.kind==='look'){
     var dx=e.clientX-drag.x, dy=e.clientY-drag.y;
     drag.x=e.clientX; drag.y=e.clientY;
@@ -779,8 +790,9 @@ window.addEventListener('mousemove',function(e){
 });
 window.addEventListener('mouseup',function(e){
   if(!drag) return;
-  var was=drag; drag=null; GRAB=null; cv.classList.remove('looking');
-  if(was.kind==='look' && !moved){
+  var was=drag; drag=null; GRAB=null;
+  if(was.kind==='look'){ LOOKING=false; keys={}; cv.classList.remove('looking'); }
+  if(was.kind==='pick' && !moved){
     var r=cv.getBoundingClientRect(), mx=e.clientX-r.left, my=e.clientY-r.top;
     if(ARM_DUMMY){ ARM_DUMMY=false;
       document.getElementById('btnMoveDummy').classList.remove('on');
@@ -789,6 +801,13 @@ window.addEventListener('mouseup',function(e){
   }
 });
 cv.addEventListener('contextmenu',function(e){ e.preventDefault(); });
+/* 휠 = 비행 속도. 넓은 판을 훑을 때와 조각을 코앞에서 맞출 때 필요한 속도가
+   열 배쯤 차이 나는데, 그때마다 Shift 를 눌렀다 뗐다 하는 건 번거롭다. */
+cv.addEventListener('wheel',function(e){
+  e.preventDefault();
+  FLY = Math.max(1.5, Math.min(120, FLY * (e.deltaY<0 ? 1.18 : 1/1.18)));
+  hud(); toast('비행 속도 '+FLY.toFixed(1)+' m/s');
+},{passive:false});
 
 function pickAt(mx,my){
   var d=rayAt(mx,my), best=Infinity, bi=-1;
@@ -1082,10 +1101,10 @@ function hud(){
     '조각 '+OBJ.filter(function(o){return !isMark(o);}).length+
       '개 · 리스폰 '+OBJ.filter(function(o){return o.t==='@spawn';}).length+
       ' · 패드 '+OBJ.filter(function(o){return o.t==='@pad';}).length+'\n'+
-    '기즈모 '+(MODE==='T'?'이동 Q':MODE==='R'?'회전 R':'크기 E')+'  (막대=축 · 네모=면 · 큐브=전체)\n'+
+    '기즈모 '+(MODE==='T'?'이동 W':MODE==='R'?'회전 R':'크기 E')+'  (막대=축 · 네모=면 · 큐브=전체)\n'+
     '더미 '+(DUMMY.on?('켬 · 서 있는 높이 '+r2(DUMMY.y)+'m'):'끔')+' (사람 키 1.8m)\n'+
-    'WASD 이동 · Space 위 · Ctrl 아래 · Shift 가속\n'+
-    '좌클릭 드래그 시점 · 클릭 선택 · Del 삭제';
+    '우클릭 드래그 시점 + WASD 비행 '+FLY.toFixed(1)+'m/s (휠 조절 · Shift 3.5배)\n'+
+    'Space 위 · Ctrl 아래 · 좌클릭 선택 · Del 삭제';
 }
 var toastT=0;
 function toast(m){ var t=document.getElementById('toast');
@@ -1096,9 +1115,11 @@ function toast(m){ var t=document.getElementById('toast');
 var last=0;
 function loop(now){
   var dt=Math.min(0.05,(now-last)/1000); last=now;
-  var B=camBasis(), sp=(keys['shift']?54:14)*dt;
-  var f=(keys['w']?1:0)-(keys['s']?1:0), r=(keys['d']?1:0)-(keys['a']?1:0);
-  var u=(keys[' ']?1:0)-(keys['control']?1:0);        // Q·E 는 기즈모 전환으로 갔다
+  var B=camBasis(), sp=FLY*(keys['shift']?3.5:1)*dt;
+  // WASD 는 우클릭으로 둘러보는 중에만 — 안 그러면 W/E/R 기즈모 전환과 부딪힌다
+  var f=LOOKING?((keys['w']?1:0)-(keys['s']?1:0)):0;
+  var r=LOOKING?((keys['d']?1:0)-(keys['a']?1:0)):0;
+  var u=(keys[' ']?1:0)-(keys['control']?1:0);        // 위아래는 언제나
   if(f||r||u){
     cam.x+=(B.f.x*f+B.r.x*r)*sp; cam.y+=(B.f.y*f)*sp+u*sp; cam.z+=(B.f.z*f+B.r.z*r)*sp;
   }
