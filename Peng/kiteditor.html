@@ -6,14 +6,18 @@
   *{box-sizing:border-box}
   html,body{margin:0;height:100%;overflow:hidden;background:#0d1220;color:#dbe4f5;
     font-family:"Pretendard","Inter","Segoe UI","Malgun Gothic",sans-serif;font-size:13px}
-  #app{display:grid;grid-template-columns:1fr 268px;grid-template-rows:1fr 132px;height:100%}
+  #app{display:grid;grid-template-columns:1fr 268px;grid-template-rows:1fr 170px;height:100%}
   #view{position:relative;grid-column:1;grid-row:1;background:#111a2e}
   #cv{width:100%;height:100%;display:block;cursor:crosshair}
   #cv.looking{cursor:move}
   #side{grid-column:2;grid-row:1/3;background:#141c30;border-left:1px solid #253150;
     overflow-y:auto;padding:12px 12px 24px}
   #tray{grid-column:1;grid-row:2;background:#121a2c;border-top:1px solid #253150;
-    overflow-x:auto;overflow-y:hidden;white-space:nowrap;padding:8px 10px}
+    display:flex;flex-direction:column;overflow:hidden;padding:6px 10px 8px}
+  #tabs{flex:none;display:flex;gap:6px;margin-bottom:6px}
+  #tabs button{padding:5px 12px;font-size:12px;border-radius:6px 6px 0 0}
+  #tabs .cnt{opacity:.55;font-size:10.5px;margin-left:4px}
+  #items{flex:1;overflow-x:auto;overflow-y:hidden;white-space:nowrap;padding-top:2px}
   h2{font-size:12px;letter-spacing:.06em;color:#7e8db0;margin:14px 0 7px;text-transform:uppercase}
   h2:first-child{margin-top:0}
   .row{display:flex;gap:6px;align-items:center;margin-bottom:6px}
@@ -126,11 +130,15 @@
       </div>
     </div>
   </div>
-  <div id="tray"></div>
+  <div id="tray">
+    <div id="tabs"></div>
+    <div id="items"></div>
+  </div>
 </div>
 
 <script src="gunmesh.js"></script>
 <script src="survivalbaked.js"></script>
+<script src="stationbaked.js"></script>
 <script>
 "use strict";
 /* =========================================================================
@@ -163,13 +171,24 @@ PROG.aPos=gl.getAttribLocation(PROG,'aPos'); PROG.aCol=gl.getAttribLocation(PROG
 PROG.uVP=gl.getUniformLocation(PROG,'uVP');  PROG.uFade=gl.getUniformLocation(PROG,'uFade');
 gl.enable(gl.DEPTH_TEST); gl.clearColor(0.055,0.086,0.153,1);
 
-/* ---------- 킷 조각 ---------- */
+/* ---------- 킷 조각 ----------
+   테마(킷)별로 나눠 담는다. 조각 이름은 킷끼리 안 겹치므로(확인함) 사전 하나에
+   그대로 합쳐도 되고, 게임의 stationParts() 도 같은 방식으로 둘을 합친다. */
 var PARTS={}, NAMES=[];
+var KITS=[
+  { id:'mark',     label:'표식',     names:[] },
+  { id:'survival', label:'서바이벌', names:[], src:'SURVIVAL_BAKED' },
+  { id:'station',  label:'우주 정거장', names:[], src:'STATION_BAKED' }
+];
 (function(){
-  if(!window.SURVIVAL_BAKED || !window.GunMesh){ return; }
-  for(var k in window.SURVIVAL_BAKED){
-    try{ PARTS[k]=GunMesh.decodeBaked(window.SURVIVAL_BAKED[k]); NAMES.push(k); }catch(e){}
-  }
+  if(!window.GunMesh) return;
+  KITS.forEach(function(K){
+    var bag=K.src && window[K.src]; if(!bag) return;
+    for(var k in bag){
+      try{ PARTS[k]=GunMesh.decodeBaked(bag[k]); K.names.push(k); NAMES.push(k); }catch(e){}
+    }
+    K.names.sort();
+  });
   NAMES.sort();
 })();
 /* 표식(리스폰·아이템 패드) — 킷 조각이 아니라 규칙이지만, 놓고 옮기는 방식은
@@ -883,24 +902,52 @@ function markThumb(t){
   }
   return c;
 }
+/* 트레이 — 탭으로 테마를 고른다. 썸네일은 처음 그 탭을 열 때 만든다.
+   백 개가 넘는 조각을 시작하자마자 전부 그리면 첫 화면이 눈에 띄게 늦어진다. */
+var TRAYBUILT={}, TAB='survival';
+function trayItem(t, isMark){
+  var d=document.createElement('div'); d.className='item'; d.draggable=true; d.dataset.t=t;
+  if(isMark) d.style.borderColor='#2f6b52';
+  d.appendChild(isMark ? markThumb(t) : thumb(t));
+  var sp=document.createElement('span');
+  sp.textContent=isMark?MARKDEF[t].label:t;
+  sp.title=t; d.appendChild(sp);
+  d.addEventListener('dragstart',function(e){ e.dataTransfer.setData('text/plain',t); });
+  return d;
+}
+function showTab(id){
+  TAB=id;
+  var items=document.getElementById('items');
+  [].forEach.call(document.querySelectorAll('#tabs button'),function(b){
+    b.classList.toggle('on', b.dataset.k===id); });
+  if(!TRAYBUILT[id]){
+    var box=document.createElement('div'); box.dataset.k=id; box.style.display='none';
+    if(id==='mark') Object.keys(MARKDEF).forEach(function(t){ box.appendChild(trayItem(t,true)); });
+    else {
+      var K=KITS.filter(function(k){ return k.id===id; })[0];
+      K.names.forEach(function(n){ box.appendChild(trayItem(n,false)); });
+    }
+    items.appendChild(box); TRAYBUILT[id]=box;
+  }
+  for(var k in TRAYBUILT) TRAYBUILT[k].style.display=(k===id)?'':'none';
+  items.scrollLeft=0;
+}
 (function buildTray(){
-  var tray=document.getElementById('tray');
-  if(!NAMES.length){ tray.textContent='survivalbaked.js 를 못 읽었습니다 — tools/bake.html 에서 서바이벌 킷을 구워주세요.'; return; }
-  Object.keys(MARKDEF).forEach(function(t){
-    var d=document.createElement('div'); d.className='item'; d.draggable=true; d.dataset.t=t;
-    d.style.borderColor='#2f6b52';
-    d.appendChild(markThumb(t));
-    var sp=document.createElement('span'); sp.textContent=MARKDEF[t].label; d.appendChild(sp);
-    d.addEventListener('dragstart',function(e){ e.dataTransfer.setData('text/plain',t); });
-    tray.appendChild(d);
+  var tabs=document.getElementById('tabs');
+  if(!NAMES.length){
+    document.getElementById('items').textContent=
+      '구운 킷을 못 읽었습니다 — tools/bake.html 에서 서바이벌·정거장 킷을 구워주세요.';
+    return;
+  }
+  KITS.forEach(function(K){
+    var n=(K.id==='mark')?Object.keys(MARKDEF).length:K.names.length;
+    if(!n) return;
+    var b=document.createElement('button'); b.dataset.k=K.id;
+    b.innerHTML=K.label+'<span class="cnt">'+n+'</span>';
+    b.onclick=function(){ showTab(K.id); };
+    tabs.appendChild(b);
   });
-  NAMES.forEach(function(n){
-    var d=document.createElement('div'); d.className='item'; d.draggable=true; d.dataset.t=n;
-    d.appendChild(thumb(n));
-    var s=document.createElement('span'); s.textContent=n; d.appendChild(s);
-    d.addEventListener('dragstart',function(e){ e.dataTransfer.setData('text/plain',n); });
-    tray.appendChild(d);
-  });
+  showTab('survival');
 })();
 cv.addEventListener('dragover',function(e){ e.preventDefault(); e.dataTransfer.dropEffect='copy'; });
 cv.addEventListener('drop',function(e){
