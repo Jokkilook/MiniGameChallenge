@@ -1,0 +1,707 @@
+<!doctype html>
+<html lang="ko"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>PENG! 킷 배치 에디터</title>
+<style>
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%;overflow:hidden;background:#0d1220;color:#dbe4f5;
+    font-family:"Pretendard","Inter","Segoe UI","Malgun Gothic",sans-serif;font-size:13px}
+  #app{display:grid;grid-template-columns:1fr 268px;grid-template-rows:1fr 132px;height:100%}
+  #view{position:relative;grid-column:1;grid-row:1;background:#111a2e}
+  #cv{width:100%;height:100%;display:block;cursor:crosshair}
+  #cv.looking{cursor:move}
+  #side{grid-column:2;grid-row:1/3;background:#141c30;border-left:1px solid #253150;
+    overflow-y:auto;padding:12px 12px 24px}
+  #tray{grid-column:1;grid-row:2;background:#121a2c;border-top:1px solid #253150;
+    overflow-x:auto;overflow-y:hidden;white-space:nowrap;padding:8px 10px}
+  h2{font-size:12px;letter-spacing:.06em;color:#7e8db0;margin:14px 0 7px;text-transform:uppercase}
+  h2:first-child{margin-top:0}
+  .row{display:flex;gap:6px;align-items:center;margin-bottom:6px}
+  .row label{width:16px;color:#7e8db0;font-size:12px;flex:none}
+  input[type=number],input[type=text]{width:100%;min-width:0;padding:5px 7px;border-radius:6px;
+    border:1px solid #2a3450;background:#0f1728;color:#dbe4f5;font-family:inherit;font-size:12px}
+  input:focus{outline:none;border-color:#3c8bff}
+  button{padding:7px 10px;border:1px solid #2a3450;border-radius:7px;background:#1b2540;color:#dbe4f5;
+    font-family:inherit;font-size:12px;cursor:pointer}
+  button:hover{background:#243154}
+  button.on{background:#3c8bff;border-color:#3c8bff;color:#fff;font-weight:700}
+  button:disabled{opacity:.4;cursor:default}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+  .grid3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px}
+  .item{display:inline-block;width:74px;margin-right:6px;text-align:center;vertical-align:top;
+    border:1px solid #253150;border-radius:8px;background:#0f1728;padding:4px 2px 3px;cursor:grab}
+  .item:hover{border-color:#3c8bff;background:#16223c}
+  .item canvas{width:60px;height:52px;display:block;margin:0 auto;pointer-events:none}
+  .item span{display:block;font-size:9.5px;color:#9fb0d0;white-space:nowrap;overflow:hidden;
+    text-overflow:ellipsis;pointer-events:none}
+  #hud{position:absolute;left:10px;top:10px;font-size:11.5px;color:#8fa2c6;line-height:1.7;
+    background:rgba(13,18,32,.72);border:1px solid #253150;border-radius:8px;padding:7px 10px;
+    pointer-events:none;white-space:pre}
+  #toast{position:absolute;left:50%;bottom:14px;transform:translateX(-50%);background:#1b2540;
+    border:1px solid #3c8bff;border-radius:8px;padding:7px 14px;opacity:0;transition:opacity .2s;
+    pointer-events:none;font-size:12px}
+  #toast.show{opacity:1}
+  .hint{color:#6b7999;font-size:11px;line-height:1.6;margin:6px 0 0}
+  .sel{color:#5fd39a}
+</style></head>
+<body>
+<div id="app">
+  <div id="view">
+    <canvas id="cv"></canvas>
+    <div id="hud"></div>
+    <div id="toast"></div>
+  </div>
+  <div id="side">
+    <h2>맵</h2>
+    <div class="row"><input type="text" id="mapId" value="mymap" placeholder="파일 이름(영문)"></div>
+    <div class="row"><input type="text" id="mapName" value="새 맵" placeholder="표시 이름"></div>
+    <div class="grid2">
+      <button id="btnSave">저장</button>
+      <button id="btnLoad">불러오기</button>
+    </div>
+    <p class="hint">저장하면 <b>levels/&lt;이름&gt;.js</b> 가 되고 게임을 새로고침하면 맵 목록에 뜹니다.</p>
+
+    <h2>기즈모</h2>
+    <div class="grid3">
+      <button id="mT" class="on">이동 1</button>
+      <button id="mR">회전 2</button>
+      <button id="mS">크기 3</button>
+    </div>
+    <div class="row" style="margin-top:6px">
+      <button id="btnSnap" style="flex:1">격자 스냅: 끔</button>
+    </div>
+
+    <h2>선택한 조각</h2>
+    <div id="selName" class="hint" style="margin:0 0 8px">없음</div>
+    <div id="props" style="display:none">
+      <h2 style="margin-top:0">위치 (m)</h2>
+      <div class="row"><label>X</label><input type="number" id="px" step="0.25"></div>
+      <div class="row"><label>Y</label><input type="number" id="py" step="0.25"></div>
+      <div class="row"><label>Z</label><input type="number" id="pz" step="0.25"></div>
+      <h2>회전 (도)</h2>
+      <div class="row"><label>X</label><input type="number" id="rx" step="5"></div>
+      <div class="row"><label>Y</label><input type="number" id="ry" step="5"></div>
+      <div class="row"><label>Z</label><input type="number" id="rz" step="5"></div>
+      <h2>크기 (배율)</h2>
+      <div class="row"><label>X</label><input type="number" id="sx" step="0.1" min="0.01"></div>
+      <div class="row"><label>Y</label><input type="number" id="sy" step="0.1" min="0.01"></div>
+      <div class="row"><label>Z</label><input type="number" id="sz" step="0.1" min="0.01"></div>
+      <div id="sizeM" class="hint"></div>
+      <div class="grid2" style="margin-top:8px">
+        <button id="btnDup">복제 Ctrl+D</button>
+        <button id="btnDel">삭제 Del</button>
+      </div>
+      <div class="row" style="margin-top:6px">
+        <button id="btnDeco" style="flex:1">충돌: 있음</button>
+      </div>
+      <p class="hint">충돌을 끄면 순수 장식이 됩니다(밟히지도, 총알을 막지도 않습니다).</p>
+    </div>
+  </div>
+  <div id="tray"></div>
+</div>
+
+<script src="gunmesh.js"></script>
+<script src="survivalbaked.js"></script>
+<script>
+"use strict";
+/* =========================================================================
+   PENG! 킷 배치 에디터 — Kenney Survival Kit 조각을 손으로 놓아 맵을 만든다.
+
+   좌표계는 게임과 똑같이 맞춘다. 조각의 위치는 '킷유닛'이고 월드 미터 = 유닛 * UNIT
+   (기본 3m). 화면에는 미터로 보여 주고 저장할 때 유닛으로 돌린다 — 게임의
+   LEVEL.pieces 가 유닛을 쓰기 때문이다(level.js 의 genPeak, index.html 의 pieceBasis).
+
+   변환 규약도 게임과 같은 식이어야 보이는 것과 부딪히는 것이 어긋나지 않는다:
+     배율(sx,sy,sz) 을 로컬에서 곱하고 → Ry*Rx*Rz 로 돌린다.
+   ========================================================================= */
+var UNIT=3;                                   // 1킷유닛 = 몇 미터인가(게임의 collapse.size)
+
+/* ---------- GL ---------- */
+var cv=document.getElementById('cv');
+var gl=cv.getContext('webgl',{antialias:true,alpha:false,depth:true});
+if(!gl){ document.body.innerHTML='<p style="padding:24px">WebGL 을 쓸 수 없습니다.</p>'; throw 0; }
+function sh(t,src){ var o=gl.createShader(t); gl.shaderSource(o,src); gl.compileShader(o);
+  if(!gl.getShaderParameter(o,gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(o)); return o; }
+var PROG=gl.createProgram();
+gl.attachShader(PROG, sh(gl.VERTEX_SHADER,
+  'attribute vec3 aPos;attribute vec3 aCol;uniform mat4 uVP;varying vec3 vCol;'+
+  'void main(){vCol=aCol;gl_Position=uVP*vec4(aPos,1.0);}'));
+gl.attachShader(PROG, sh(gl.FRAGMENT_SHADER,
+  'precision mediump float;varying vec3 vCol;uniform float uFade;'+
+  'void main(){gl_FragColor=vec4(vCol,uFade);}'));
+gl.linkProgram(PROG); gl.useProgram(PROG);
+PROG.aPos=gl.getAttribLocation(PROG,'aPos'); PROG.aCol=gl.getAttribLocation(PROG,'aCol');
+PROG.uVP=gl.getUniformLocation(PROG,'uVP');  PROG.uFade=gl.getUniformLocation(PROG,'uFade');
+gl.enable(gl.DEPTH_TEST); gl.clearColor(0.055,0.086,0.153,1);
+
+/* ---------- 킷 조각 ---------- */
+var PARTS={}, NAMES=[];
+(function(){
+  if(!window.SURVIVAL_BAKED || !window.GunMesh){ return; }
+  for(var k in window.SURVIVAL_BAKED){
+    try{ PARTS[k]=GunMesh.decodeBaked(window.SURVIVAL_BAKED[k]); NAMES.push(k); }catch(e){}
+  }
+  NAMES.sort();
+})();
+/* 게임의 PIECE_FLAT 과 같은 취급 — 바위 슬래브는 윗면이 평평한 한 장으로 친다.
+   에디터에서는 '윗면 높이'를 알아야 바닥에 딱 맞춰 놓을 수 있다. */
+var TOPY={};
+NAMES.forEach(function(n){ var m=PARTS[n]; TOPY[n]=m?m.max[1]:0; });
+
+/* ---------- 편집 상태 ---------- */
+var OBJ=[];                 // {t, x,y,z (m), rx,ry,rz (도), sx,sy,sz, deco}
+var SEL=-1, MODE='T', SNAP=0;
+var UNDO=[];
+function snapshot(){ UNDO.push(JSON.stringify(OBJ)); if(UNDO.length>60) UNDO.shift(); }
+function undo(){ if(!UNDO.length) return; OBJ=JSON.parse(UNDO.pop()); if(SEL>=OBJ.length) SEL=-1;
+  rebuild(); syncPanel(); toast('되돌림'); }
+
+/* ---------- 수학 ---------- */
+function mul4(a,b){ var o=new Float32Array(16);
+  for(var c=0;c<4;c++)for(var r=0;r<4;r++){ var s=0;
+    for(var k=0;k<4;k++) s+=a[k*4+r]*b[c*4+k]; o[c*4+r]=s; } return o; }
+function basisOf(o){                                   // 게임 pieceBasis 와 같은 식
+  var D=Math.PI/180, ay=(o.ry||0)*D, ax=(o.rx||0)*D, az=(o.rz||0)*D;
+  var cy=Math.cos(ay),sy=Math.sin(ay),cx=Math.cos(ax),sx=Math.sin(ax),cz=Math.cos(az),sz=Math.sin(az);
+  var Ry=[cy,0,-sy, 0,1,0, sy,0,cy], Rx=[1,0,0, 0,cx,sx, 0,-sx,cx], Rz=[cz,sz,0, -sz,cz,0, 0,0,1];
+  function mm(a,b){ var q=new Array(9);
+    for(var c=0;c<3;c++)for(var r=0;r<3;r++){ var v=0;
+      for(var k=0;k<3;k++) v+=a[k*3+r]*b[c*3+k]; q[c*3+r]=v; } return q; }
+  var R=mm(mm(Ry,Rx),Rz), kx=o.sx, ky=o.sy, kz=o.sz;
+  return [R[0]*kx,R[1]*kx,R[2]*kx, R[3]*ky,R[4]*ky,R[5]*ky, R[6]*kz,R[7]*kz,R[8]*kz];
+}
+function xf3(M,x,y,z){ return [M[0]*x+M[3]*y+M[6]*z, M[1]*x+M[4]*y+M[7]*z, M[2]*x+M[5]*y+M[8]*z]; }
+// 월드 AABB(미터). 선택·집기·기즈모 위치에 쓴다
+function aabbOf(o){
+  var m=PARTS[o.t]; if(!m) return null;
+  var M=basisOf(o), mn=[1e9,1e9,1e9], mx=[-1e9,-1e9,-1e9];
+  for(var k=0;k<8;k++){
+    var v=xf3(M, (k&1)?m.max[0]:m.min[0], (k&2)?m.max[1]:m.min[1], (k&4)?m.max[2]:m.min[2]);
+    for(var a=0;a<3;a++){ if(v[a]<mn[a])mn[a]=v[a]; if(v[a]>mx[a])mx[a]=v[a]; }
+  }
+  return { mn:[o.x+mn[0]*UNIT, o.y+mn[1]*UNIT, o.z+mn[2]*UNIT],
+           mx:[o.x+mx[0]*UNIT, o.y+mx[1]*UNIT, o.z+mx[2]*UNIT] };
+}
+
+/* ---------- 카메라 ---------- */
+var cam={x:0,y:14,z:-34, yaw:0, pitch:-0.32};
+function camBasis(){
+  var f={x:Math.cos(cam.pitch)*Math.sin(cam.yaw), y:Math.sin(cam.pitch), z:Math.cos(cam.pitch)*Math.cos(cam.yaw)};
+  var r={x:Math.cos(cam.yaw), y:0, z:-Math.sin(cam.yaw)};
+  var u={x:f.y*r.z-f.z*r.y, y:f.z*r.x-f.x*r.z, z:f.x*r.y-f.y*r.x};
+  return {f:f,r:r,u:u};
+}
+var FOVF=1/Math.tan(0.62);
+function viewProj(){
+  var B=camBasis(), asp=cv.width/cv.height, nf=1/(0.1-2000);
+  var P=[FOVF/asp,0,0,0, 0,FOVF,0,0, 0,0,(2000+0.1)*nf,-1, 0,0,2*2000*0.1*nf,0];
+  var V=[B.r.x,B.u.x,-B.f.x,0, B.r.y,B.u.y,-B.f.y,0, B.r.z,B.u.z,-B.f.z,0,
+    -(B.r.x*cam.x+B.r.y*cam.y+B.r.z*cam.z), -(B.u.x*cam.x+B.u.y*cam.y+B.u.z*cam.z),
+     (B.f.x*cam.x+B.f.y*cam.y+B.f.z*cam.z), 1];
+  return mul4(P,V);
+}
+function rayAt(px,py){
+  var B=camBasis(), asp=cv.width/cv.height;
+  var nx=(px/cv.clientWidth)*2-1, ny=1-(py/cv.clientHeight)*2;
+  var dx=nx*asp/FOVF, dy=ny/FOVF;
+  var d={x:B.r.x*dx+B.u.x*dy+B.f.x, y:B.r.y*dx+B.u.y*dy+B.f.y, z:B.r.z*dx+B.u.z*dy+B.f.z};
+  var l=Math.hypot(d.x,d.y,d.z)||1; d.x/=l; d.y/=l; d.z/=l;
+  return d;
+}
+function project(x,y,z,VP){
+  var w=VP[3]*x+VP[7]*y+VP[11]*z+VP[15];
+  if(w<=0.0001) return null;
+  return { x:((VP[0]*x+VP[4]*y+VP[8]*z+VP[12])/w*0.5+0.5)*cv.clientWidth,
+           y:(0.5-(VP[1]*x+VP[5]*y+VP[9]*z+VP[13])/w*0.5)*cv.clientHeight };
+}
+function rayAABB(o,d,b){
+  var t0=-1e9, t1=1e9;
+  for(var a=0;a<3;a++){
+    var oo=[o.x,o.y,o.z][a], dd=[d.x,d.y,d.z][a];
+    if(Math.abs(dd)<1e-9){ if(oo<b.mn[a]||oo>b.mx[a]) return Infinity; continue; }
+    var ta=(b.mn[a]-oo)/dd, tb=(b.mx[a]-oo)/dd;
+    if(ta>tb){ var s=ta; ta=tb; tb=s; }
+    if(ta>t0) t0=ta; if(tb<t1) t1=tb;
+    if(t0>t1) return Infinity;
+  }
+  return t0>0?t0:(t1>0?t1:Infinity);
+}
+
+/* ---------- 정적 버퍼 ---------- */
+var BUF={mesh:gl.createBuffer(), meshN:0, line:gl.createBuffer(), lineN:0, dyn:gl.createBuffer()};
+var LIGHT=[0.42,0.80,0.43], LL=Math.hypot(LIGHT[0],LIGHT[1],LIGHT[2]);
+function rebuild(){
+  var arr=[];
+  for(var i=0;i<OBJ.length;i++){
+    var o=OBJ[i], m=PARTS[o.t]; if(!m) continue;
+    var M=basisOf(o);
+    var s0=M[0]*M[0]+M[1]*M[1]+M[2]*M[2]||1, s1=M[3]*M[3]+M[4]*M[4]+M[5]*M[5]||1,
+        s2=M[6]*M[6]+M[7]*M[7]+M[8]*M[8]||1;
+    var NM=[M[0]/s0,M[1]/s0,M[2]/s0, M[3]/s1,M[4]/s1,M[5]/s1, M[6]/s2,M[7]/s2,M[8]/s2];
+    var dim=o.deco?0.72:1;
+    for(var k=0;k<m.idx.length;k++){
+      var v=m.idx[k];
+      var P=xf3(M, m.pos[v*3], m.pos[v*3+1], m.pos[v*3+2]);
+      var N=xf3(NM, m.nrm?m.nrm[v*3]:0, m.nrm?m.nrm[v*3+1]:1, m.nrm?m.nrm[v*3+2]:0);
+      var nl=Math.sqrt(N[0]*N[0]+N[1]*N[1]+N[2]*N[2])||1;
+      var s=(0.62+0.38*Math.max(0,(N[0]*LIGHT[0]+N[1]*LIGHT[1]+N[2]*LIGHT[2])/nl/LL))*dim;
+      arr.push(o.x+P[0]*UNIT, o.y+P[1]*UNIT, o.z+P[2]*UNIT,
+               m.col[v*3]*s, m.col[v*3+1]*s, m.col[v*3+2]*s);
+    }
+  }
+  gl.bindBuffer(gl.ARRAY_BUFFER, BUF.mesh);
+  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(arr), gl.STATIC_DRAW);
+  BUF.meshN=arr.length/6;
+  hud();
+}
+// 바닥 격자 — 한 칸 = 1킷유닛(3m)
+(function buildGrid(){
+  var arr=[], N=30, S=UNIT;
+  for(var i=-N;i<=N;i++){
+    var c=(i===0)?[0.42,0.52,0.72]:((i%5===0)?[0.20,0.26,0.40]:[0.13,0.17,0.28]);
+    arr.push(-N*S,0,i*S, c[0],c[1],c[2],  N*S,0,i*S, c[0],c[1],c[2]);
+    arr.push(i*S,0,-N*S, c[0],c[1],c[2],  i*S,0,N*S, c[0],c[1],c[2]);
+  }
+  gl.bindBuffer(gl.ARRAY_BUFFER, BUF.line);
+  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(arr), gl.STATIC_DRAW);
+  BUF.lineN=arr.length/6;
+})();
+
+/* ---------- 기즈모 ---------- */
+var AXCOL=[[1,0.28,0.32],[0.42,0.92,0.42],[0.35,0.6,1]];
+function gizmoOrigin(){
+  if(SEL<0) return null; var b=aabbOf(OBJ[SEL]); if(!b) return null;
+  return { x:(b.mn[0]+b.mx[0])/2, y:(b.mn[1]+b.mx[1])/2, z:(b.mn[2]+b.mx[2])/2 };
+}
+function gizmoLen(){                                   // 화면에서 늘 비슷한 크기로
+  var g=gizmoOrigin(); if(!g) return 1;
+  return Math.max(1.2, Math.hypot(g.x-cam.x,g.y-cam.y,g.z-cam.z)*0.13);
+}
+function axisEnd(a){
+  var g=gizmoOrigin(), L=gizmoLen();
+  return { x:g.x+(a===0?L:0), y:g.y+(a===1?L:0), z:g.z+(a===2?L:0) };
+}
+// 마우스가 어느 축 손잡이 위인가(화면 거리 기준)
+function pickAxis(mx,my,VP){
+  var g=gizmoOrigin(); if(!g) return -1;
+  var o=project(g.x,g.y,g.z,VP); if(!o) return -1;
+  var best=-1, bd=14;
+  for(var a=0;a<3;a++){
+    var e=axisEnd(a), p=project(e.x,e.y,e.z,VP); if(!p) continue;
+    var vx=p.x-o.x, vy=p.y-o.y, len=Math.hypot(vx,vy)||1;
+    var t=Math.max(0,Math.min(1,((mx-o.x)*vx+(my-o.y)*vy)/(len*len)));
+    var d=Math.hypot(o.x+vx*t-mx, o.y+vy*t-my);
+    if(t>0.12 && d<bd){ bd=d; best=a; }
+  }
+  return best;
+}
+function drawGizmo(VP){
+  if(SEL<0) return;
+  var g=gizmoOrigin(); if(!g) return;
+  var arr=[], b=aabbOf(OBJ[SEL]);
+  // 선택 상자
+  var c=[1,0.85,0.3];
+  var P=[[b.mn[0],b.mn[1],b.mn[2]],[b.mx[0],b.mn[1],b.mn[2]],[b.mx[0],b.mn[1],b.mx[2]],[b.mn[0],b.mn[1],b.mx[2]],
+         [b.mn[0],b.mx[1],b.mn[2]],[b.mx[0],b.mx[1],b.mn[2]],[b.mx[0],b.mx[1],b.mx[2]],[b.mn[0],b.mx[1],b.mx[2]]];
+  var E=[0,1,1,2,2,3,3,0, 4,5,5,6,6,7,7,4, 0,4,1,5,2,6,3,7];
+  for(var i=0;i<E.length;i+=2){
+    arr.push(P[E[i]][0],P[E[i]][1],P[E[i]][2], c[0],c[1],c[2]);
+    arr.push(P[E[i+1]][0],P[E[i+1]][1],P[E[i+1]][2], c[0],c[1],c[2]);
+  }
+  // 축 손잡이 — 회전 모드에서는 축을 중심으로 한 고리로 그린다
+  for(var a=0;a<3;a++){
+    var col=AXCOL[a], L=gizmoLen();
+    if(MODE==='R'){
+      var u=(a+1)%3, w=(a+2)%3, prev=null;
+      for(var s=0;s<=32;s++){
+        var th=s/32*Math.PI*2, p=[g.x,g.y,g.z];
+        p[u]+= Math.cos(th)*L; p[w]+= Math.sin(th)*L;
+        if(prev){ arr.push(prev[0],prev[1],prev[2],col[0],col[1],col[2]);
+                  arr.push(p[0],p[1],p[2],col[0],col[1],col[2]); }
+        prev=p;
+      }
+    } else {
+      var e=axisEnd(a);
+      arr.push(g.x,g.y,g.z, col[0],col[1],col[2]);
+      arr.push(e.x,e.y,e.z, col[0],col[1],col[2]);
+      if(MODE==='S'){                                  // 끝에 작은 십자 = 크기 조절 손잡이
+        var h=L*0.09;
+        for(var q=0;q<3;q++){ var p1=[e.x,e.y,e.z], p2=[e.x,e.y,e.z];
+          p1[q]-=h; p2[q]+=h;
+          arr.push(p1[0],p1[1],p1[2],col[0],col[1],col[2]);
+          arr.push(p2[0],p2[1],p2[2],col[0],col[1],col[2]); }
+      }
+    }
+  }
+  gl.bindBuffer(gl.ARRAY_BUFFER, BUF.dyn);
+  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(arr), gl.DYNAMIC_DRAW);
+  gl.enableVertexAttribArray(PROG.aPos); gl.vertexAttribPointer(PROG.aPos,3,gl.FLOAT,false,24,0);
+  gl.enableVertexAttribArray(PROG.aCol); gl.vertexAttribPointer(PROG.aCol,3,gl.FLOAT,false,24,12);
+  gl.disable(gl.DEPTH_TEST);
+  gl.drawArrays(gl.LINES,0,arr.length/6);
+  gl.enable(gl.DEPTH_TEST);
+}
+
+/* ---------- 그리기 ---------- */
+function resize(){
+  var d=Math.min(2,window.devicePixelRatio||1);
+  cv.width=Math.round(cv.clientWidth*d); cv.height=Math.round(cv.clientHeight*d);
+}
+function draw(){
+  resize();
+  gl.viewport(0,0,cv.width,cv.height);
+  gl.clear(gl.COLOR_BUFFER_BIT|gl.DEPTH_BUFFER_BIT);
+  var VP=viewProj();
+  gl.uniformMatrix4fv(PROG.uVP,false,VP);
+  gl.uniform1f(PROG.uFade,1);
+  gl.enableVertexAttribArray(PROG.aPos); gl.enableVertexAttribArray(PROG.aCol);
+  if(BUF.lineN){ gl.bindBuffer(gl.ARRAY_BUFFER,BUF.line);
+    gl.vertexAttribPointer(PROG.aPos,3,gl.FLOAT,false,24,0);
+    gl.vertexAttribPointer(PROG.aCol,3,gl.FLOAT,false,24,12);
+    gl.drawArrays(gl.LINES,0,BUF.lineN); }
+  if(BUF.meshN){ gl.bindBuffer(gl.ARRAY_BUFFER,BUF.mesh);
+    gl.vertexAttribPointer(PROG.aPos,3,gl.FLOAT,false,24,0);
+    gl.vertexAttribPointer(PROG.aCol,3,gl.FLOAT,false,24,12);
+    gl.drawArrays(gl.TRIANGLES,0,BUF.meshN); }
+  drawGizmo(VP);
+}
+
+/* ---------- 카메라 조작 ---------- */
+var keys={}, drag=null, moved=false;
+window.addEventListener('keydown',function(e){
+  var tag=(e.target.tagName||'').toLowerCase();
+  if(tag==='input'||tag==='textarea') return;
+  keys[e.key.toLowerCase()]=true;
+  if(e.key==='1'){ setMode('T'); e.preventDefault(); }
+  if(e.key==='2'){ setMode('R'); e.preventDefault(); }
+  if(e.key==='3'){ setMode('S'); e.preventDefault(); }
+  if(e.key==='Delete'||e.key==='Backspace'){ delSel(); e.preventDefault(); }
+  if(e.key==='Escape'){ SEL=-1; syncPanel(); }
+  if((e.ctrlKey||e.metaKey) && e.key.toLowerCase()==='d'){ dupSel(); e.preventDefault(); }
+  if((e.ctrlKey||e.metaKey) && e.key.toLowerCase()==='z'){ undo(); e.preventDefault(); }
+});
+window.addEventListener('keyup',function(e){ keys[e.key.toLowerCase()]=false; });
+window.addEventListener('blur',function(){ keys={}; });
+
+cv.addEventListener('mousedown',function(e){
+  if(e.button!==0) return;
+  var r=cv.getBoundingClientRect(), mx=e.clientX-r.left, my=e.clientY-r.top;
+  moved=false;
+  var ax=pickAxis(mx,my,viewProj());
+  if(ax>=0 && SEL>=0){ snapshot(); drag={kind:'gizmo', ax:ax, x:mx, y:my, VP:viewProj()}; }
+  else drag={kind:'look', x:e.clientX, y:e.clientY};
+  cv.classList.add('looking');
+});
+window.addEventListener('mousemove',function(e){
+  if(!drag) return;
+  if(drag.kind==='look'){
+    var dx=e.clientX-drag.x, dy=e.clientY-drag.y;
+    drag.x=e.clientX; drag.y=e.clientY;
+    if(Math.abs(dx)+Math.abs(dy)>2) moved=true;
+    cam.yaw-=dx*0.0032;
+    cam.pitch=Math.max(-1.5,Math.min(1.5, cam.pitch-dy*0.0032));
+  } else {
+    var r=cv.getBoundingClientRect(), mx=e.clientX-r.left, my=e.clientY-r.top;
+    applyGizmo(mx-drag.x, my-drag.y, drag);
+    drag.x=mx; drag.y=my; moved=true;
+  }
+});
+window.addEventListener('mouseup',function(e){
+  if(!drag) return;
+  var was=drag; drag=null; cv.classList.remove('looking');
+  if(was.kind==='look' && !moved){
+    var r=cv.getBoundingClientRect(); pickAt(e.clientX-r.left, e.clientY-r.top);
+  }
+});
+cv.addEventListener('contextmenu',function(e){ e.preventDefault(); });
+
+/* 기즈모 끌기 — 축을 화면에 투영해 마우스 이동을 그 방향 성분으로 환산한다.
+   화면 좌표로 재기 때문에 카메라가 어디를 보든 손이 가는 방향과 결과가 맞는다. */
+function applyGizmo(dx,dy,st){
+  var o=OBJ[SEL]; if(!o) return;
+  var g=gizmoOrigin(), VP=viewProj();
+  var p0=project(g.x,g.y,g.z,VP), e=axisEnd(st.ax), p1=project(e.x,e.y,e.z,VP);
+  if(!p0||!p1) return;
+  var vx=p1.x-p0.x, vy=p1.y-p0.y, len=Math.hypot(vx,vy)||1;
+  var t=(dx*vx+dy*vy)/len;                       // 화면 픽셀 단위 이동량
+  if(MODE==='T'){
+    var world=t/len*gizmoLen();                  // 픽셀 → 월드 미터
+    if(st.ax===0) o.x+=world; else if(st.ax===1) o.y+=world; else o.z+=world;
+    if(SNAP){ o.x=Math.round(o.x/SNAP)*SNAP; o.y=Math.round(o.y/SNAP)*SNAP; o.z=Math.round(o.z/SNAP)*SNAP; }
+  } else if(MODE==='R'){
+    var d=t*0.45;
+    if(st.ax===0) o.rx+=d; else if(st.ax===1) o.ry+=d; else o.rz+=d;
+    if(SNAP) { var q=15;
+      if(st.ax===0) o.rx=Math.round(o.rx/q)*q; else if(st.ax===1) o.ry=Math.round(o.ry/q)*q; else o.rz=Math.round(o.rz/q)*q; }
+  } else {
+    var f=1+t/160;
+    if(st.ax===0) o.sx=Math.max(0.02,o.sx*f); else if(st.ax===1) o.sy=Math.max(0.02,o.sy*f);
+    else o.sz=Math.max(0.02,o.sz*f);
+  }
+  rebuild(); syncPanel();
+}
+
+function pickAt(mx,my){
+  var d=rayAt(mx,my), best=Infinity, bi=-1;
+  for(var i=0;i<OBJ.length;i++){
+    var b=aabbOf(OBJ[i]); if(!b) continue;
+    var t=rayAABB(cam,d,b);
+    if(t<best){ best=t; bi=i; }
+  }
+  SEL=bi; syncPanel();
+}
+
+/* ---------- 트레이(드래그해서 놓기) ---------- */
+function thumb(name){
+  var m=PARTS[name], c=document.createElement('canvas');
+  c.width=120; c.height=104;
+  if(!m) return c;
+  // 조각을 캔버스에 정투영으로 그린다(작아서 CPU 로 충분하다)
+  var ctx=c.getContext('2d');
+  var mn=m.min, mx=m.max, sx=(mx[0]-mn[0])||1, sy=(mx[1]-mn[1])||1, sz=(mx[2]-mn[2])||1;
+  var sc=Math.min(c.width*0.42/Math.max(sx,sz), c.height*0.62/Math.max(sy, 0.25));
+  var cx=c.width/2, cy=c.height*0.80, ox=(mn[0]+mx[0])/2, oz=(mn[2]+mx[2])/2;
+  var A=0.62, ca=Math.cos(A), sa=Math.sin(A), TILT=0.55;
+  function pt(x,y,z){
+    var X=(x-ox)*ca+(z-oz)*sa, Z=-(x-ox)*sa+(z-oz)*ca;
+    return [cx+X*sc, cy-(y-mn[1])*sc + Z*sc*TILT];
+  }
+  var tris=[];
+  for(var k=0;k<m.idx.length;k+=3){
+    var a=m.idx[k],b=m.idx[k+1],d=m.idx[k+2];
+    var za=(m.pos[a*3]-ox)*-sa+(m.pos[a*3+2]-oz)*ca;
+    var zb=(m.pos[b*3]-ox)*-sa+(m.pos[b*3+2]-oz)*ca;
+    var zc=(m.pos[d*3]-ox)*-sa+(m.pos[d*3+2]-oz)*ca;
+    tris.push({z:(za+zb+zc)/3, i:[a,b,d]});
+  }
+  tris.sort(function(p,q){ return p.z-q.z; });
+  for(var i=0;i<tris.length;i++){
+    var T=tris[i].i;
+    var p0=pt(m.pos[T[0]*3],m.pos[T[0]*3+1],m.pos[T[0]*3+2]);
+    var p1=pt(m.pos[T[1]*3],m.pos[T[1]*3+1],m.pos[T[1]*3+2]);
+    var p2=pt(m.pos[T[2]*3],m.pos[T[2]*3+1],m.pos[T[2]*3+2]);
+    // 면 법선으로 간이 음영(게임과 같은 광원)
+    var ux=m.pos[T[1]*3]-m.pos[T[0]*3], uy=m.pos[T[1]*3+1]-m.pos[T[0]*3+1], uz=m.pos[T[1]*3+2]-m.pos[T[0]*3+2];
+    var wx=m.pos[T[2]*3]-m.pos[T[0]*3], wy=m.pos[T[2]*3+1]-m.pos[T[0]*3+1], wz=m.pos[T[2]*3+2]-m.pos[T[0]*3+2];
+    var nx=uy*wz-uz*wy, ny=uz*wx-ux*wz, nz=ux*wy-uy*wx;
+    var nl=Math.hypot(nx,ny,nz)||1;
+    var s=0.55+0.45*Math.max(0,(nx*LIGHT[0]+ny*LIGHT[1]+nz*LIGHT[2])/nl/LL);
+    var R=Math.round(m.col[T[0]*3]*255*s), G=Math.round(m.col[T[0]*3+1]*255*s), B=Math.round(m.col[T[0]*3+2]*255*s);
+    ctx.fillStyle='rgb('+R+','+G+','+B+')';
+    ctx.beginPath(); ctx.moveTo(p0[0],p0[1]); ctx.lineTo(p1[0],p1[1]); ctx.lineTo(p2[0],p2[1]);
+    ctx.closePath(); ctx.fill();
+  }
+  return c;
+}
+(function buildTray(){
+  var tray=document.getElementById('tray');
+  if(!NAMES.length){ tray.textContent='survivalbaked.js 를 못 읽었습니다 — tools/bake.html 에서 서바이벌 킷을 구워주세요.'; return; }
+  NAMES.forEach(function(n){
+    var d=document.createElement('div'); d.className='item'; d.draggable=true; d.dataset.t=n;
+    d.appendChild(thumb(n));
+    var s=document.createElement('span'); s.textContent=n; d.appendChild(s);
+    d.addEventListener('dragstart',function(e){ e.dataTransfer.setData('text/plain',n); });
+    tray.appendChild(d);
+  });
+})();
+cv.addEventListener('dragover',function(e){ e.preventDefault(); e.dataTransfer.dropEffect='copy'; });
+cv.addEventListener('drop',function(e){
+  e.preventDefault();
+  var t=e.dataTransfer.getData('text/plain'); if(!PARTS[t]) return;
+  var r=cv.getBoundingClientRect();
+  place(t, e.clientX-r.left, e.clientY-r.top);
+});
+/* 놓는 자리 — 화면에서 쏜 광선이 먼저 맞는 조각의 윗면, 없으면 바닥(y=0).
+   조각은 원점이 밑면이라 그 높이에 그대로 얹으면 딱 맞는다. */
+function place(t,mx,my){
+  var d=rayAt(mx,my), best=Infinity, hit=null;
+  for(var i=0;i<OBJ.length;i++){
+    var b=aabbOf(OBJ[i]); if(!b) continue;
+    var q=rayAABB(cam,d,b); if(q<best){ best=q; hit=b; }
+  }
+  var p;
+  if(hit && best<Infinity){
+    p={ x:cam.x+d.x*best, y:hit.mx[1], z:cam.z+d.z*best };
+  } else {
+    if(Math.abs(d.y)<1e-4) return;
+    var tt=(0-cam.y)/d.y; if(tt<=0||tt>4000) return;
+    p={ x:cam.x+d.x*tt, y:0, z:cam.z+d.z*tt };
+  }
+  if(SNAP){ p.x=Math.round(p.x/SNAP)*SNAP; p.z=Math.round(p.z/SNAP)*SNAP; }
+  snapshot();
+  OBJ.push({ t:t, x:p.x, y:p.y, z:p.z, rx:0, ry:0, rz:0, sx:1, sy:1, sz:1, deco:false });
+  SEL=OBJ.length-1;
+  rebuild(); syncPanel(); toast(t+' 배치');
+}
+
+/* ---------- 오른쪽 패널 ---------- */
+var F={px:0,py:0,pz:0,rx:0,ry:0,rz:0,sx:0,sy:0,sz:0};
+Object.keys(F).forEach(function(k){ F[k]=document.getElementById(k); });
+function syncPanel(){
+  var has=SEL>=0 && OBJ[SEL];
+  document.getElementById('props').style.display=has?'':'none';
+  document.getElementById('selName').innerHTML=has
+    ? '<span class="sel">'+OBJ[SEL].t+'</span> · '+OBJ.length+'개 중 '+(SEL+1)+'번'
+    : (OBJ.length? OBJ.length+'개 배치됨 — 클릭해서 선택' : '없음');
+  if(!has){ hud(); return; }
+  var o=OBJ[SEL];
+  F.px.value=r2(o.x); F.py.value=r2(o.y); F.pz.value=r2(o.z);
+  F.rx.value=r2(o.rx); F.ry.value=r2(o.ry); F.rz.value=r2(o.rz);
+  F.sx.value=r2(o.sx); F.sy.value=r2(o.sy); F.sz.value=r2(o.sz);
+  var b=aabbOf(o);
+  document.getElementById('sizeM').textContent='실제 크기 '+
+    r2(b.mx[0]-b.mn[0])+' × '+r2(b.mx[1]-b.mn[1])+' × '+r2(b.mx[2]-b.mn[2])+' m';
+  document.getElementById('btnDeco').textContent='충돌: '+(o.deco?'없음(장식)':'있음');
+  document.getElementById('btnDeco').classList.toggle('on', !o.deco);
+  hud();
+}
+function r2(v){ return Math.round(v*100)/100; }
+Object.keys(F).forEach(function(k){
+  F[k].addEventListener('input',function(){
+    if(SEL<0) return; var o=OBJ[SEL], v=parseFloat(F[k].value);
+    if(!isFinite(v)) return;
+    if(k==='px')o.x=v; else if(k==='py')o.y=v; else if(k==='pz')o.z=v;
+    else if(k==='rx')o.rx=v; else if(k==='ry')o.ry=v; else if(k==='rz')o.rz=v;
+    else if(k==='sx')o.sx=Math.max(0.02,v); else if(k==='sy')o.sy=Math.max(0.02,v);
+    else o.sz=Math.max(0.02,v);
+    rebuild();
+    var b=aabbOf(o);
+    document.getElementById('sizeM').textContent='실제 크기 '+
+      r2(b.mx[0]-b.mn[0])+' × '+r2(b.mx[1]-b.mn[1])+' × '+r2(b.mx[2]-b.mn[2])+' m';
+  });
+});
+function setMode(m){ MODE=m;
+  document.getElementById('mT').classList.toggle('on',m==='T');
+  document.getElementById('mR').classList.toggle('on',m==='R');
+  document.getElementById('mS').classList.toggle('on',m==='S'); hud(); }
+document.getElementById('mT').onclick=function(){ setMode('T'); };
+document.getElementById('mR').onclick=function(){ setMode('R'); };
+document.getElementById('mS').onclick=function(){ setMode('S'); };
+document.getElementById('btnSnap').onclick=function(){
+  SNAP = SNAP ? 0 : UNIT/2;
+  this.textContent='격자 스냅: '+(SNAP?(SNAP+'m'):'끔'); this.classList.toggle('on',!!SNAP); };
+function delSel(){ if(SEL<0) return; snapshot(); OBJ.splice(SEL,1); SEL=-1; rebuild(); syncPanel(); }
+function dupSel(){ if(SEL<0) return; snapshot();
+  var o=OBJ[SEL], c={}; for(var k in o) c[k]=o[k];
+  c.x+=UNIT; OBJ.push(c); SEL=OBJ.length-1; rebuild(); syncPanel(); }
+document.getElementById('btnDel').onclick=delSel;
+document.getElementById('btnDup').onclick=dupSel;
+document.getElementById('btnDeco').onclick=function(){
+  if(SEL<0) return; snapshot(); OBJ[SEL].deco=!OBJ[SEL].deco; rebuild(); syncPanel(); };
+
+/* ---------- 저장 / 불러오기 ---------- */
+function n3(v){ return (Math.round(v*1000)/1000).toString(); }
+function serialize(){
+  var id=(document.getElementById('mapId').value||'mymap').trim();
+  var nm=(document.getElementById('mapName').value||id).trim();
+  var L=[];
+  L.push("/* PENG! 레벨 — kiteditor.html 에서 만듦. 손으로 고쳐도 된다.");
+  L.push("   pieces 의 좌표는 '킷유닛'이고 월드 미터 = 유닛 * unit 이다. */");
+  L.push("PENG.defineLevel('"+id+"', {");
+  L.push("  name: '"+nm.replace(/'/g,"\\'")+"',");
+  L.push("  unit: "+UNIT+",");
+  L.push("  boxes: [");
+  L.push("    // 저 아래 배경 바닥(deco = 밟히지 않는다). 발판은 전부 pieces 다");
+  L.push("    {cx:0, cy:-72, cz:0, hx:220, hy:1, hz:220, col:'#2b3a2c', deco:true}");
+  L.push("  ],");
+  L.push("  pieces: [");
+  var rows=OBJ.map(function(o){
+    var s="    {t:'"+o.t+"', i:"+n3(o.x/UNIT)+", j:"+n3(o.z/UNIT)+", y:"+n3(o.y/UNIT);
+    if(o.rx) s+=", rx:"+n3(o.rx);
+    if(o.ry) s+=", ry:"+n3(o.ry);
+    if(o.rz) s+=", rz:"+n3(o.rz);
+    if(o.sx!==1||o.sy!==1||o.sz!==1)
+      s+=", sx:"+n3(o.sx)+", sy:"+n3(o.sy)+", sz:"+n3(o.sz);
+    if(o.deco) s+=", deco:true";
+    return s+"}";
+  });
+  L.push(rows.join(',\n'));
+  L.push("  ],");
+  var st=startPoint();
+  L.push("  goal: {cx:0, cy:-999, cz:0, r:0.1},");
+  L.push("  checkpoints: [ {x:"+n3(st.x)+", y:"+n3(st.y)+", z:"+n3(st.z)+"} ],");
+  L.push("  killY: -30,");
+  L.push("  start: {x:"+n3(st.x)+", y:"+n3(st.y)+", z:"+n3(st.z)+"},");
+  L.push("  spawns: [ {x:"+n3(st.x)+",y:"+n3(st.y)+",z:"+n3(st.z)+"} ],");
+  L.push("  pads: [ {x:"+n3(st.x)+", y:"+n3(st.y)+", z:"+n3(st.z)+"} ]");
+  L.push("});");
+  return L.join('\n')+'\n';
+}
+// 시작 지점 — 가장 높은 조각의 윗면 가운데. 없으면 원점
+function startPoint(){
+  var best=null;
+  for(var i=0;i<OBJ.length;i++){ if(OBJ[i].deco) continue;
+    var b=aabbOf(OBJ[i]); if(!b) continue;
+    if(!best || b.mx[1]>best.mx[1]) best=b; }
+  if(!best) return {x:0,y:0,z:0};
+  return { x:(best.mn[0]+best.mx[0])/2, y:best.mx[1], z:(best.mn[2]+best.mx[2])/2 };
+}
+document.getElementById('btnSave').onclick=function(){
+  if(!OBJ.length){ toast('놓인 조각이 없습니다'); return; }
+  var id=(document.getElementById('mapId').value||'').trim();
+  if(!/^[a-zA-Z0-9][a-zA-Z0-9_-]{0,39}$/.test(id)){ toast('맵 이름은 영문·숫자·-·_ 만'); return; }
+  var txt=serialize();
+  fetch('__save',{method:'POST',headers:{'Content-Type':'application/json'},
+                  body:JSON.stringify({id:id,text:txt})})
+    .then(function(r){ return r.ok?r.json():r.text().then(function(t){ throw new Error(t); }); })
+    .then(function(j){ toast('저장됨 — '+j.path+' (게임 새로고침)'); })
+    .catch(function(e){
+      var a=document.createElement('a');
+      a.href=URL.createObjectURL(new Blob([txt],{type:'text/javascript'}));
+      a.download=id+'.js'; a.click();
+      toast('서버에 못 써서 내려받았습니다 — levels/ 에 넣어주세요');
+    });
+};
+document.getElementById('btnLoad').onclick=function(){
+  var id=(document.getElementById('mapId').value||'').trim();
+  fetch('levels/'+id+'.js',{cache:'no-store'})
+    .then(function(r){ if(!r.ok) throw new Error('없음'); return r.text(); })
+    .then(function(txt){
+      var got=null;
+      var P={ defineLevel:function(k,d){ got=d; } };
+      try{ new Function('PENG', txt)(P); }catch(e){ throw new Error('파일을 읽을 수 없습니다'); }
+      if(!got||!got.pieces) throw new Error('조각이 없는 맵입니다');
+      var U=got.unit||UNIT;
+      snapshot();
+      OBJ=got.pieces.map(function(p){
+        return { t:p.t, x:p.i*U, y:(p.y||0)*U, z:p.j*U,
+          rx:p.rx||0, ry:(p.ry||0)+((p.rot||0)&3)*90, rz:p.rz||0,
+          sx:(p.sx!=null?p.sx:(p.s||1)), sy:(p.sy!=null?p.sy:(p.s||1)), sz:(p.sz!=null?p.sz:(p.s||1)),
+          deco:!!p.deco };
+      }).filter(function(o){ return PARTS[o.t]; });
+      if(got.name) document.getElementById('mapName').value=got.name;
+      SEL=-1; rebuild(); syncPanel(); toast(OBJ.length+'개 불러옴');
+    })
+    .catch(function(e){ toast('불러오기 실패: '+(e.message||e)); });
+};
+
+/* ---------- HUD / 토스트 ---------- */
+function hud(){
+  document.getElementById('hud').textContent=
+    '조각 '+OBJ.length+'개 · 정점 '+BUF.meshN+'\n'+
+    '기즈모 '+(MODE==='T'?'이동':MODE==='R'?'회전':'크기')+' (1/2/3 전환)\n'+
+    'WASD 이동 · Q/E 위아래 · Shift 가속\n'+
+    '좌클릭 드래그 시점 · 클릭 선택 · Del 삭제';
+}
+var toastT=0;
+function toast(m){ var t=document.getElementById('toast');
+  t.textContent=m; t.classList.add('show');
+  clearTimeout(toastT); toastT=setTimeout(function(){ t.classList.remove('show'); },1600); }
+
+/* ---------- 루프 ---------- */
+var last=0;
+function loop(now){
+  var dt=Math.min(0.05,(now-last)/1000); last=now;
+  var B=camBasis(), sp=(keys['shift']?54:14)*dt;
+  var f=(keys['w']?1:0)-(keys['s']?1:0), r=(keys['d']?1:0)-(keys['a']?1:0);
+  var u=(keys['e']?1:0)-(keys['q']?1:0);
+  if(f||r||u){
+    cam.x+=(B.f.x*f+B.r.x*r)*sp; cam.y+=(B.f.y*f)*sp+u*sp; cam.z+=(B.f.z*f+B.r.z*r)*sp;
+  }
+  draw();
+  requestAnimationFrame(loop);
+}
+rebuild(); syncPanel(); hud();
+requestAnimationFrame(loop);
+</script>
+</body></html>

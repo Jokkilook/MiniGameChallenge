@@ -409,7 +409,23 @@ function cloneLevel(d){
   var c={}, k;
   for(k in d) c[k]=d[k];
   c.boxes=d.boxes.map(function(b){ var o={}; for(var kk in b) o[kk]=b[kk]; return o; });
+  // 조각도 복사한다 — 붕괴가 _gone 을 찍기 때문에 원본을 그대로 쓰면 한 판 하고 나면
+  // 그 맵이 영구히 부서진 채로 남는다(박스와 같은 이유)
+  if(d.pieces) c.pieces=d.pieces.map(function(q){ var o={}; for(var kk in q) o[kk]=q[kk]; return o; });
   return c;
+}
+/* 정적 조각 맵 — kiteditor.html 이 만든 레벨. 생성기 없이 조각 목록을 그대로 깔고
+   모양에서 뽑은 충돌체를 붙인다. unit 은 1킷유닛이 몇 미터인지(기본 3m). */
+function buildStaticPieces(){
+  if(!LEVEL || !LEVEL.pieces || !LEVEL.pieces.length) return;
+  STATION.unit = LEVEL.unit || STATION.unit;
+  var U=STATION.unit, PP=stationParts();
+  LEVEL.pieces.forEach(function(pc){
+    if(pc.deco) return;
+    var m=PP[pc.t]; if(!m) return;
+    pieceColliders(pc, m, U, {col:'#6b7280', _hide:true}).forEach(function(b){ LEVEL.boxes.push(b); });
+  });
+  buildStation(LEVEL.pieces);
 }
 function setLevel(id){
   var d=PENG.getLevel(id);
@@ -417,6 +433,7 @@ function setLevel(id){
   if(!d) return false;
   LEVEL=cloneLevel(d); CURLEVEL=id;
   buildCollapseFloor();                                    // 아레나 바닥은 여기서 깔린다
+  buildStaticPieces();                                     // 에디터로 놓은 조각
   buildPads();                                             // 아이템 패드 위치
   MARKS = PENG.coopMarkers(d);
   // HUD 표시를 즉시 갱신 — 프레임을 기다리지 않아야 "지금 어느 맵인지"가 항상 맞다.
@@ -486,17 +503,8 @@ function buildCollapseFloor(){
       if(pc.order>maxR) maxR=pc.order;
       if(pc.deco) return;                       // 산체·풀 — 보이기만 하고 통과
       var m=PP2[pc.t]; if(!m) return;
-      var bs=pieceBoxes(m, pc.t), r=pc.rot&3;
-      var po2=PIECE_OFF[pc.t], pox2=po2?po2[0]:0, poz2=po2?po2[1]:0;
-      var pu2=PIECE_SCALE[pc.t]||1, pb=pc.s||1;
-      var ax=pu2*(pc.sx!=null?pc.sx:pb), ay=pu2*(pc.sy!=null?pc.sy:pb), az=pu2*(pc.sz!=null?pc.sz:pb);
-      for(var q=0;q<bs.length;q++){
-        var bb=bs[q], x=(bb.cx+pox2)*ax, z=(bb.cz+poz2)*az, hx=bb.hx*ax, hz=bb.hz*az;
-        for(var t=0;t<r;t++){ var tx=z; z=-x; x=tx; var th=hz; hz=hx; hx=th; }
-        LEVEL.boxes.push({ cx:(pc.i+x)*U2, cy:(pc.y+bb.cy*ay)*U2, cz:(pc.j+z)*U2,
-          hx:hx*U2, hy:bb.hy*ay*U2, hz:hz*U2,
-          col:C.col, _tile:true, _ring:pc.order, _col0:C.col, _hide:true });
-      }
+      pieceColliders(pc, m, U2, {col:C.col, _tile:true, _ring:pc.order, _col0:C.col, _hide:true})
+        .forEach(function(b){ LEVEL.boxes.push(b); });
     });
     if(PK.maxRing>maxR) maxR=PK.maxRing;
     LEVEL._pieces = PK.pieces;
@@ -1799,29 +1807,78 @@ function stationParts(){
   STATION.parts=out;
   return STATION.parts;
 }
-/* pieces → 정점 배열. rot 은 90도 단위(0..3), (x,z) 를 (z,-x) 로 r 번 돌린다.
-   법선으로 간이 음영을 넣는다 — 안 그러면 킷 색이 그대로라 면 구분이 안 된다. */
+/* 조각 하나의 3x3 변환(배율 → 회전)을 만든다. 그리기와 충돌이 같은 식을 써야
+   보이는 것과 부딪히는 것이 어긋나지 않는다.
+     rot        — 90도 단위(0..3). 생성기가 쓴다.
+     rx/ry/rz   — 도 단위 자유 회전. 에디터(kiteditor.html)가 쓴다. ry 는 rot 과 합쳐진다.
+     s / sx,sy,sz — 균일 / 축별 배율.
+   열 우선 3x3(m[열*3+행]). 회전 순서는 Ry*Rx*Rz. */
+function pieceBasis(pc){
+  var pu=PIECE_SCALE[pc.t]||1, s0=pc.s||1;
+  var kx=pu*(pc.sx!=null?pc.sx:s0), ky=pu*(pc.sy!=null?pc.sy:s0), kz=pu*(pc.sz!=null?pc.sz:s0);
+  var D=Math.PI/180;
+  var ay=(((pc.rot||0)&3)*90+(pc.ry||0))*D, ax=(pc.rx||0)*D, az=(pc.rz||0)*D;
+  var cy=Math.cos(ay), sy=Math.sin(ay), cx=Math.cos(ax), sx=Math.sin(ax), cz=Math.cos(az), sz=Math.sin(az);
+  // Ry: x'=x*c+z*s, z'=-x*s+z*c  (rot 1칸이 예전의 (x,z)->(z,-x) 와 같다)
+  var Ry=[cy,0,-sy, 0,1,0, sy,0,cy];
+  var Rx=[1,0,0, 0,cx,sx, 0,-sx,cx];
+  var Rz=[cz,sz,0, -sz,cz,0, 0,0,1];
+  function mm(a,b){ var o=new Array(9);
+    for(var c=0;c<3;c++) for(var r=0;r<3;r++){ var v=0;
+      for(var k=0;k<3;k++) v+=a[k*3+r]*b[c*3+k]; o[c*3+r]=v; } return o; }
+  var R=mm(mm(Ry,Rx),Rz);
+  // 배율은 회전 앞(로컬)에서 곱한다 → 열마다 그 축의 배율
+  return [ R[0]*kx,R[1]*kx,R[2]*kx,  R[3]*ky,R[4]*ky,R[5]*ky,  R[6]*kz,R[7]*kz,R[8]*kz ];
+}
+function xf3(M,x,y,z){ return [M[0]*x+M[3]*y+M[6]*z, M[1]*x+M[4]*y+M[7]*z, M[2]*x+M[5]*y+M[8]*z]; }
+/* 조각 하나의 충돌 박스들(월드 단위). 회전이 90도의 배수가 아니면 정확한 상자가
+   안 되므로 회전한 상자의 축정렬 바운딩박스로 감싼다 — 물리가 AABB 뿐이라 그렇다.
+   90도 배수일 때는 이 바운딩박스가 원래 상자와 정확히 같아서 손해가 없다. */
+function pieceColliders(pc, m, U, extra){
+  var M=pieceBasis(pc), bs=pieceBoxes(m, pc.t), out=[];
+  var off=PIECE_OFF[pc.t], ox=off?off[0]:0, oz=off?off[1]:0;
+  for(var q=0;q<bs.length;q++){
+    var b=bs[q], mn=[1e9,1e9,1e9], mx=[-1e9,-1e9,-1e9];
+    for(var k=0;k<8;k++){
+      var v=xf3(M, (b.cx+ox)+((k&1)?b.hx:-b.hx), b.cy+((k&2)?b.hy:-b.hy), (b.cz+oz)+((k&4)?b.hz:-b.hz));
+      for(var a=0;a<3;a++){ if(v[a]<mn[a])mn[a]=v[a]; if(v[a]>mx[a])mx[a]=v[a]; }
+    }
+    var o={ cx:(pc.i+(mn[0]+mx[0])/2)*U, cy:(pc.y+(mn[1]+mx[1])/2)*U, cz:(pc.j+(mn[2]+mx[2])/2)*U,
+            hx:(mx[0]-mn[0])/2*U, hy:(mx[1]-mn[1])/2*U, hz:(mx[2]-mn[2])/2*U };
+    if(extra) for(var e in extra) o[e]=extra[e];
+    out.push(o);
+  }
+  return out;
+}
+/* pieces → 정점 배열. 조각마다 pieceBasis 로 변환하고, 법선으로 간이 음영을 넣는다
+   — 안 그러면 킷 색이 그대로라 면 구분이 안 된다. */
 function buildStation(pieces){
   var P=stationParts(), S=STATION.unit, arr=[];
   var L=STATION_LIGHT, ll=Math.hypot(L[0],L[1],L[2])||1;
   for(var p=0;p<pieces.length;p++){
     var pc=pieces[p]; if(pc._gone) continue;
     var m=P[pc.t]; if(!m) continue;
-    var r=pc.rot&3, ox=pc.i*S, oy=pc.y*S, oz=pc.j*S;
+    var ox=pc.i*S, oy=pc.y*S, oz=pc.j*S;
     var off=PIECE_OFF[pc.t], offx=off?off[0]:0, offz=off?off[1]:0;
-    /* pc.s = 균일 배율, pc.sx/sy/sz = 축별 배율. 피크의 절벽 기둥은 같은 바위를
-       세로로만 길게 늘여 만든다 — 그래야 돌덩이를 흩뿌린 게 아니라 결이 선 암벽이 된다. */
-    var pu=PIECE_SCALE[pc.t]||1, ps0=pc.s||1;
-    var kx=pu*(pc.sx!=null?pc.sx:ps0), ky=pu*(pc.sy!=null?pc.sy:ps0), kz=pu*(pc.sz!=null?pc.sz:ps0);
+    var M=pieceBasis(pc);
+    /* 법선은 변환의 역전치로 보내야 한다. 배율만 있을 때는 축별 역수와 같은데,
+       세로로 14배 늘린 기둥에서 이걸 빼먹으면 옆면이 위를 보는 것처럼 밝아져
+       실루엣이 납작해 보인다. 회전은 직교라 그대로 곱해도 된다. */
+    var NM=[M[0]/(M[0]*M[0]+M[1]*M[1]+M[2]*M[2]||1), M[1]/(M[0]*M[0]+M[1]*M[1]+M[2]*M[2]||1),
+            M[2]/(M[0]*M[0]+M[1]*M[1]+M[2]*M[2]||1),
+            M[3]/(M[3]*M[3]+M[4]*M[4]+M[5]*M[5]||1), M[4]/(M[3]*M[3]+M[4]*M[4]+M[5]*M[5]||1),
+            M[5]/(M[3]*M[3]+M[4]*M[4]+M[5]*M[5]||1),
+            M[6]/(M[6]*M[6]+M[7]*M[7]+M[8]*M[8]||1), M[7]/(M[6]*M[6]+M[7]*M[7]+M[8]*M[8]||1),
+            M[8]/(M[6]*M[6]+M[7]*M[7]+M[8]*M[8]||1)];
     for(var k=0;k<m.idx.length;k++){
-      var v=m.idx[k], x=(m.pos[v*3]+offx)*kx*S, y=m.pos[v*3+1]*ky*S, z=(m.pos[v*3+2]+offz)*kz*S;
-      /* 법선은 배율의 역수로 바꿔야 한다(역전치). 그냥 두면 세로로 14배 늘린 기둥의
-         옆면이 위를 보는 것처럼 밝아져서 실루엣이 납작해 보인다. */
-      var nx=(m.nrm?m.nrm[v*3]:0)/kx, ny=(m.nrm?m.nrm[v*3+1]:1)/ky, nz=(m.nrm?m.nrm[v*3+2]:0)/kz;
-      var nl=Math.sqrt(nx*nx+ny*ny+nz*nz)||1; nx/=nl; ny/=nl; nz/=nl;
-      for(var t=0;t<r;t++){ var tx=z; z=-x; x=tx; var tn=nz; nz=-nx; nx=tn; }
-      var sh=0.62+0.38*Math.max(0,(nx*L[0]+ny*L[1]+nz*L[2])/ll);
-      arr.push(ox+x, oy+y, oz+z, m.col[v*3]*sh, m.col[v*3+1]*sh, m.col[v*3+2]*sh);
+      var v=m.idx[k];
+      // 이름을 P 로 두면 위의 P(=stationParts())를 가려 다음 조각부터 메시를 못 찾는다
+      var PT=xf3(M, m.pos[v*3]+offx, m.pos[v*3+1], m.pos[v*3+2]+offz);
+      var N=xf3(NM, m.nrm?m.nrm[v*3]:0, m.nrm?m.nrm[v*3+1]:1, m.nrm?m.nrm[v*3+2]:0);
+      var nl=Math.sqrt(N[0]*N[0]+N[1]*N[1]+N[2]*N[2])||1;
+      var sh=0.62+0.38*Math.max(0,(N[0]*L[0]+N[1]*L[1]+N[2]*L[2])/nl/ll);
+      arr.push(ox+PT[0]*S, oy+PT[1]*S, oz+PT[2]*S,
+               m.col[v*3]*sh, m.col[v*3+1]*sh, m.col[v*3+2]*sh);
     }
   }
   if(!GLREADY){ STATION.pending=arr; return; }
