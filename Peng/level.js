@@ -671,17 +671,21 @@ PENG.genArenaOnce = function(C, seed){
 
    왜 큰 바위 '한 장'이 아니라 모자이크인가 —
      킷의 rock-flat / rock-flat-grass 는 평평한 판이 아니라 가운데가 볼록한 접시다
-     (실측: 윗면이 평평한 구간이 반폭의 71%까지고, 나머지는 가장자리로 흘러내린다).
-     하나를 아레나 크기로 키우면 그 흘러내림도 같이 커져서, 판판한 콜리전을 씌우면
-     가장자리에서 발이 몇 미터씩 뜬다. 그래서 지름 9~13m 짜리를 35% 겹쳐 깐다 —
-     서로의 흘러내리는 테두리를 이웃이 덮어 주고, 바깥 테두리만 자연스러운 바위 입술로
-     남는다. 콜리전은 조각마다 '제 윗면 높이의 평평한 한 장'(PIECE_FLAT)이라 데크 전체가
-     정확히 한 평면이다.
+     (실측 체비셰프 반경별 최고점: 반경 0.9 까지는 윗면이 거의 그대로고 낙차가
+     0.03~0.06유닛뿐인데, 마지막 10% 에서 확 떨어진다). 하나를 아레나 크기로 키우면
+     그 베벨도 같이 커져서 판판한 콜리전을 씌우면 가장자리에서 발이 몇 미터씩 뜬다.
+     그래서 지름 7m 남짓을 절반쯤 겹쳐 깐다 — 서로의 베벨을 이웃이 덮어 주고,
+     콜리전은 조각마다 '제 윗면 높이의 평평한 한 장'(PIECE_FLAT)이라 데크가 한 평면이다.
 
-   층 구성(첨부 스케치대로) — 정상 소대지(+1.35m) · 본 데크(0) · 네 귀퉁이 아래 선반
+   왜 데크 밑에 테두리 바위를 두르는가 —
+     산체로 쓰는 큰 바위는 돔이라 '가장 넓은 곳'이 밑동이다. 데크 높이에서는 이미
+     좁아져 있어서, 그냥 두면 두께 1m 짜리 슬래브만 처마처럼 튀어나와 접시처럼 보인다
+     (그게 '얇은 바닥'의 정체다). 데크 바로 밑에 중간 크기 바위를 두 겹 둘러 채운다.
+
+   층 구성(첨부 스케치대로) — 정상 소봉(+1.35m) · 본 데크(0) · 네 귀퉁이 아래 선반
      (-2.55m, 밀려나도 한 번은 살아남는 자리) · 그 아래는 킬존.
-   산체(butte)는 큰 바위를 고리로 쌓아 만들고 전부 deco 다. 실체로 두면 떨어진 사람이
-   산 중턱에 올라서서 안 죽는다.
+   산체는 큰 바위를 고리로 쌓아 만들고 전부 deco 다. 실체로 두면 떨어진 사람이 산
+   중턱에 올라서서 안 죽는다.
 
    배율: 1킷유닛 = 3m(collapse.size). 나무 4.2~5.1m · 천막 1.7m · 울타리 1.56m 로
    실측 크기가 맞고, 울타리가 점프 정점(1.68m)보다 낮아 넘어 다닐 수 있는 엄폐물이 된다.
@@ -691,17 +695,20 @@ PENG.genPeak = function(seed){
   var ri   = function(a,b){ return a + Math.floor(rnd()*(b-a+1)); };
   var pick = function(a){ return a[Math.floor(rnd()*a.length)]; };
 
-  /* 조각 윗면 높이(킷유닛). 데크를 정확히 한 평면에 맞추려면 조각마다
-     '내 윗면이 얼마나 위인지'를 알고 그만큼 내려 놓아야 한다. */
+  /* 조각 윗면 높이(킷유닛). 데크를 정확히 한 평면에 맞추고 산체 층을 겹치게 하려면
+     조각마다 '내 윗면이 얼마나 위인지'를 알고 그만큼 내려 놓아야 한다. */
   var TOP = { 'rock-flat':0.195, 'rock-flat-grass':0.226,
     'rock-a':0.390, 'rock-b':0.419, 'rock-c':0.510,
     'rock-sand-a':0.390, 'rock-sand-b':0.450, 'rock-sand-c':0.510 };
   var DECK_SLABS = ['rock-flat','rock-flat','rock-flat','rock-flat-grass'];
+  var RIM  = ['rock-a','rock-b','rock-c','rock-sand-a','rock-sand-b','rock-sand-c'];
 
-  var SUMMIT_Y = 0.45;      // 정상 소대지 높이(킷유닛) = 1.35m — 점프로 오를 수 있다
-  var SHELF_Y  = -0.85;     // 아래 선반 = -2.55m
-  var RINGS    = [0, 1.6, 3.1, 4.5, 5.9, 7.2];   // 데크 고리의 반지름(킷유닛)
+  var SUMMIT_Y = 0.45;                             // 정상 소봉 = +1.35m, 점프로 오른다
+  var SHELF_Y  = -0.85;                            // 아래 선반 = -2.55m
+  var RINGS    = [0, 1.2, 2.4, 3.6, 4.8];          // 데크 고리 반지름(킷유닛)
   var DECK_R   = RINGS[RINGS.length-1];
+  var SLAB_S   = 1.35;                             // 슬래브 배율 → 지름 7.2m
+  var DECK_OUT = DECK_R + 1.79*SLAB_S*0.5;         // 데크 바깥 끝 ≈ 6.0유닛 = 18m
 
   var pieces = [];
   /* 한 조각을 놓고 네 번 돌려 찍는다. rot 도 같이 1씩 올라가야 모양까지 대칭이 된다. */
@@ -712,124 +719,122 @@ PENG.genPeak = function(seed){
       var tx=z; z=-x; x=tx; r++;
     }
   }
-  // 윗면을 원하는 높이에 맞춰 놓는다(조각 원점은 바닥이라 윗면만큼 내린다)
-  function putDeck(t, i, j, rot, s, deckY, order){
-    put4(t, i, j, rot, s, deckY - TOP[t]*s, order, false);
+  // 윗면을 원하는 높이에 맞춰 놓는다(조각 원점이 바닥이라 제 윗면 높이만큼 내린다)
+  function putTop(t, i, j, rot, s, topY, order, deco){
+    put4(t, i, j, rot, s, topY - TOP[t]*s, order, !!deco);
+  }
+  // 반지름 R 의 고리에 4의 배수 개를 두른다(사분면당 qn 개)
+  function ringOf(R, qn, fn){
+    var base = rnd()*Math.PI*0.5;
+    for(var q=0;q<qn;q++) fn(base + q*(Math.PI*0.5/qn));
   }
 
-  /* --- 1) 데크 모자이크 --- 고리마다 4의 배수 개를 둘러 깐다(대칭). */
-  var maxRing = 0;
+  /* --- 1) 데크 모자이크 --- */
   for(var g=0; g<RINGS.length; g++){
     var R = RINGS[g];
-    var s0 = 1.65 + rnd()*0.55;                       // 지름 8.9~11.8m
-    if(R === 0){                                       // 중심 한 장 + 정상 소대지
-      putDeck('rock-flat', 0, 0, 0, s0*1.25, 0, g);
-      continue;
-    }
+    if(R === 0){ putTop('rock-flat', 0, 0, 0, SLAB_S*1.2, 0, g); continue; }
     /* 조각 폭의 65% 간격으로 두르면 이웃과 35% 겹친다 — 흘러내리는 테두리가 서로 가려진다.
-       개수는 4의 배수로 올림해야 네 사분면이 똑같아진다. */
-    var n = Math.max(4, Math.round(2*Math.PI*R / (1.79*s0*0.65)));
-    n = Math.ceil(n/4)*4;
-    var quad = n/4, base = rnd()*Math.PI*0.5;
-    for(var q=0; q<quad; q++){
-      var th = base + q*(Math.PI*0.5/quad);
-      var rr = R + (rnd()-0.5)*0.45;                  // 살짝 흔들어 고리 티를 없앤다
-      var sc = s0 * (0.9 + rnd()*0.25);
-      putDeck(pick(DECK_SLABS), Math.cos(th)*rr, Math.sin(th)*rr, ri(0,3), sc, 0, g);
-    }
-    if(g > maxRing) maxRing = g;
+       개수는 4의 배수여야 네 사분면이 똑같아진다. */
+    var n = Math.max(4, Math.round(2*Math.PI*R / (1.79*SLAB_S*0.65)));
+    ringOf(R, Math.ceil(n/4), function(th){
+      var rr = R + (rnd()-0.5)*0.32;               // 살짝 흔들어 고리 티를 없앤다
+      var sc = SLAB_S * (0.92 + rnd()*0.2);
+      putTop(pick(DECK_SLABS), Math.cos(th)*rr, Math.sin(th)*rr, ri(0,3), sc, 0, g);
+    });
   }
-  // 정상 소대지 — 고리 0 이라 끝까지 남는다. 마지막 결전이 여기서 난다.
-  putDeck('rock-flat-grass', 0.62, 0.62, 0, 1.5, SUMMIT_Y, 0);
-  putDeck('rock-flat',       0.0,  0.95, 1, 1.3, SUMMIT_Y, 0);
-  // 정상에 오르는 디딤돌(0.68m) — 1.35m 를 한 번에 뛰지 않아도 되게
-  put4('rock-a', 1.55, 0.55, 0, 1.15, 0, 1, false);
+  // 정상 소봉 — 고리 0 이라 끝까지 남는다. 마지막 결전이 여기서 난다.
+  putTop('rock-flat-grass', 0.46, 0.46, 0, 1.05, SUMMIT_Y, 0);
+  putTop('rock-flat',       0.0,  0.72, 1, 0.92, SUMMIT_Y, 0);
+  // 오르는 디딤돌(0.70m) — 1.35m 를 한 번에 뛰지 않아도 되게
+  put4('rock-a', 1.15, 0.42, 0, 0.60, 0, 1, false);
 
-  /* --- 2) 아래 선반 --- 네 귀퉁이. 밀려나도 한 번은 살아남는 자리이자,
-     로켓점프로 되올라오는 동안 상대에게 노출되는 위험한 자리다. */
-  /* 데크 바깥 고리의 슬래브가 반지름 26m 까지 뻗으므로, 선반을 그보다 안쪽에 두면
-     데크 밑에 깔려 보이지도 닿지도 않는다(실측: 25.4m 에 뒀더니 완전히 가려졌다). */
-  var shR = DECK_R + 2.6;
-  putDeck('rock-flat', Math.cos(0.785)*shR, Math.sin(0.785)*shR, 0, 2.15, SHELF_Y, RINGS.length-1);
-  putDeck('rock-flat-grass', Math.cos(0.62)*(shR+1.5), Math.sin(0.62)*(shR+1.5), 2, 1.5, SHELF_Y-0.5, RINGS.length-1);
+  /* --- 2) 데크 밑 테두리 --- 두 겹. 위 겹은 데크 바로 밑에 붙여 처마를 없애고,
+     아래 겹은 조금 더 넓게 빼서 산체로 자연스럽게 이어 준다. 전부 deco. */
+  /* 반지름은 '바위 바깥 끝'이 데크 끝과 나란해지도록 역산한다(바위 반폭 ≈ 0.415*배율).
+     밖으로 튀어나오면 보이는 바위를 뚫고 떨어지게 되어 더 이상하다. */
+  ringOf(0, 5, function(th){
+    var sc = 2.4 + rnd()*0.5, rr = DECK_OUT - 0.12 - 0.415*sc;
+    putTop(pick(RIM), Math.cos(th)*rr, Math.sin(th)*rr, ri(0,3), sc, -0.02, 0, true);
+  });
+  ringOf(0, 4, function(th){
+    var sc2 = 3.2 + rnd()*0.7, rr2 = DECK_OUT - 0.05 - 0.415*sc2;
+    putTop(pick(RIM), Math.cos(th)*rr2, Math.sin(th)*rr2, ri(0,3), sc2, -0.95, 0, true);
+  });
 
-  /* --- 3) 산체 --- 큰 바위를 고리로 쌓아 스케치의 뷰트를 만든다. 전부 deco 다.
-     각 층은 '윗면'을 기준으로 놓는다(조각 원점이 바닥이라 제 높이만큼 내려야 한다).
-     층 간격(2.6유닛)보다 바위가 높아야 층 사이로 하늘이 안 비친다 — 배율 6 이면
-     가장 낮은 rock-a 도 0.39*6 = 2.34... 라서 아래로 갈수록 배율을 키워 겹치게 한다.
-     맨 위 층의 윗면은 -0.15유닛이다. 0 으로 두면 데크 위로 바위가 솟는다. */
-  /* 배율 하한이 중요하다: 가장 낮은 rock-b(0.419) 가 흔들림 최소(0.92)에서도 층
-     간격보다 높아야 한다 → 0.419*7.8*0.92 = 3.0 > 2.6. 이보다 작게 잡으면 층 사이로
-     저 아래 골짜기가 초록으로 비친다(실제로 그랬다). */
+  /* --- 3) 아래 선반 --- 네 귀퉁이. 데크 끝에 걸치게 놓아야 밀려난 사람이 떨어져
+     닿는다(데크 안쪽에 두면 데크 밑에 깔려 보이지도 닿지도 않는다). */
+  var shR = DECK_OUT + 1.4;
+  putTop('rock-flat', Math.cos(0.785)*shR, Math.sin(0.785)*shR, 0, 1.6, SHELF_Y, RINGS.length-1);
+  putTop('rock-flat-grass', Math.cos(0.60)*(shR+1.3), Math.sin(0.60)*(shR+1.3), 2, 1.15, SHELF_Y-0.55, RINGS.length-1);
+
+  /* --- 4) 산체 --- 큰 바위를 고리로 쌓아 스케치의 뷰트를 만든다.
+     층 간격보다 바위가 높아야 사이로 저 아래 골짜기가 비치지 않는다:
+     가장 낮은 rock-b 가 흔들림 최소(0.92)에서도 0.419*7*0.92 = 2.70 > 2.6 이 되게
+     배율 하한을 잡았다. 반지름은 '바위 바깥 끝'이 데크 끝에서 아래로 갈수록
+     벌어지도록 역산한다(바위 반폭 ≈ 0.415*배율). */
   var BODY = ['rock-c','rock-sand-c','rock-b','rock-sand-b'];
   var BODY_LAYERS = 7, BODY_STEP = 2.6;
   for(var L=0; L<BODY_LAYERS; L++){
-    var bTop = -0.15 - L*BODY_STEP;                   // 층 윗면(킷유닛)
-    var br   = DECK_R*0.90 + L*0.42;                  // 아래로 갈수록 넓어진다
-    var bs   = 7.8 + L*1.1;
-    var qn = 4;                                       // 사분면당 4개 → 층마다 16개
-    var ph = rnd()*Math.PI*0.5;
-    for(var c=0; c<qn; c++){
-      var bth = ph + c*(Math.PI*0.5/qn);
-      var bt  = pick(BODY), bsc = bs*(0.92+rnd()*0.23);
-      put4(bt, Math.cos(bth)*br, Math.sin(bth)*br, ri(0,3),
-           bsc, bTop - TOP[bt]*bsc, 0, true);
-    }
+    var bTop = -0.15 - L*BODY_STEP;
+    var bs   = 7.0 + L*1.0;
+    var br   = (DECK_OUT + L*0.35) - 0.415*bs;
+    ringOf(0, 4, function(th){
+      var bt = pick(BODY), bsc = bs*(0.92 + rnd()*0.23);
+      putTop(bt, Math.cos(th)*br, Math.sin(th)*br, ri(0,3), bsc, bTop, 0, true);
+    });
   }
 
-  /* --- 4) 데크 위 소품 --- 진영 캠프 · 벼랑 끝 바위 · 나무 --- */
-  function onDeck(i,j){ return Math.hypot(i,j) <= DECK_R + 0.4; }
+  /* --- 5) 데크 위 소품 --- 진영 캠프 · 벼랑 끝 바위 · 나무 --- */
   function prop(t, i, j, rot, s, deco){
-    if(!onDeck(i,j)) return;
-    put4(t, i, j, rot, s||1, 0, Math.round(Math.hypot(i,j)/DECK_R*(RINGS.length-1)), deco);
+    if(Math.hypot(i,j) > DECK_OUT - 0.3) return;   // 데크 밖으로 삐져나가면 버린다
+    put4(t, i, j, 0|rot, s||1, 0,
+         Math.min(RINGS.length-1, Math.round(Math.hypot(i,j)/DECK_R*(RINGS.length-1))), deco);
   }
-  var CX=4.3, CZ=4.3;                                  // 캠프 중심(대각선)
-  prop('tent',         CX-0.55, CZ+0.25, 2);
-  prop('campfire-pit', CX+0.30, CZ+0.05, 0);
-  prop('chest',        CX+0.55, CZ+0.75, 1);
-  prop('barrel',       CX-0.85, CZ-0.45, 0);
-  prop('box',          CX+0.85, CZ-0.55, 3);
-  prop('workbench',    CX-0.15, CZ+0.95, 2);
-  prop('signpost',     CX+1.05, CZ+0.25, 1);
-  for(var f=0; f<5; f++)
-    prop(f===2?'fence-doorway':(f===0?'fence-fortified':'fence'), CX+1.35, CZ-1.0+f*0.5, 1);
-  for(var w=0; w<4; w++)
-    prop(w===3?'fence-fortified':'fence', CX-1.0+w*0.5, CZ+1.35, 0);
-  prop('structure-metal-wall', CX-1.45, CZ-0.95, 1);
+  var CX=2.75, CZ=2.75;                            // 진영 캠프 중심(대각선, 중심에서 11.7m)
+  prop('tent',         CX-0.48, CZ+0.22, 2);
+  prop('campfire-pit', CX+0.28, CZ+0.04, 0);
+  prop('chest',        CX+0.50, CZ+0.66, 1);
+  prop('box',          CX+0.78, CZ-0.48, 3);
+  prop('workbench',    CX-0.14, CZ+0.84, 2);
+  prop('signpost',     CX+0.95, CZ+0.22, 1);
+  prop('barrel',       CX-0.76, CZ-0.40, 0);
+  for(var f=0; f<3; f++)
+    prop(f===1?'fence-doorway':'fence', CX+1.18, CZ-0.5+f*0.5, 1);
+  for(var w=0; w<3; w++)
+    prop(w===2?'fence-fortified':'fence', CX-0.5+w*0.5, CZ+1.18, 0);
 
   // 벼랑 끝 바위 — 데크 가장자리를 따라. 엄폐도 되고 절벽 입술도 된다.
   var EDGE=['rock-a','rock-b','rock-c','rock-sand-a','rock-sand-b','rock-sand-c'];
-  for(var eth=0.08; eth<1.5707; eth+=0.16){
-    if(rnd() < 0.42) continue;
-    var er = DECK_R - 0.5 - rnd()*0.5;
-    prop(pick(EDGE), Math.cos(eth)*er, Math.sin(eth)*er, ri(0,3), 0.9+rnd()*0.6);
+  for(var eth=0.10; eth<1.5707; eth+=0.19){
+    if(rnd() < 0.40) continue;
+    var er = DECK_R - 0.15 - rnd()*0.5;
+    prop(pick(EDGE), Math.cos(eth)*er, Math.sin(eth)*er, ri(0,3), 0.8+rnd()*0.5);
   }
   // 나무 — 중간 반경에서 시야를 끊는다
   var TREES=['tree','tree-tall','tree-autumn'];
-  for(var tn=0; tn<4; tn++){
-    var ta=0.16+rnd()*1.25, tr=2.6+rnd()*3.2;
-    prop(pick(TREES), Math.cos(ta)*tr, Math.sin(ta)*tr, ri(0,3), 0.9+rnd()*0.35);
+  for(var tn=0; tn<3; tn++){
+    var ta=0.18+rnd()*1.2, tr=1.7+rnd()*2.0;
+    prop(pick(TREES), Math.cos(ta)*tr, Math.sin(ta)*tr, ri(0,3), 0.85+rnd()*0.3);
   }
-  var ga=0.3+rnd()*0.95, gr=2.2+rnd()*2.6;
-  prop('tree-trunk', Math.cos(ga)*gr, Math.sin(ga)*gr, ri(0,3), 1.1);
-  var la=0.35+rnd()*0.9, lr=3.4+rnd()*2.0;
-  prop('tree-log',   Math.cos(la)*lr, Math.sin(la)*lr, ri(0,3), 1.1);
-  for(var gn=0; gn<5; gn++){
-    var qa=0.1+rnd()*1.37, qr=1.6+rnd()*4.4;
-    prop('grass-large', Math.cos(qa)*qr, Math.sin(qa)*qr, ri(0,3), 1.2, true);
+  var ka=0.3+rnd()*0.95, kr=1.5+rnd()*1.6;
+  prop('tree-trunk', Math.cos(ka)*kr, Math.sin(ka)*kr, ri(0,3), 1.0);
+  var la=0.35+rnd()*0.9, lr=2.2+rnd()*1.5;
+  prop('tree-log',   Math.cos(la)*lr, Math.sin(la)*lr, ri(0,3), 1.0);
+  for(var gn=0; gn<4; gn++){
+    var qa=0.12+rnd()*1.33, qr=1.2+rnd()*3.0;
+    prop('grass-large', Math.cos(qa)*qr, Math.sin(qa)*qr, ri(0,3), 1.1, true);
   }
 
-  /* --- 5) 스폰·패드 --- 데크 위(월드 y=0), 정상 패드만 위에 있다. */
-  var spawns=[], pads=[];
-  var sx=CX, sz=CZ;
+  /* --- 6) 스폰·패드 --- 데크 위(월드 y=0), 정상 패드만 위에 있다. */
+  var spawns=[], pads=[], sx=CX, sz=CZ;
   for(var sp=0; sp<4; sp++){ spawns.push({i:sx, j:sz, h:0}); var t2=sz; sz=-sx; sx=t2; }
-  pads.push({ i:0.35, j:0.35, h:SUMMIT_Y });
-  var px=DECK_R-1.6, pz=0;
+  pads.push({ i:0.3, j:0.3, h:SUMMIT_Y });
+  var px=DECK_R-0.9, pz=0;
   for(var p=0;p<4;p++){ pads.push({i:px, j:pz, h:0}); var t3=pz; pz=-px; px=t3; }
 
   return { pieces:pieces, spawns:spawns, pads:pads, maxRing:RINGS.length-1,
-           deckR:DECK_R, summitY:SUMMIT_Y,
-           info:'데크'+(DECK_R*3).toFixed(0)+'m 조각'+pieces.length+'개' };
+           deckR:DECK_OUT, summitY:SUMMIT_Y,
+           info:'데크지름'+(DECK_OUT*6).toFixed(0)+'m 조각'+pieces.length+'개' };
 };
 
 PENG.genStation = function(seed){
