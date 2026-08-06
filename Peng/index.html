@@ -2058,6 +2058,7 @@ function render(dt){
        그리면 같은 자리에 상자가 한 겹 더 얹혀 조각을 뚫고 나온다.
        다만 '곧 분리된다'는 예고는 이 박스 색으로 표시되므로(collapseTick),
        깜빡이는 동안만 윗면에 얇은 경고판을 깔아 준다 — 안 그러면 예고가 사라진다. */
+    if(SHOW_COL && boxSolid(bx)) colWire(bx);
     if(bx._hide){
       if(bx._col0 && bx.col!==bx._col0)
         meshGL(boxFaces({cx:bx.cx, cy:bx.cy+bx.hy+0.03, cz:bx.cz,
@@ -3014,9 +3015,32 @@ window.addEventListener('keydown',function(e){
   ensureAudio(); var k=e.key.toLowerCase(); keys[k]=true;
   if(k===' '){ jumpEdge=true; e.preventDefault(); } if(k==='r'&&sim)respawn(sim);
   if(k==='f'&&sim&&mode==='play') usePulse(sim);
-  if(k==='v'&&sim)sim.tp=!sim.tp; });
+  if(k==='v'&&sim)sim.tp=!sim.tp;
+  if(k==='p'){ SHOW_COL=!SHOW_COL; toastCol(); } });
 window.addEventListener('keyup',function(e){ if(chatting) return; keys[e.key.toLowerCase()]=false; });
 
+/* P — 콜리전 보기. 킷 조각의 충돌체는 _hide 라 평소엔 안 그린다(보이는 건 조각 쪽).
+   손으로 맵을 만들다 보면 '보이는 모양과 부딪히는 모양이 같은가'를 확인해야 하는데,
+   그때 이걸 켜면 실제 판정에 쓰이는 상자를 그대로 덧그린다.
+   색: 청록 = 조각에서 뽑은 충돌체(_hide) · 연두 = 보통 발판 · 주황 = 곧 무너질 고리 */
+var SHOW_COL=false;
+var colMsgT=0;
+function toastCol(){
+  roundBanner(SHOW_COL?'콜리전 보기 켬 — 청록=조각 충돌체 · 연두=발판':'콜리전 보기 끔');
+  clearTimeout(colMsgT); colMsgT=setTimeout(function(){ roundBanner(''); }, 1600);
+}
+function colWire(b){
+  var c = b._fall ? [1,0.45,0.25] : (b._hide ? [0.25,0.95,0.85] : [0.55,1,0.45]);
+  /* 2cm 부풀린다 — 보이는 발판은 이미 같은 자리에 검은 외곽선이 있어서, 딱 맞춰
+     그리면 z-파이팅으로 묻혀 아무것도 안 보인다(실측: 협곡에서 초록 선 0픽셀). */
+  var g=0.02;
+  var x0=b.cx-b.hx-g,x1=b.cx+b.hx+g,y0=b.cy-b.hy-g,y1=b.cy+b.hy+g,z0=b.cz-b.hz-g,z1=b.cz+b.hz+g;
+  var P8=[[x0,y0,z0],[x1,y0,z0],[x1,y0,z1],[x0,y0,z1],
+          [x0,y1,z0],[x1,y1,z0],[x1,y1,z1],[x0,y1,z1]];
+  var E=[0,1,1,2,2,3,3,0, 4,5,5,6,6,7,7,4, 0,4,1,5,2,6,3,7];
+  for(var i=0;i<E.length;i+=2){ var a=P8[E[i]], d=P8[E[i+1]];
+    LINE.push(a[0],a[1],a[2],c[0],c[1],c[2], d[0],d[1],d[2],c[0],c[1],c[2]); }
+}
 var last=0, acc=0, STEP=1/120, jumpBuf=0;
 function loop(now){ if(!last)last=now; var dt=Math.min(0.05,(now-last)/1000); last=now;
   // 본선(play)과 대기방 연습(lobbyScr) 모두 물리를 돌린다 — 기다리는 동안 몸을 풀 수 있게
