@@ -449,6 +449,7 @@ function beginGrab(h,px,py){
   if(MODE==='R'){
     var ax=(h.kind==='axis')?h.a:(3-h.a-h.b);
     GRAB.ax=ax; GRAB.ang0=ringAngle(px,py,g,ax);
+    GRAB.prev=GRAB.ang0; GRAB.acc=0;
   } else if(h.kind==='axis'){
     GRAB.t0=axisParam(px,py,g,h.a);
   } else {
@@ -473,9 +474,17 @@ function dragGizmo(px,py){
   var P=['x','y','z'], R=['rx','ry','rz'], S=['sx','sy','sz'];
   if(MODE==='R'){
     var ang=ringAngle(px,py,g,GRAB.ax);
-    if(ang==null || GRAB.ang0==null) return;
-    var dd=(GRAB.ang0-ang)*180/Math.PI;              // 화면에서 도는 방향과 맞춘다
-    var v=z[R[GRAB.ax]]+dd;
+    if(ang==null || GRAB.prev==null) return;
+    /* 고리 각도는 조각의 회전각과 같은 방향으로 정의돼 있다(ringAngle 의 u·v 순서를
+       pieceBasis 의 Ry/Rx/Rz 와 맞춰 뒀다). 그래서 그대로 더해야 손을 따라온다 —
+       예전엔 빼고 있어서 반대로 돌았다.
+       한 번에 180도를 넘겨 끌면 atan2 가 ±pi 에서 튀므로, 절대각이 아니라 매번의
+       변화량을 -pi~pi 로 접어서 누적한다(끊김 없이 몇 바퀴든 돌아간다). */
+    var dr=ang-GRAB.prev;
+    while(dr>Math.PI) dr-=Math.PI*2;
+    while(dr<-Math.PI) dr+=Math.PI*2;
+    GRAB.acc+=dr; GRAB.prev=ang;
+    var v=z[R[GRAB.ax]]+GRAB.acc*180/Math.PI;
     if(SNAP) v=Math.round(v/15)*15;
     o[R[GRAB.ax]]=v;
   } else if(MODE==='T'){
