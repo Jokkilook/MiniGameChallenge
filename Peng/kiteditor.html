@@ -84,7 +84,7 @@
     </div>
     <p class="hint">기즈모는 <b>W</b> 이동 · <b>E</b> 회전 · <b>R</b> 크기(언리얼과 같은 배치).
     W 가 겹치므로 <b>WASD 비행은 우클릭을 누른 동안</b>만 먹습니다 — 이것도 언리얼과 같아요.
-    위아래(<b>Space</b>·<b>Z</b>)와 <b>휠</b>(비행 속도)은 언제나 됩니다.<br>
+    위아래(<b>Space</b>·<b>Shift</b>)와 <b>휠</b>(비행 속도)은 언제나 됩니다.<br>
     축 <b>막대</b>는 그 축만, 모서리의 <b>작은 네모</b>는 그 면(두 축)만,
     가운데 <b>큐브</b>는 세 축 전부에 걸립니다. 회전 모드에서는 막대가 고리가 되고,
     면 네모는 그 면의 <b>법선 축</b>을 중심으로 돌립니다.</p>
@@ -1215,8 +1215,8 @@ function hud(){
       ' · 패드 '+OBJ.filter(function(o){return o.t==='@pad';}).length+'\n'+
     '기즈모 '+(MODE==='T'?'이동 W':MODE==='R'?'회전 E':'크기 R')+'  (막대=축 · 네모=면 · 큐브=전체)\n'+
     '더미 '+(DUMMY.on?('켬 · 서 있는 높이 '+r2(DUMMY.y)+'m'):'끔')+' (사람 키 1.8m)\n'+
-    '우클릭 드래그 시점 + WASD 비행 '+FLY.toFixed(1)+'m/s (휠 조절 · Shift 3.5배)\n'+
-    'Space 위 · Z 아래 · 좌클릭 선택 · Del 삭제';
+    '우클릭 드래그 시점 + WASD 비행 '+FLY.toFixed(1)+'m/s (휠로 조절)\n'+
+    'Space 위 · Shift 아래 · 좌클릭 선택 · Del 삭제';
 }
 var toastT=0;
 function toast(m){ var t=document.getElementById('toast');
@@ -1227,14 +1227,13 @@ function toast(m){ var t=document.getElementById('toast');
 var last=0;
 function loop(now){
   var dt=Math.min(0.05,(now-last)/1000); last=now;
-  var B=camBasis(), sp=FLY*(keys['shift']?3.5:1)*dt;
+  var B=camBasis(), sp=FLY*dt;
   // WASD 는 우클릭으로 둘러보는 중에만 — W 가 이동 기즈모 키라 안 그러면 겹친다
   var f=LOOKING?((keys['w']?1:0)-(keys['s']?1:0)):0;
   var r=LOOKING?((keys['d']?1:0)-(keys['a']?1:0)):0;
-  /* 위아래는 언제나. 내려가는 건 Z 인데, 되돌리기가 Ctrl+Z 라 Ctrl 을 누른 동안에는
-     빼야 한다 — 안 그러면 되돌릴 때마다 카메라가 같이 가라앉는다. */
-  var down=(keys['z'] && !keys['control'] && !keys['meta']) ? 1 : 0;
-  var u=(keys[' ']?1:0)-down;
+  /* 위아래는 언제나 — Space 위, Shift 아래.
+     Shift 는 원래 순간 가속이었는데 휠로 속도를 바꾸게 되면서 쓸 일이 없어졌다. */
+  var u=(keys[' ']?1:0)-(keys['shift']?1:0);
   if(f||r||u){
     cam.x+=(B.f.x*f+B.r.x*r)*sp; cam.y+=(B.f.y*f)*sp+u*sp; cam.z+=(B.f.z*f+B.r.z*r)*sp;
   }
