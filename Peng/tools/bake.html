@@ -36,11 +36,9 @@
     <option value="gun">총 (gunbaked.js)</option>
     <option value="bullet">투사체 (bulletbaked.js)</option>
     <option value="station">정거장 킷 전체 (stationbaked.js)</option>
-    <option value="player">캐릭터 (playerbaked.js)</option>
   </select>
   <label>원본 GLB 경로</label>
   <input type="text" id="url" value="../Mesh/blaster-h.glb">
-  <p class="sub" style="margin:6px 0 0">캐릭터는 <code>../Mesh/character-d.glb</code> (파츠 분리 + 걷기 애니메이션까지 굽습니다)</p>
   <button id="go">굽고 저장</button>
 
   <div id="log">대기 중</div>
@@ -88,142 +86,12 @@ function bakeStation(btn){
     });
   })();
 }
-/* ---- 캐릭터(리그) 굽기 ----
-   총·정거장과 달리 캐릭터는 파츠를 하나로 병합하면 안 된다 — 걷기 애니메이션이
-   팔·다리 노드를 따로 돌리기 때문. 노드 계층을 그대로 두고 파츠별로 굽는다.
-   정점은 '그 노드의 로컬 공간' 에 남긴다(부모 변환은 런타임이 곱한다).
-   축 변환도 하지 않는다: 뒤집기(det=-1)를 넣으면 쿼터니언 회전이 어긋난다.
-   모델은 +Z 를 보는데 게임은 -Z 라, 런타임에서 yaw 에 180도만 더한다. */
-var RIG_ANIMS=['walk','idle','sprint'];
-function b64(u8){
-  var s='', CH=0x8000;
-  for(var i=0;i<u8.length;i+=CH) s+=String.fromCharCode.apply(null, u8.subarray(i,i+CH));
-  return btoa(s);
-}
-function r4(v){ return Math.round(v*10000)/10000; }
-
-function bakeRig(url, btn){
-  say('읽는 중: '+url+'  (리그 모드 — 파츠 분리 + 애니메이션)');
-  fetch(url).then(function(r){ if(!r.ok) throw new Error('HTTP '+r.status); return r.arrayBuffer(); })
-  .then(function(ab){
-    var g=GunMesh._parseGLB(ab), json=g.json;
-    if(json.skins&&json.skins.length) throw new Error('스킨드 메시는 아직 지원하지 않습니다');
-    GunMesh._resolveImage(g, url, function(img){
-      try{ finish(g, json, img); }catch(e){ say('실패: '+e.message,'err'); btn.disabled=false; }
-    });
-  }).catch(function(e){ say('실패: '+e.message,'err'); btn.disabled=false; });
-
-  function finish(g, json, img){
-    if(!img) say('경고: 텍스처를 못 읽어 무채색으로 굽습니다','err');
-    else say('텍스처 '+img.w+'x'+img.h);
-
-    /* 씬을 훑어 파츠 목록을 만든다. 메시가 없는 노드(root 등)도 애니메이션 대상이라 넣는다. */
-    var parts=[], nodeToPart={};
-    var roots=json.scenes[json.scene||0].nodes;
-    (function walk(idx, parent){
-      var nd=json.nodes[idx];
-      var pi=parts.length;
-      nodeToPart[idx]=pi;
-      parts.push({ name:nd.name||('node'+idx), parent:parent, node:idx,
-        t:(nd.translation||[0,0,0]).map(r4),
-        r:(nd.rotation||[0,0,0,1]).map(r4),
-        s:(nd.scale||[1,1,1]).map(r4), mesh:nd.mesh });
-      if(nd.children) for(var c=0;c<nd.children.length;c++) walk(nd.children[c], pi);
-    })(roots[0], -1);
-
-    var C=[0,0,0], nv=0, ntri=0;
-    for(var pi=0; pi<parts.length; pi++){
-      var P=parts[pi];
-      if(P.mesh==null){ P.n=0; delete P.mesh; continue; }
-      var prims=json.meshes[P.mesh].primitives;
-      var VP=[], VN=[], VC=[], IX=[], base=0;
-      for(var q=0;q<prims.length;q++){
-        var pm=prims[q];
-        if(pm.mode!=null && pm.mode!==4) continue;
-        var pp=GunMesh._readAccessor(g, pm.attributes.POSITION);
-        var nn=pm.attributes.NORMAL!=null ? GunMesh._readAccessor(g, pm.attributes.NORMAL) : null;
-        var tt=pm.attributes.TEXCOORD_0!=null ? GunMesh._readAccessor(g, pm.attributes.TEXCOORD_0) : null;
-        var ii=pm.indices!=null ? GunMesh._readAccessor(g, pm.indices) : null;
-        var cnt=pp.length/3;
-        for(var v=0; v<cnt; v++){
-          VP.push(pp[v*3], pp[v*3+1], pp[v*3+2]);
-          if(nn) VN.push(nn[v*3], nn[v*3+1], nn[v*3+2]); else VN.push(0,1,0);
-          if(img && tt){ GunMesh._sampleTex(img, tt[v*2], tt[v*2+1], C); VC.push(C[0],C[1],C[2]); }
-          else VC.push(0.8,0.8,0.8);
-        }
-        if(ii) for(var k=0;k<ii.length;k++) IX.push(ii[k]+base);
-        else   for(var k2=0;k2<cnt;k2++) IX.push(k2+base);
-        base+=cnt;
-      }
-      var n=VP.length/3;
-      if(n>65535) throw new Error(P.name+' 정점이 65535 개를 넘습니다');
-      // 파츠별 로컬 bbox 로 양자화한다 — 파츠가 작아 16비트면 0.01mm 급 정밀도
-      var mn=[1e9,1e9,1e9], mx=[-1e9,-1e9,-1e9];
-      for(var v2=0; v2<n; v2++) for(var a=0;a<3;a++){
-        var val=VP[v2*3+a]; if(val<mn[a]) mn[a]=val; if(val>mx[a]) mx[a]=val; }
-      var qp=new Uint8Array(n*6), qc=new Uint8Array(n*3), qn=new Uint8Array(n*3);
-      for(var v3=0; v3<n; v3++){
-        for(var a2=0;a2<3;a2++){
-          var sp=(mx[a2]-mn[a2])||1;
-          var u=Math.max(0,Math.min(65535, Math.round((VP[v3*3+a2]-mn[a2])/sp*65535)));
-          qp[v3*6+a2*2]=u&255; qp[v3*6+a2*2+1]=u>>8;
-          qc[v3*3+a2]=Math.max(0,Math.min(255,Math.round(VC[v3*3+a2]*255)));
-          qn[v3*3+a2]=Math.max(0,Math.min(255,Math.round(VN[v3*3+a2]*127)+128));
-        }
-      }
-      var qi=new Uint8Array(IX.length*2);
-      for(var k3=0;k3<IX.length;k3++){ qi[k3*2]=IX[k3]&255; qi[k3*2+1]=IX[k3]>>8; }
-      P.n=n; P.mn=mn.map(r4); P.mx=mx.map(r4);
-      P.p=b64(qp); P.c=b64(qc); P.nr=b64(qn); P.i=b64(qi);
-      delete P.mesh;
-      nv+=n; ntri+=IX.length/3;
-    }
-
-    /* 애니메이션: 노드 인덱스를 파츠 인덱스로 바꿔 담는다. LINEAR 만 쓴다. */
-    var anim={};
-    for(var ai=0; ai<RIG_ANIMS.length; ai++){
-      var nm=RIG_ANIMS[ai];
-      var A=(json.animations||[]).filter(function(x){ return x.name===nm; })[0];
-      if(!A){ say('애니메이션 없음: '+nm,'err'); continue; }
-      var ch=[], dur=0;
-      for(var ci=0; ci<A.channels.length; ci++){
-        var c=A.channels[ci], sm=A.samplers[c.sampler];
-        var pidx=nodeToPart[c.target.node];
-        if(pidx==null) continue;
-        if(c.target.path!=='rotation' && c.target.path!=='translation') continue;
-        var ts=GunMesh._readAccessor(g, sm.input), vs=GunMesh._readAccessor(g, sm.output);
-        // STEP/CUBICSPLINE 은 값 배치가 달라 그대로 읽으면 튄다 — LINEAR 로 강등 못 하니 거른다
-        if(sm.interpolation==='CUBICSPLINE'){ say(nm+': CUBICSPLINE 채널은 건너뜁니다','err'); continue; }
-        dur=Math.max(dur, ts[ts.length-1]);
-        ch.push({ p:pidx, k:(c.target.path==='rotation'?'r':'t'),
-          t:Array.prototype.map.call(ts, r4), v:Array.prototype.map.call(vs, r4) });
-      }
-      anim[nm]={ dur:r4(dur), ch:ch };
-      say('✓ '+nm+' — '+ch.length+'채널 / '+r4(dur)+'초');
-    }
-
-    var out={ v:2, parts:parts, anim:anim };
-    var NL=String.fromCharCode(10);
-    var text='/* 자동 생성 — tools/bake.html [캐릭터(리그)]. Kenney Blocky Characters (CC0).'+NL
-      + '   파츠 '+parts.length+' / 정점 '+nv+' / 삼각형 '+ntri+' */'+NL
-      + 'window.PLAYER_BAKED='+JSON.stringify(out)+';'+NL;
-    say('파츠 '+parts.length+' · 정점 '+nv+' · 삼각형 '+ntri+' · '+Math.round(text.length/1024)+'KB');
-    fetch('/__bake',{method:'POST',headers:{'Content-Type':'text/plain; charset=utf-8'},body:text})
-      .then(function(r){ return r.text().then(function(t){ if(!r.ok) throw new Error(t); return t; }); })
-      .then(function(){ say('저장 완료 → playerbaked.js','ok'); btn.disabled=false; })
-      .catch(function(e){ say('저장 실패: '+e.message,'err'); btn.disabled=false; });
-  }
-}
-
 document.getElementById('go').addEventListener('click', function(){
   var btn=this; btn.disabled=true; clearLog();
   var tgt=document.getElementById('target').value;
   if(tgt==='station'){ bakeStation(btn); return; }
   var url=document.getElementById('url').value.trim();
-  if(tgt==='player'){ bakeRig(url, btn); return; }
   // 축 매핑은 굽기 전에 정해야 한다 — 정점 좌표에 그대로 구워지기 때문
-  /* 캐릭터 축: Kenney 블로키 캐릭터는 glTF 규약대로 -Z 를 본다(leg-left/arm-left 가 +X).
-     게임은 +Z 전방이라 Z 를 뒤집는 'kenney' 매핑을 쓴다. */
   GunMesh.axes = (tgt==='bullet') ? 'bullet' : 'kenney';
   say('읽는 중: '+url+'  (축 매핑 '+GunMesh.axes+')');
   // 이미 구워진 상태로 다시 누를 수 있게 초기화
@@ -233,13 +101,13 @@ document.getElementById('go').addEventListener('click', function(){
     say('구움: '+GunMesh.info);
     say('총구(로컬): ['+GunMesh.muzzle.map(function(v){return v.toFixed(3);}).join(', ')+']');
     var text;
-    try{ text=GunMesh.serialize(tgt==='bullet'?'BULLET_BAKED':(tgt==='player'?'PLAYER_BAKED':'GUN_BAKED')); }
+    try{ text=GunMesh.serialize(tgt==='bullet'?'BULLET_BAKED':'GUN_BAKED'); }
     catch(e){ say('직렬화 실패: '+e.message,'err'); btn.disabled=false; return; }
     say('결과 크기: '+Math.round(text.length/1024)+'KB');
     preview();
     fetch('/__bake',{method:'POST',headers:{'Content-Type':'text/plain; charset=utf-8'},body:text})
       .then(function(r){ return r.text().then(function(t){ if(!r.ok) throw new Error(t); return t; }); })
-      .then(function(){ say('저장 완료 → '+(tgt==='bullet'?'bulletbaked.js':(tgt==='player'?'playerbaked.js':'gunbaked.js')), 'ok');
+      .then(function(){ say('저장 완료 → '+(tgt==='bullet'?'bulletbaked.js':'gunbaked.js'), 'ok');
         say('index.html 을 새로고침하면 이제 이 파일을 씁니다(.glb 는 더 안 받습니다).');
         btn.disabled=false; })
       .catch(function(e){ say('저장 실패: '+e.message, 'err'); btn.disabled=false; });

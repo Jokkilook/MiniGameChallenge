@@ -531,13 +531,5 @@ GunMesh.load=function(url, done){
     .catch(fail);
 };
 
-/* 캐릭터 굽기(tools/bake.html)가 쓰는 내부 도구. 파츠별로 따로 구워야 해서
-   여기 병합 경로를 못 쓴다 — 파싱·텍스처 샘플링만 빌려 간다. */
-GunMesh._parseGLB=parseGLB;
-GunMesh._readAccessor=readAccessor;
-GunMesh._decodeImage=decodeImage;
-GunMesh._resolveImage=resolveImage;
-GunMesh._sampleTex=sampleBilinear;
-GunMesh._nodeMatrix=nodeMatrix;
 global.GunMesh=GunMesh;
 })(window);

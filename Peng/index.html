@@ -312,7 +312,6 @@
 <script src="gunbaked.js"></script>
 <script src="bulletbaked.js"></script>
 <script src="stationbaked.js"></script>
-<script src="playerbaked.js"></script>
 <!-- 아이템 6종의 표식 메시와 HUD 아이콘(Kenney Food Kit, CC0).
      itembaked.js/itemicons.js 는 tools/bakefood.js 가 미리 구워둔 데이터다 —
      둘 중 뭐가 빠져도 그것만 예전 모습(큐브 표식·이모지)으로 떨어진다. -->
@@ -1336,13 +1335,10 @@ function boxFaces(b){ var x0=b.cx-b.hx,x1=b.cx+b.hx,y0=b.cy-b.hy,y1=b.cy+b.hy,z0
   ];
 }
 /* --- 셰이더 --- */
-/* uTint: 정점색에 곱하는 색조. 평소엔 (1,1,1) 이고 캐릭터를 그릴 때만 몸통 색으로 바꾼다.
-   캐릭터 메시(1만 삼각형)를 사람마다 CPU 로 옮기면 4명에 14만 정점이라 프레임이 6ms 를
-   넘긴다 — 정적 VBO 하나를 모델행렬만 바꿔 여러 번 그리려면 색을 유니폼으로 줘야 한다. */
 var VS_MAIN='attribute vec3 aPos;attribute vec3 aCol;uniform mat4 uVP;varying vec3 vCol;'+
   'void main(){vCol=aCol;gl_Position=uVP*vec4(aPos,1.0);}';
-var FS_MAIN='precision mediump float;varying vec3 vCol;uniform vec3 uTint;'+
-  'void main(){gl_FragColor=vec4(vCol*uTint,1.0);}';
+var FS_MAIN='precision mediump float;varying vec3 vCol;'+
+  'void main(){gl_FragColor=vec4(vCol,1.0);}';
 // 빌보드(발사체·파티클·폭발·총구섬광): 뷰공간에서 카메라를 향해 펼치고, 중심에서 멀수록 감쇠
 var VS_BB='attribute vec3 aCenter;attribute vec2 aOff;attribute vec4 aCol;attribute float aSize;'+
   'uniform mat4 uVP;uniform vec3 uRight;uniform vec3 uUp;varying vec4 vCol;varying vec2 vOff;'+
@@ -1372,7 +1368,6 @@ function glInit(){
   PROG.main.aPos=gl.getAttribLocation(PROG.main,'aPos');
   PROG.main.aCol=gl.getAttribLocation(PROG.main,'aCol');
   PROG.main.uVP =gl.getUniformLocation(PROG.main,'uVP');
-  PROG.main.uTint=gl.getUniformLocation(PROG.main,'uTint');
   PROG.bb=glProgram(VS_BB,FS_BB);
   PROG.bb.aCenter=gl.getAttribLocation(PROG.bb,'aCenter');
   PROG.bb.aOff   =gl.getAttribLocation(PROG.bb,'aOff');
@@ -1778,254 +1773,6 @@ function buildStation(pieces){
   STATION.count=arr.length/6;
   STATION.pending=null;
 }
-/* ---------- 캐릭터 메시(리그) ----------
-   Kenney 블로키 캐릭터(character-d). 예전엔 파츠를 하나로 병합해 정적 VBO 로 구웠는데,
-   그러면 걷기 애니메이션이 팔·다리를 따로 돌릴 수가 없다. 지금은 노드 계층을 그대로
-   구워(tools/bake.html 리그 모드) 파츠마다 VBO 를 두고, 파츠별 모델행렬만 갈아 끼운다.
-   파츠 8개 × 사람 몇 명이라 드로우콜이 늘어도 부담이 없다.
-   실측 bbox 는 x±0.8 · y 0~2.7 · z±0.4, 발이 이미 로컬 y=0 이고 얼굴이 +Z 에 그려져 있다
-   (게임의 yaw=0 전방도 +Z 라 축을 돌릴 필요가 없다). 2.7유닛 → 1.8m 이므로 배율 0.6667. */
-var PLAYER_SCALE=0.6667;
-var RIG=null;
-try{
-  var _rb=window.PLAYER_BAKED;
-  if(_rb && _rb.v===2) RIG=rigDecode(_rb);
-}catch(e){ RIG=null; }
-function rigDecode(o){
-  function b64(str){ var raw=atob(str), u=new Uint8Array(raw.length);
-    for(var i=0;i<raw.length;i++) u[i]=raw.charCodeAt(i); return u; }
-  var parts=[];
-  for(var i=0;i<o.parts.length;i++){
-    var P=o.parts[i], q={name:P.name, parent:P.parent, t:P.t, r:P.r, s:P.s, n:P.n||0};
-    if(q.n){
-      var bp=b64(P.p), bc=b64(P.c), bn=b64(P.nr), bi=b64(P.i);
-      var pos=new Float32Array(q.n*3), col=new Float32Array(q.n*3), nrm=new Float32Array(q.n*3);
-      for(var v=0;v<q.n;v++) for(var a=0;a<3;a++){
-        var u=bp[v*6+a*2]|(bp[v*6+a*2+1]<<8);
-        pos[v*3+a]=P.mn[a]+(P.mx[a]-P.mn[a])*u/65535;
-        col[v*3+a]=bc[v*3+a]/255;
-        nrm[v*3+a]=(bn[v*3+a]-128)/127;
-      }
-      var idx=new Uint16Array(bi.length/2);
-      for(var k=0;k<idx.length;k++) idx[k]=bi[k*2]|(bi[k*2+1]<<8);
-      q.pos=pos; q.col=col; q.nrm=nrm; q.idx=idx;
-    }
-    parts.push(q);
-  }
-  return {parts:parts, anim:o.anim, vbo:null, hull:null, hullW:-1};
-}
-function rigPart(name){ if(!RIG) return -1;
-  for(var i=0;i<RIG.parts.length;i++) if(RIG.parts[i].name===name) return i; return -1; }
-/* 몸통만 플레이어 색으로 갈아입힌다. 구운 색을 통째로 색조로 덮으면 텍스처(노란 옷·검은
-   얼굴선)가 전부 사라져 단색 인형이 된다 — 예전 버전이 그래서 "텍스처가 안 먹었다"였다.
-   그래서 몸통 파츠만 밝기로 굽고(색조 = 플레이어 색), 나머지는 텍스처 색 그대로 두고
-   아주 옅게만 물들인다. */
-var RIG_TINT_PART='torso', RIG_TINT_SOFT=0.18;
-function ensureRigVBO(){
-  if(!RIG || RIG.vbo || !GLREADY) return;
-  var L=[0.42,0.80,0.43], ll=Math.hypot(L[0],L[1],L[2]);
-  for(var pi=0;pi<RIG.parts.length;pi++){
-    var P=RIG.parts[pi]; if(!P.n) continue;
-    var grey=(P.name===RIG_TINT_PART);
-    var I=P.idx, arr=new Float32Array(I.length*6);
-    for(var k=0;k<I.length;k++){
-      var v=I[k], o=k*6;
-      var nx=P.nrm[v*3], ny=P.nrm[v*3+1], nz=P.nrm[v*3+2];
-      // 원본 재질이 unlit 이라 텍스처에 음영이 없다 — 각진 실루엣이 읽히게 약하게만 넣는다
-      var sh=0.74+0.26*Math.max(0,(nx*L[0]+ny*L[1]+nz*L[2])/ll);
-      arr[o]=P.pos[v*3]; arr[o+1]=P.pos[v*3+1]; arr[o+2]=P.pos[v*3+2];
-      if(grey){ var lum=(P.col[v*3]+P.col[v*3+1]+P.col[v*3+2])/3;
-        arr[o+3]=arr[o+4]=arr[o+5]=lum*sh*1.55; }
-      else { arr[o+3]=P.col[v*3]*sh*1.15; arr[o+4]=P.col[v*3+1]*sh*1.15; arr[o+5]=P.col[v*3+2]*sh*1.15; }
-    }
-    P.vbo=gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER,P.vbo);
-    gl.bufferData(gl.ARRAY_BUFFER,arr,gl.STATIC_DRAW);
-    P.vn=I.length;
-  }
-  RIG.vbo=true;
-}
-/* 툰 윤곽선 껍질 — 파츠마다 법선 방향으로 부풀린 사본. 본체를 그린 뒤 BACK 을 컬링해
-   그린다. 두께는 월드 기준이라 로컬로 환산한다(모델을 PLAYER_SCALE 로 줄여 그리므로). */
-function ensureRigHull(){
-  var w=OUTLINE_BODY/Math.max(1e-4,PLAYER_SCALE);
-  if(!RIG || !GLREADY) return;
-  if(RIG.hull && Math.abs(w-RIG.hullW)<1e-6) return;
-  var c=OUTLINE_COL;
-  for(var pi=0;pi<RIG.parts.length;pi++){
-    var P=RIG.parts[pi]; if(!P.n) continue;
-    // 파츠 자체 스케일(머리는 0.1)만큼 껍질도 얇아지므로 되돌려 준다
-    var pw=w/Math.max(1e-4, Math.abs(P.s[0]));
-    var I=P.idx, arr=new Float32Array(I.length*6);
-    for(var k=0;k<I.length;k++){
-      var v=I[k], o=k*6;
-      arr[o]  =P.pos[v*3]  +P.nrm[v*3]  *pw;
-      arr[o+1]=P.pos[v*3+1]+P.nrm[v*3+1]*pw;
-      arr[o+2]=P.pos[v*3+2]+P.nrm[v*3+2]*pw;
-      arr[o+3]=c[0]; arr[o+4]=c[1]; arr[o+5]=c[2];
-    }
-    if(!P.hull) P.hull=gl.createBuffer();
-    gl.bindBuffer(gl.ARRAY_BUFFER,P.hull);
-    gl.bufferData(gl.ARRAY_BUFFER,arr,gl.STATIC_DRAW);
-  }
-  RIG.hull=true; RIG.hullW=w;
-}
-/* ---- 포즈 계산 ---- */
-function quatSlerpN(a,b,u,out){                       // 짧은 호로 섞고 정규화(nlerp)
-  var d=a[0]*b[0]+a[1]*b[1]+a[2]*b[2]+a[3]*b[3], sg=(d<0)?-1:1;
-  var x=a[0]+(b[0]*sg-a[0])*u, y=a[1]+(b[1]*sg-a[1])*u,
-      z=a[2]+(b[2]*sg-a[2])*u, w=a[3]+(b[3]*sg-a[3])*u;
-  var l=Math.sqrt(x*x+y*y+z*z+w*w)||1;
-  out[0]=x/l; out[1]=y/l; out[2]=z/l; out[3]=w/l;
-}
-// 애니메이션 채널을 t 초에서 뽑아 rest 포즈를 덮어쓴다(LINEAR, 반복 재생).
-function rigSample(anim, tsec, pose){
-  if(!anim) return;
-  var dur=anim.dur||1, t=tsec-Math.floor(tsec/dur)*dur;
-  for(var ci=0;ci<anim.ch.length;ci++){
-    var c=anim.ch[ci], T=c.t, N=T.length, i1=0;
-    while(i1<N && T[i1]<t) i1++;
-    var i0=Math.max(0,i1-1); if(i1>=N) i1=N-1;
-    var span=T[i1]-T[i0], u=(span>1e-6)?((t-T[i0])/span):0;
-    var P=pose[c.p];
-    if(c.k==='r'){
-      var a=[c.v[i0*4],c.v[i0*4+1],c.v[i0*4+2],c.v[i0*4+3]];
-      var b=[c.v[i1*4],c.v[i1*4+1],c.v[i1*4+2],c.v[i1*4+3]];
-      quatSlerpN(a,b,u,P.r);
-    } else {
-      for(var a2=0;a2<3;a2++) P.t[a2]=c.v[i0*3+a2]+(c.v[i1*3+a2]-c.v[i0*3+a2])*u;
-    }
-  }
-}
-var RIG_POSE_A=null, RIG_POSE_B=null;
-function rigPoseAlloc(){ var o=[];
-  for(var i=0;i<RIG.parts.length;i++) o.push({t:[0,0,0], r:[0,0,0,1]});
-  return o; }
-function rigPoseRest(pose){
-  for(var i=0;i<RIG.parts.length;i++){ var P=RIG.parts[i], q=pose[i];
-    q.t[0]=P.t[0]; q.t[1]=P.t[1]; q.t[2]=P.t[2];
-    q.r[0]=P.r[0]; q.r[1]=P.r[1]; q.r[2]=P.r[2]; q.r[3]=P.r[3]; }
-}
-/* 목표 애니메이션을 u(0~1) 위상에서 뽑아 현재 포즈 위에 가중치 k 로 덧섞는다. */
-function rigBlendInto(pose, anim, u, k){
-  if(!anim) return;
-  rigPoseRest(RIG_POSE_B);
-  rigSample(anim, u*(anim.dur||1), RIG_POSE_B);
-  for(var i=0;i<pose.length;i++){
-    var A=pose[i], B=RIG_POSE_B[i];
-    A.t[0]+=(B.t[0]-A.t[0])*k; A.t[1]+=(B.t[1]-A.t[1])*k; A.t[2]+=(B.t[2]-A.t[2])*k;
-    quatSlerpN(A.r,B.r,k,A.r);
-  }
-}
-function trsMat(t,r,s,out){
-  var x=r[0],y=r[1],z=r[2],w=r[3];
-  out[0]=(1-2*(y*y+z*z))*s[0]; out[1]=(2*(x*y+z*w))*s[0]; out[2]=(2*(x*z-y*w))*s[0]; out[3]=0;
-  out[4]=(2*(x*y-z*w))*s[1];   out[5]=(1-2*(x*x+z*z))*s[1]; out[6]=(2*(y*z+x*w))*s[1]; out[7]=0;
-  out[8]=(2*(x*z+y*w))*s[2];   out[9]=(2*(y*z-x*w))*s[2];   out[10]=(1-2*(x*x+y*y))*s[2]; out[11]=0;
-  out[12]=t[0]; out[13]=t[1]; out[14]=t[2]; out[15]=1;
-  return out;
-}
-var ONE3=[1,1,1], ID_Q=[0,0,0,1], ZERO3=[0,0,0];
-/* 걷기 위상 — 캐릭터마다 따로 센다. 원격 플레이어·AI 는 속도를 안 보내 주므로
-   보간된 위치의 변화량에서 뽑는다(같은 식이라 내 캐릭터와 어긋나지 않는다).
-   위상은 시간이 아니라 '이동 거리'로 돌린다 — 그래야 발이 땅을 짚은 채로 간다.
-   킷의 walk 는 다리를 ±60도 흔들어 한 사이클에 약 1.4m, sprint 는 더 크게 뻗어 2.6m
-   나간다(실측). 게임 최고 속도가 6.2m/s 라 walk 만 쓰면 종종걸음이 되어, 속도에 따라
-   idle → walk → sprint 로 섞고 보폭도 같이 늘린다. */
-var WALKST={}, STRIDE_WALK=1.4, STRIDE_SPRINT=2.6;
-/* 애니메이션 시계는 렌더 루프가 받은 시각을 쓴다. performance.now() 를 직접 부르면
-   프레임을 강제로 돌리는 검증 경로에서 시간이 안 흘러 포즈가 굳는다. */
-var RENDER_NOW=0;
-function walkPhase(key, x, z, now){
-  var w=WALKST[key];
-  if(!w){ w=WALKST[key]={x:x,z:z,t:now,u:0,spd:0}; return w; }
-  var dt=(now-w.t)/1000;
-  if(dt>0.001){
-    var d=Math.sqrt((x-w.x)*(x-w.x)+(z-w.z)*(z-w.z));
-    var inst=Math.min(12, d/dt);
-    // 순간 속도는 보간 때문에 튄다 — 지수 평활로 눌러 준다
-    w.spd += (inst-w.spd)*Math.min(1, dt*9);
-    w.x=x; w.z=z; w.t=now;
-    // 두 동작을 같은 정규 위상(0~1)으로 돌려야 섞을 때 발이 어긋나지 않는다
-    var stride=STRIDE_WALK+(STRIDE_SPRINT-STRIDE_WALK)*sprintMix(w.spd);
-    w.u+=w.spd*dt/stride; w.u-=Math.floor(w.u);
-  }
-  return w;
-}
-function sprintMix(spd){ return Math.max(0, Math.min(1, (spd-2.6)/2.0)); }
-var CHARQ=[];                                    // 이번 프레임에 그릴 캐릭터(파츠 행렬·색)
-/* 캐릭터 한 명의 포즈를 계산해 큐에 넣는다. 반환값은 '머리 앵커 행렬'(머리 자체 스케일은
-   빼고 곱한 것) — 눈을 머리에 붙여 애니메이션을 같이 타게 하려고 돌려준다. */
-function drawPlayerMesh(px,py,pz,yaw,col,key){
-  if(!RIG) return null;
-  if(!RIG_POSE_A){ RIG_POSE_A=rigPoseAlloc(); RIG_POSE_B=rigPoseAlloc(); }
-  var now=RENDER_NOW||performance.now();
-  var w=walkPhase(key||'me', px, pz, now);
-  // 대기 동작은 사람마다 위상을 어긋나게 — 안 그러면 여럿이 똑같이 숨쉬어 인형처럼 보인다
-  if(w.off==null){ var kk=key||'me', hh=0; for(var c=0;c<kk.length;c++) hh=(hh*31+kk.charCodeAt(c))&1023; w.off=hh/1023*4; }
-  rigPoseRest(RIG_POSE_A); rigSample(RIG.anim.idle, now*0.001+w.off, RIG_POSE_A);
-  // 걸음 → 전력질주 순으로 덧섞는다. 위상 u 는 공용이라 두 동작의 발이 맞물린다.
-  var mv=Math.max(0, Math.min(1, (w.spd-0.35)/1.1));
-  if(mv>0.001) rigBlendInto(RIG_POSE_A, RIG.anim.walk, w.u, mv);
-  var sp=sprintMix(w.spd);
-  if(sp>0.001) rigBlendInto(RIG_POSE_A, RIG.anim.sprint, w.u, sp);
-  // 캐릭터 배치: 이동 → yaw 회전 → 축소. 모델의 +Z 가 곧 전방이라 축 보정이 없다.
-  var s=PLAYER_SCALE, ca=Math.cos(yaw)*s, sa=Math.sin(yaw)*s;
-  var base=[ca,0,-sa,0,  0,s,0,0,  sa,0,ca,0,  px,py,pz,1];
-  var mats=[], anch=[], tmp=new Array(16);
-  for(var pi=0;pi<RIG.parts.length;pi++){
-    var P=RIG.parts[pi], q=RIG_POSE_A[pi];
-    var par = (P.parent<0) ? base : anch[P.parent];
-    // 앵커는 '자기 스케일을 뺀' 행렬 — 붙임점이 모델 단위로 남아 눈 배치가 쉬워진다
-    anch[pi]=mat4Mul(par, trsMat(q.t,q.r,ONE3,tmp));
-    mats[pi]=mat4Mul(anch[pi], trsMat(ZERO3,ID_Q,P.s,tmp));
-  }
-  CHARQ.push({mats:mats, col:col||'#ff8a3a'});
-  if(RIG._head==null) RIG._head=rigPart('head');
-  return RIG._head>=0 ? anch[RIG._head] : null;
-}
-function rigBindAttrs(){
-  gl.enableVertexAttribArray(PROG.main.aPos);
-  gl.vertexAttribPointer(PROG.main.aPos,3,gl.FLOAT,false,24,0);
-  gl.enableVertexAttribArray(PROG.main.aCol);
-  gl.vertexAttribPointer(PROG.main.aCol,3,gl.FLOAT,false,24,12);
-}
-function flushChars(VP){
-  if(!CHARQ.length) return;
-  ensureRigVBO();
-  if(!RIG || !RIG.vbo){ CHARQ.length=0; return; }
-  for(var i=0;i<CHARQ.length;i++){
-    var q=CHARQ[i], t=hexRGB(q.col);
-    // 몸통은 플레이어 색을 그대로, 나머지는 텍스처를 살리려 옅게만 물들인다
-    var s0=1+(t[0]-1)*RIG_TINT_SOFT, s1=1+(t[1]-1)*RIG_TINT_SOFT, s2=1+(t[2]-1)*RIG_TINT_SOFT;
-    for(var pi=0;pi<RIG.parts.length;pi++){
-      var P=RIG.parts[pi]; if(!P.n||!P.vbo) continue;
-      gl.bindBuffer(gl.ARRAY_BUFFER,P.vbo); rigBindAttrs();
-      gl.uniformMatrix4fv(PROG.main.uVP,false,mat4Mul(VP,q.mats[pi]));
-      if(P.name===RIG_TINT_PART) gl.uniform3f(PROG.main.uTint,t[0],t[1],t[2]);
-      else gl.uniform3f(PROG.main.uTint,s0,s1,s2);
-      gl.drawArrays(gl.TRIANGLES,0,P.vn);
-    }
-  }
-  gl.uniformMatrix4fv(PROG.main.uVP,false,VP);
-  gl.uniform3f(PROG.main.uTint,1,1,1);
-  // CHARQ 는 여기서 안 비운다 — 윤곽선 패스가 같은 파츠 행렬을 다시 쓴다(프레임 시작에 비운다)
-}
-/* 캐릭터 윤곽선. 호출부가 CULL_FACE/BACK 을 켠 상태에서 부른다. */
-function flushCharOutlines(VP){
-  if(!CHARQ.length || OUTLINE_BODY<=0 || !RIG) return;
-  ensureRigHull();
-  if(!RIG.hull) return;
-  gl.uniform3f(PROG.main.uTint,1,1,1);
-  for(var pi=0;pi<RIG.parts.length;pi++){
-    var P=RIG.parts[pi]; if(!P.n||!P.hull) continue;
-    gl.bindBuffer(gl.ARRAY_BUFFER,P.hull); rigBindAttrs();
-    for(var i=0;i<CHARQ.length;i++){
-      gl.uniformMatrix4fv(PROG.main.uVP,false,mat4Mul(VP,CHARQ[i].mats[pi]));
-      gl.drawArrays(gl.TRIANGLES,0,P.vn);
-    }
-  }
-  gl.uniformMatrix4fv(PROG.main.uVP,false,VP);
-}
 /* ---------- 투사체 메시 ----------
    총과 달리 탄환은 월드 공간에 여러 개가 동시에 뜬다. GL 버퍼를 따로 두는 대신
    삼각형 44개짜리 작은 메시를 CPU 로 변환해 기존 TRI 파이프라인에 밀어 넣는다
@@ -2132,7 +1879,7 @@ function render(dt){
   gl.depthMask(true); gl.enable(gl.DEPTH_TEST);
   if(!sim){ if(usePost) drawPost(); return; }
 
-  TRI.length=0; LINE.length=0; BB.length=0; OUTL.length=0; GUNQ.length=0; CHARQ.length=0; ITEMQ.length=0;
+  TRI.length=0; LINE.length=0; BB.length=0; OUTL.length=0; GUNQ.length=0; ITEMQ.length=0;
   /* 레벨 — 꺼진 연동 발판은 지우지 말고 어둡게 남긴다. "여기에 다리가 생길 수 있다"가
      보여야 퍼즐이 성립한다(안 보이면 그냥 못 넘는 협곡으로 읽힌다). */
   for(var i=0;i<LEVEL.boxes.length;i++){ var bx=LEVEL.boxes[i], bcol=bx.col;
@@ -2179,8 +1926,8 @@ function render(dt){
   // 원격 플레이어 — 보간된 위치
   var pnow=performance.now();
   for(var pid in MP.peers){ var pe=MP.peers[pid], ps=peerSample(pe, pnow); if(!ps)continue;
-    emitCharacter(ps.x, ps.y, ps.z, ps.yaw, ps.pitch, ps.rc, (pe.col||PEER_COL), 'p'+pid); }
-  if(sim.tp){ emitCharacter(sim.p.x, sim.p.y, sim.p.z, sim.yaw, sim.pitch, sim.recoil||0, PLAYER_COL, 'me'); }
+    emitCharacter(ps.x, ps.y, ps.z, ps.yaw, ps.pitch, ps.rc, (pe.col||PEER_COL)); }
+  if(sim.tp){ emitCharacter(sim.p.x, sim.p.y, sim.p.z, sim.yaw, sim.pitch, sim.recoil||0, PLAYER_COL); }
   else { // 1인칭: 총만
     var eye={x:sim.p.x,y:sim.p.y+EYE,z:sim.p.z}, kick=(sim.recoil||0)*(sim.recoil||0);
     emitGun(eye, AIMR, AIMU, AIMF, kick, null);
@@ -2221,11 +1968,9 @@ function render(dt){
 
   // --- 그리기: 불투명 → 외곽선 → 발광(가산합성) ---
   gl.useProgram(PROG.main); gl.uniformMatrix4fv(PROG.main.uVP,false,VP);
-  gl.uniform3f(PROG.main.uTint,1,1,1);          // 기본은 색조 없음
   gl.disable(gl.BLEND);
   gl.enable(gl.POLYGON_OFFSET_FILL); gl.polygonOffset(1.0,1.0);  // 외곽선이 면에 묻히지 않게
   drawArr(BUF.tri, TRI, PROG.main, gl.TRIANGLES);
-  flushChars(VP);                               // 캐릭터 — 정적 VBO + 모델행렬
   // 정거장 조각 — 정적 VBO 라 매 프레임 옮기지 않는다(드로우콜 1)
   if(STATION.pending) buildStation(LEVEL._pieces||[]);
   if(STATION.buf && STATION.count){
@@ -2244,14 +1989,13 @@ function render(dt){
     ItemMesh.draw(gl, PROG.main, VP, IT.k, IT.x, IT.y, IT.z, IT.a); }
   // 윤곽선 껍질 — 카메라를 등진 면만 남겨야 실루엣 테두리가 된다.
   // 이 메시들은 바깥면이 CW(=GL 기준 뒷면)라 BACK 을 컬링해야 바깥이 지워진다.
-  if(OUTL.length || GUNQ.length || CHARQ.length || ITEMQ.length){
+  if(OUTL.length || GUNQ.length || ITEMQ.length){
     gl.enable(gl.CULL_FACE); gl.cullFace(gl.BACK);
     if(OUTL.length) drawArr(BUF.outl, OUTL, PROG.main, gl.TRIANGLES);
     for(var qo=0;qo<GUNQ.length;qo++){ var QO=GUNQ[qo];
       GunMesh.drawOutline(gl, PROG.main, VP, QO.O,QO.R,QO.U,QO.F, QO.k, QO.e); }
     for(var io=0;io<ITEMQ.length;io++){ var ITO=ITEMQ[io];
       ItemMesh.drawOutline(gl, PROG.main, VP, ITO.k, ITO.x, ITO.y, ITO.z, ITO.a); }
-    flushCharOutlines(VP);                      // 캐릭터 실루엣
     gl.disable(gl.CULL_FACE);
   }
   if(LINE.length) drawArr(BUF.line, LINE, PROG.main, gl.LINES);
@@ -2390,13 +2134,10 @@ function sphereGL(cx,cy,cz,r,col){
 /* 눈 배치·굴림 — 디버그 패널에서 조절할 수 있게 변수로 뺀다.
    주의: 눈 중심이 몸통 반지름(0.35) 안쪽이면 흰자가 몸에 파묻혀 눈동자만 검게 보인다.
    중심의 축 거리 = sqrt(EYE_X^2 + EYE_Z^2) 가 몸통 반지름보다 살짝 크도록 잡는다. */
-/* 눈 위치. character-d 는 텍스처에 이미 얼굴이 그려져 있다 — 3D 눈알을 아무 데나 두면
-   눈이 네 개로 보인다. 그래서 텍스처에서 그려진 눈 자국을 픽셀로 찾아 그 자리에 맞췄다:
-   머리 앞면(+Z)의 눈 중심이 x ±0.135m · y 1.515m 이고 앞면 표면은 z=0.267m 다.
-   눈알 지름은 그려진 눈(0.078m)을 덮되 눈썹(0.062m 위)까지 먹지 않게 0.05 로 잡는다.
-   좌표는 '머리 노드' 기준이라 걷기 애니메이션으로 머리가 움직이면 눈도 같이 간다. */
-var HEAD_PIVOT_Y=1.9*0.6667;                     // 머리 노드의 rest 높이(m)
-var EYE_Y=1.515, EYE_X=0.135, EYE_Z=0.235,  EYE_R=0.05, EYE_PUPIL_R=0.026, EYE_ROLL=0.85;
+/* 눈 위치. 기준은 '눈이 놓일 지점의 실제 표면'이다 — 중심이 표면보다 살짝 안쪽이어야
+   얼굴에 박힌 눈이 되고, 넘어가면 붙여 놓은 것처럼 튀어나온다.
+   캡슐 몸통은 반지름 0.35 라 중심의 축 거리 sqrt(EYE_X^2+EYE_Z^2) 가 그보다 살짝 커야 한다. */
+var EYE_Y=1.42, EYE_X=0.15, EYE_Z=0.33,  EYE_R=0.115, EYE_PUPIL_R=0.058, EYE_ROLL=0.85;
 var OUTLINE_BODY=0.022, OUTLINE_EYE=0.012;   // 윤곽선 두께(월드 단위)
 var EYE_PUPIL_SINK=0.88;   // 눈동자가 흰자 안으로 얼마나 들어가는지(1에 가까울수록 깊이 박힘)
 /* 내 몸통 색 — 대기방에서 고르고 저장한다. 팀원에게도 전송해 각자 자기 색으로 보인다. */
@@ -2531,28 +2272,19 @@ function peerSample(pe, now){
   return b[b.length-1];                             // 패킷이 늦음 → 마지막 위치 유지
 }
 // 한 플레이어(캡슐+총)를 임의 위치/시점으로 렌더 — 3인칭 자기·원격 팀원 공용
-function emitCharacter(px,py,pz,yaw,pitch,recoil,col,key){
+function emitCharacter(px,py,pz,yaw,pitch,recoil,col){
   var f={x:Math.cos(pitch)*Math.sin(yaw), y:Math.sin(pitch), z:Math.cos(pitch)*Math.cos(yaw)};
   var R={x:Math.cos(yaw),y:0,z:-Math.sin(yaw)};
   var U={x:f.y*R.z-f.z*R.y, y:f.z*R.x-f.x*R.z, z:f.x*R.y-f.y*R.x};
   var eye={x:px,y:py+EYE,z:pz};
-  var HM=drawPlayerMesh(px,py,pz,yaw,col,key);
-  if(!HM){                                                  // 메시가 없으면 예전 캡슐로
-    capsuleGL(px,py+0.9,pz,0.35,0.55,col);
-    capsuleOutlineGL(px,py+0.9,pz,0.35,0.55, OUTLINE_BODY);
-  }
-  /* 눈 — 흰자는 머리에 고정, 눈동자가 시선(pitch)을 따라 흰자 표면 위를 굴러간다.
-     좌표는 머리 앵커 행렬(월드 배치·yaw·축소가 이미 들어 있다)로 옮긴다. 앵커는 머리
-     자체 스케일만 빠져 있어 오프셋을 모델 단위로 넣어야 한다(= 미터 / PLAYER_SCALE). */
-  var iv=1/PLAYER_SCALE;
+  capsuleGL(px,py+0.9,pz,0.35,0.55,col);
+  capsuleOutlineGL(px,py+0.9,pz,0.35,0.55, OUTLINE_BODY);   // 몸통 실루엣
+  // 눈 — 흰자는 고정, 눈동자가 시선(pitch)을 따라 흰자 표면 위를 굴러간다.
+  // 몸이 yaw 를 따라 돌므로 좌우 성분은 이미 반영돼 있고, 여기서는 상하가 남는다.
+  var HF={x:Math.sin(yaw),y:0,z:Math.cos(yaw)}, HU={x:0,y:1,z:0};
+  var hy=py+EYE_Y;
   function headPos(lx,ly,lz){
-    var mx=lx*iv, my=(ly+EYE_Y-HEAD_PIVOT_Y)*iv, mz=lz*iv;
-    if(HM) return { x:HM[0]*mx+HM[4]*my+HM[8]*mz+HM[12],
-                    y:HM[1]*mx+HM[5]*my+HM[9]*mz+HM[13],
-                    z:HM[2]*mx+HM[6]*my+HM[10]*mz+HM[14] };
-    var HF={x:Math.sin(yaw),z:Math.cos(yaw)};
-    return { x:px+R.x*lx+HF.x*lz, y:py+EYE_Y+ly, z:pz+R.z*lx+HF.z*lz };
-  }
+    return { x:px+R.x*lx+HU.x*ly+HF.x*lz, y:hy+R.y*lx+HU.y*ly+HF.y*lz, z:pz+R.z*lx+HU.z*ly+HF.z*lz }; }
   var lp=Math.max(-1.15, Math.min(1.15, (pitch||0)*EYE_ROLL));   // 눈이 뒤집히지 않게 제한
   var ldy=Math.sin(lp), ldz=Math.cos(lp);                        // 머리 기준 시선 방향
   var orbit=EYE_R - EYE_PUPIL_R*EYE_PUPIL_SINK;                  // 눈동자가 흰자에 박히는 깊이
@@ -3115,7 +2847,7 @@ window.addEventListener('keydown',function(e){
 window.addEventListener('keyup',function(e){ if(chatting) return; keys[e.key.toLowerCase()]=false; });
 
 var last=0, acc=0, STEP=1/120, jumpBuf=0;
-function loop(now){ if(!last)last=now; var dt=Math.min(0.05,(now-last)/1000); last=now; RENDER_NOW=now;
+function loop(now){ if(!last)last=now; var dt=Math.min(0.05,(now-last)/1000); last=now;
   // 본선(play)과 대기방 연습(lobbyScr) 모두 물리를 돌린다 — 기다리는 동안 몸을 풀 수 있게
   if((mode==='play'||mode==='lobbyScr') && sim){
     // 점프 입력을 프레임이 아니라 시간으로 들고 있는다.
@@ -3274,15 +3006,7 @@ window.__peng={ makeSim:makeSim, stepSim:stepSim, doFire:doFire,
   get matchSeed(){ return MATCH_SEED; }, get floorSeed(){ return FLOOR_SEED; },  // 절차 생성 검증용
   get bots(){ return BOTS; },        // AI 검증용
   get station(){ return STATION; }, buildStation:buildStation,   // 정거장 검증용
-  get charMesh(){ if(!RIG) return null;
-    var n=0; for(var i=0;i<RIG.parts.length;i++) n+=RIG.parts[i].n||0;
-    return {vbo:!!RIG.vbo, hull:!!RIG.hull, hullW:RIG.hullW, parts:RIG.parts.length, n:n,
-      scale:PLAYER_SCALE, outline:OUTLINE_BODY, anims:Object.keys(RIG.anim),
-      walk:WALKST}; },
   pieceBoxes:pieceBoxes,             // 조각 모양 → 충돌 박스(검증용)
-  /* 이번 프레임에 그린 캐릭터 — 파츠별 월드 위치·색. 걷기 포즈 검증용. */
-  get charq(){ return CHARQ.map(function(q){ return {col:q.col,
-    parts:RIG?RIG.parts.map(function(P,i){ return {n:P.name, x:q.mats[i][12], y:q.mats[i][13], z:q.mats[i][14]}; }):[]}; }); },
   get vertCount(){ return TRI.length/6; },  // 이번 프레임에 쌓인 정점 수(렌더 검증용)
   // 프레임 강제 실행 — 검증 환경(탭이 숨겨진 상태)에선 rAF 가 멈춰 렌더가 안 돈다
   frame:function(now){ loop(now!=null?now:performance.now()); },
