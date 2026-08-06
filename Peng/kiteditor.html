@@ -59,7 +59,11 @@
       <button id="btnSave">저장</button>
       <button id="btnLoad">불러오기</button>
     </div>
-    <p class="hint">저장하면 <b>levels/&lt;이름&gt;.js</b> 가 되고 게임을 새로고침하면 맵 목록에 뜹니다.</p>
+    <div class="row" style="margin-top:6px">
+      <button id="btnArena" style="flex:1">모드: 협동(코스)</button>
+    </div>
+    <p class="hint">저장하면 <b>levels/&lt;이름&gt;.js</b> 가 되고 게임을 새로고침하면 맵 목록에 뜹니다.
+    리스폰·패드는 아래 트레이 맨 앞에서 끌어다 놓으세요.</p>
 
     <h2>기즈모</h2>
     <div class="grid3">
@@ -90,23 +94,29 @@
       <div class="row"><label>X</label><input type="number" id="px" step="0.25"></div>
       <div class="row"><label>Y</label><input type="number" id="py" step="0.25"></div>
       <div class="row"><label>Z</label><input type="number" id="pz" step="0.25"></div>
-      <h2>회전 (도)</h2>
-      <div class="row"><label>X</label><input type="number" id="rx" step="5"></div>
-      <div class="row"><label>Y</label><input type="number" id="ry" step="5"></div>
-      <div class="row"><label>Z</label><input type="number" id="rz" step="5"></div>
-      <h2>크기 (배율)</h2>
-      <div class="row"><label>X</label><input type="number" id="sx" step="0.1" min="0.01"></div>
-      <div class="row"><label>Y</label><input type="number" id="sy" step="0.1" min="0.01"></div>
-      <div class="row"><label>Z</label><input type="number" id="sz" step="0.1" min="0.01"></div>
+      <div id="rowRot">
+        <h2>회전 (도)</h2>
+        <div class="row"><label>X</label><input type="number" id="rx" step="5"></div>
+        <div class="row"><label>Y</label><input type="number" id="ry" step="5"></div>
+        <div class="row"><label>Z</label><input type="number" id="rz" step="5"></div>
+      </div>
+      <div id="rowScale">
+        <h2>크기 (배율)</h2>
+        <div class="row"><label>X</label><input type="number" id="sx" step="0.1" min="0.01"></div>
+        <div class="row"><label>Y</label><input type="number" id="sy" step="0.1" min="0.01"></div>
+        <div class="row"><label>Z</label><input type="number" id="sz" step="0.1" min="0.01"></div>
+      </div>
       <div id="sizeM" class="hint"></div>
       <div class="grid2" style="margin-top:8px">
         <button id="btnDup">복제 Ctrl+D</button>
         <button id="btnDel">삭제 Del</button>
       </div>
-      <div class="row" style="margin-top:6px">
-        <button id="btnDeco" style="flex:1">충돌: 있음</button>
+      <div id="rowDeco">
+        <div class="row" style="margin-top:6px">
+          <button id="btnDeco" style="flex:1">충돌: 있음</button>
+        </div>
+        <p class="hint">충돌을 끄면 순수 장식이 됩니다(밟히지도, 총알을 막지도 않습니다).</p>
       </div>
-      <p class="hint">충돌을 끄면 순수 장식이 됩니다(밟히지도, 총알을 막지도 않습니다).</p>
     </div>
   </div>
   <div id="tray"></div>
@@ -155,6 +165,16 @@ var PARTS={}, NAMES=[];
   }
   NAMES.sort();
 })();
+/* 표식(리스폰·아이템 패드) — 킷 조각이 아니라 규칙이지만, 놓고 옮기는 방식은
+   조각과 똑같아야 손에 익는다. 그래서 같은 목록(OBJ)에 mark 를 달아 넣고
+   선택·기즈모·되돌리기를 전부 공유한다. 이름은 '@' 로 시작해 조각과 안 겹친다.
+   크기는 게임 값 그대로다: 리스폰은 몸 크기(0.7 x 1.8 x 0.7m),
+   패드는 원판 반경 PAD_VIS_R(0.35m)·판정 반경 PAD_R(0.7m). */
+var MARKDEF={
+  '@spawn':{ label:'리스폰', col:[0.30,0.86,0.48], hx:0.35, hy:1.8, hz:0.35 },
+  '@pad'  :{ label:'아이템 패드', col:[0.25,0.88,0.71], hx:0.7, hy:0.9, hz:0.7 }
+};
+function isMark(o){ return !!(o&&o.mark); }
 /* 게임의 PIECE_FLAT 과 같은 취급 — 바위 슬래브는 윗면이 평평한 한 장으로 친다.
    에디터에서는 '윗면 높이'를 알아야 바닥에 딱 맞춰 놓을 수 있다. */
 var TOPY={};
@@ -185,6 +205,8 @@ function basisOf(o){                                   // 게임 pieceBasis 와 
 function xf3(M,x,y,z){ return [M[0]*x+M[3]*y+M[6]*z, M[1]*x+M[4]*y+M[7]*z, M[2]*x+M[5]*y+M[8]*z]; }
 // 월드 AABB(미터). 선택·집기·기즈모 위치에 쓴다
 function aabbOf(o){
+  if(isMark(o)){ var D=MARKDEF[o.t];
+    return { mn:[o.x-D.hx, o.y, o.z-D.hz], mx:[o.x+D.hx, o.y+D.hy, o.z+D.hz] }; }
   var m=PARTS[o.t]; if(!m) return null;
   var M=basisOf(o), mn=[1e9,1e9,1e9], mx=[-1e9,-1e9,-1e9];
   for(var k=0;k<8;k++){
@@ -318,7 +340,9 @@ var LIGHT=[0.42,0.80,0.43], LL=Math.hypot(LIGHT[0],LIGHT[1],LIGHT[2]);
 function rebuild(){
   var arr=[];
   for(var i=0;i<OBJ.length;i++){
-    var o=OBJ[i], m=PARTS[o.t]; if(!m) continue;
+    var o=OBJ[i];
+    if(isMark(o)){ markTris(o, arr); continue; }
+    var m=PARTS[o.t]; if(!m) continue;
     var M=basisOf(o);
     var s0=M[0]*M[0]+M[1]*M[1]+M[2]*M[2]||1, s1=M[3]*M[3]+M[4]*M[4]+M[5]*M[5]||1,
         s2=M[6]*M[6]+M[7]*M[7]+M[8]*M[8]||1;
@@ -338,6 +362,39 @@ function rebuild(){
   gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(arr), gl.STATIC_DRAW);
   BUF.meshN=arr.length/6;
   hud();
+}
+/* 표식 그리기 — 게임에서 보이는 것과 닮게. 리스폰은 발판 원판 + 사람 키만큼의 기둥,
+   패드는 게임과 같은 세 겹(바탕 원판 · 판정 반경 고리 · 떠 있는 내용물)이다. */
+function ringTris(cx,cy,cz,r0,r1,col,out){
+  var SEGN=28;
+  for(var i=0;i<SEGN;i++){
+    var a0=i/SEGN*Math.PI*2, a1=(i+1)/SEGN*Math.PI*2;
+    var p=[[cx+Math.cos(a0)*r0,cy,cz+Math.sin(a0)*r0],[cx+Math.cos(a1)*r0,cy,cz+Math.sin(a1)*r0],
+           [cx+Math.cos(a1)*r1,cy,cz+Math.sin(a1)*r1],[cx+Math.cos(a0)*r1,cy,cz+Math.sin(a0)*r1]];
+    out.push(p[0][0],p[0][1],p[0][2],col[0],col[1],col[2], p[1][0],p[1][1],p[1][2],col[0],col[1],col[2],
+             p[2][0],p[2][1],p[2][2],col[0],col[1],col[2]);
+    out.push(p[0][0],p[0][1],p[0][2],col[0],col[1],col[2], p[2][0],p[2][1],p[2][2],col[0],col[1],col[2],
+             p[3][0],p[3][1],p[3][2],col[0],col[1],col[2]);
+  }
+}
+function markTris(o, out){
+  var D=MARKDEF[o.t], c=D.col, x=o.x, y=o.y, z=o.z;
+  if(o.t==='@spawn'){
+    ringTris(x,y+0.03,z, 0.30, 0.52, c, out);              // 발밑 고리
+    ringTris(x,y+0.02,z, 0, 0.26, [c[0]*0.45,c[1]*0.45,c[2]*0.45], out);
+    // 사람 키만큼의 기둥 네 개 — 서 있을 자리와 높이가 한눈에 보인다
+    for(var k=0;k<4;k++){
+      var a=k/4*Math.PI*2+Math.PI/4, px=x+Math.cos(a)*0.33, pz=z+Math.sin(a)*0.33;
+      pushBox(out,[px-0.035,y,pz-0.035],[px+0.035,y+1.8,pz+0.035],[c[0]*0.8,c[1]*0.8,c[2]*0.8]);
+    }
+    ringTris(x,y+1.8,z, 0.20, 0.40, c, out);               // 머리 높이 표시
+  } else {
+    ringTris(x,y+0.03,z, 0, 0.35, [0.09,0.13,0.19], out);  // 바탕 원판(게임의 PAD_VIS_R)
+    ringTris(x,y+0.05,z, 0.20, 0.31, c, out);              // 채워진 링
+    ringTris(x,y+0.02,z, 0.66, 0.70, [c[0]*0.5,c[1]*0.5,c[2]*0.5], out);  // 판정 반경
+    var b=0.52;                                            // 떠 있는 내용물 자리
+    pushBox(out,[x-0.13,y+b,z-0.13],[x+0.13,y+b+0.26,z+0.13],c);
+  }
 }
 // 바닥 격자 — 한 칸 = 1킷유닛(3m)
 (function buildGrid(){
@@ -785,9 +842,35 @@ function thumb(name){
   }
   return c;
 }
+function markThumb(t){
+  var D=MARKDEF[t], c=document.createElement('canvas');
+  c.width=120; c.height=104;
+  var g=c.getContext('2d'), R='rgb('+D.col.map(function(v){return Math.round(v*255);}).join(',')+')';
+  g.strokeStyle=R; g.fillStyle=R; g.lineWidth=5;
+  if(t==='@spawn'){
+    g.beginPath(); g.ellipse(60,80,30,12,0,0,Math.PI*2); g.stroke();
+    g.globalAlpha=0.35; g.fill(); g.globalAlpha=1;
+    g.lineWidth=4;
+    g.beginPath(); g.moveTo(42,78); g.lineTo(42,26); g.moveTo(78,78); g.lineTo(78,26); g.stroke();
+    g.beginPath(); g.ellipse(60,26,20,8,0,0,Math.PI*2); g.stroke();
+  } else {
+    g.beginPath(); g.ellipse(60,80,34,14,0,0,Math.PI*2); g.stroke();
+    g.globalAlpha=0.3; g.beginPath(); g.ellipse(60,80,22,9,0,0,Math.PI*2); g.fill(); g.globalAlpha=1;
+    g.fillRect(48,34,24,24);
+  }
+  return c;
+}
 (function buildTray(){
   var tray=document.getElementById('tray');
   if(!NAMES.length){ tray.textContent='survivalbaked.js 를 못 읽었습니다 — tools/bake.html 에서 서바이벌 킷을 구워주세요.'; return; }
+  Object.keys(MARKDEF).forEach(function(t){
+    var d=document.createElement('div'); d.className='item'; d.draggable=true; d.dataset.t=t;
+    d.style.borderColor='#2f6b52';
+    d.appendChild(markThumb(t));
+    var sp=document.createElement('span'); sp.textContent=MARKDEF[t].label; d.appendChild(sp);
+    d.addEventListener('dragstart',function(e){ e.dataTransfer.setData('text/plain',t); });
+    tray.appendChild(d);
+  });
   NAMES.forEach(function(n){
     var d=document.createElement('div'); d.className='item'; d.draggable=true; d.dataset.t=n;
     d.appendChild(thumb(n));
@@ -799,7 +882,7 @@ function thumb(name){
 cv.addEventListener('dragover',function(e){ e.preventDefault(); e.dataTransfer.dropEffect='copy'; });
 cv.addEventListener('drop',function(e){
   e.preventDefault();
-  var t=e.dataTransfer.getData('text/plain'); if(!PARTS[t]) return;
+  var t=e.dataTransfer.getData('text/plain'); if(!PARTS[t] && !MARKDEF[t]) return;
   var r=cv.getBoundingClientRect();
   place(t, e.clientX-r.left, e.clientY-r.top);
 });
@@ -821,22 +904,32 @@ function place(t,mx,my){
   }
   if(SNAP){ p.x=Math.round(p.x/SNAP)*SNAP; p.z=Math.round(p.z/SNAP)*SNAP; }
   snapshot();
-  OBJ.push({ t:t, x:p.x, y:p.y, z:p.z, rx:0, ry:0, rz:0, sx:1, sy:1, sz:1, deco:false });
+  OBJ.push({ t:t, x:p.x, y:p.y, z:p.z, rx:0, ry:0, rz:0, sx:1, sy:1, sz:1,
+             deco:false, mark:!!MARKDEF[t] });
   SEL=OBJ.length-1;
-  rebuild(); syncPanel(); toast(t+' 배치');
+  rebuild(); syncPanel(); toast((MARKDEF[t]?MARKDEF[t].label:t)+' 배치');
 }
 
 /* ---------- 오른쪽 패널 ---------- */
 var F={px:0,py:0,pz:0,rx:0,ry:0,rz:0,sx:0,sy:0,sz:0};
 Object.keys(F).forEach(function(k){ F[k]=document.getElementById(k); });
 function syncPanel(){
-  var has=SEL>=0 && OBJ[SEL];
+  var has=SEL>=0 && OBJ[SEL], mk=has&&isMark(OBJ[SEL]);
   document.getElementById('props').style.display=has?'':'none';
   document.getElementById('selName').innerHTML=has
-    ? '<span class="sel">'+OBJ[SEL].t+'</span> · '+OBJ.length+'개 중 '+(SEL+1)+'번'
+    ? '<span class="sel">'+(mk?MARKDEF[OBJ[SEL].t].label:OBJ[SEL].t)+'</span> · '+
+      OBJ.length+'개 중 '+(SEL+1)+'번'
     : (OBJ.length? OBJ.length+'개 배치됨 — 클릭해서 선택' : '없음');
+  // 표식은 회전·크기·충돌이 없다 — 위치만 보여 준다
+  var hide=mk?'none':'';
+  ['rowRot','rowScale','rowDeco'].forEach(function(id){
+    var el=document.getElementById(id); if(el) el.style.display=hide; });
   if(!has){ hud(); return; }
   var o=OBJ[SEL];
+  if(mk){ F.px.value=r2(o.x); F.py.value=r2(o.y); F.pz.value=r2(o.z);
+    document.getElementById('sizeM').textContent=
+      (o.t==='@spawn'?'몸 크기 0.7 × 1.8 × 0.7 m':'원판 0.35m · 판정 반경 0.7m');
+    hud(); return; }
   F.px.value=r2(o.x); F.py.value=r2(o.y); F.pz.value=r2(o.z);
   F.rx.value=r2(o.rx); F.ry.value=r2(o.ry); F.rz.value=r2(o.rz);
   F.sx.value=r2(o.sx); F.sy.value=r2(o.sy); F.sz.value=r2(o.sz);
@@ -869,6 +962,12 @@ function setMode(m){ MODE=m;
 document.getElementById('mT').onclick=function(){ setMode('T'); };
 document.getElementById('mR').onclick=function(){ setMode('R'); };
 document.getElementById('mS').onclick=function(){ setMode('S'); };
+var ARENA=false;
+function setArena(v){ ARENA=!!v;
+  var b=document.getElementById('btnArena');
+  b.textContent='모드: '+(ARENA?'경쟁(아레나)':'협동(코스)');
+  b.classList.toggle('on',ARENA); }
+document.getElementById('btnArena').onclick=function(){ setArena(!ARENA); };
 document.getElementById('btnDummy').onclick=function(){
   DUMMY.on=!DUMMY.on; this.textContent='보기: '+(DUMMY.on?'켬':'끔');
   this.classList.toggle('on',DUMMY.on); hud(); };
@@ -904,7 +1003,7 @@ function serialize(){
   L.push("    {cx:0, cy:-72, cz:0, hx:220, hy:1, hz:220, col:'#2b3a2c', deco:true}");
   L.push("  ],");
   L.push("  pieces: [");
-  var rows=OBJ.map(function(o){
+  var rows=OBJ.filter(function(o){ return !isMark(o); }).map(function(o){
     var s="    {t:'"+o.t+"', i:"+n3(o.x/UNIT)+", j:"+n3(o.z/UNIT)+", y:"+n3(o.y/UNIT);
     if(o.rx) s+=", rx:"+n3(o.rx);
     if(o.ry) s+=", ry:"+n3(o.ry);
@@ -916,13 +1015,18 @@ function serialize(){
   });
   L.push(rows.join(',\n'));
   L.push("  ],");
-  var st=startPoint();
+  function pt(o){ return "{x:"+n3(o.x)+", y:"+n3(o.y)+", z:"+n3(o.z)+"}"; }
+  var sp=OBJ.filter(function(o){ return o.t==='@spawn'; });
+  var pd=OBJ.filter(function(o){ return o.t==='@pad'; });
+  // 리스폰을 안 놓았으면 더미가 서 있는 자리를 쓴다 — 시작 지점이 없으면 맵이 안 뜬다
+  var st=sp.length?sp[0]:startPoint();
+  if(ARENA) L.push("  arena: true,");
   L.push("  goal: {cx:0, cy:-999, cz:0, r:0.1},");
-  L.push("  checkpoints: [ {x:"+n3(st.x)+", y:"+n3(st.y)+", z:"+n3(st.z)+"} ],");
+  L.push("  checkpoints: [ "+pt(st)+" ],");
   L.push("  killY: -30,");
-  L.push("  start: {x:"+n3(st.x)+", y:"+n3(st.y)+", z:"+n3(st.z)+"},");
-  L.push("  spawns: [ {x:"+n3(st.x)+",y:"+n3(st.y)+",z:"+n3(st.z)+"} ],");
-  L.push("  pads: [ {x:"+n3(st.x)+", y:"+n3(st.y)+", z:"+n3(st.z)+"} ]");
+  L.push("  start: "+pt(st)+",");
+  L.push("  spawns: [ "+(sp.length?sp:[st]).map(pt).join(', ')+" ],");
+  L.push("  pads: [ "+(pd.length?pd.map(pt).join(', '):'')+" ]");
   L.push("});");
   return L.join('\n')+'\n';
 }
@@ -961,6 +1065,10 @@ document.getElementById('btnLoad').onclick=function(){
           sx:(p.sx!=null?p.sx:(p.s||1)), sy:(p.sy!=null?p.sy:(p.s||1)), sz:(p.sz!=null?p.sz:(p.s||1)),
           deco:!!p.deco };
       }).filter(function(o){ return PARTS[o.t]; });
+      function addMark(t,a){ (a||[]).forEach(function(q){
+        OBJ.push({ t:t, x:q.x, y:q.y, z:q.z, rx:0,ry:0,rz:0, sx:1,sy:1,sz:1, deco:false, mark:true }); }); }
+      addMark('@spawn', got.spawns); addMark('@pad', got.pads);
+      setArena(!!got.arena);
       if(got.name) document.getElementById('mapName').value=got.name;
       if(got.start){ DUMMY.x=got.start.x; DUMMY.y=got.start.y; DUMMY.z=got.start.z; rebuildDummy(); }
       SEL=-1; rebuild(); syncPanel(); toast(OBJ.length+'개 불러옴');
@@ -971,7 +1079,9 @@ document.getElementById('btnLoad').onclick=function(){
 /* ---------- HUD / 토스트 ---------- */
 function hud(){
   document.getElementById('hud').textContent=
-    '조각 '+OBJ.length+'개 · 정점 '+BUF.meshN+'\n'+
+    '조각 '+OBJ.filter(function(o){return !isMark(o);}).length+
+      '개 · 리스폰 '+OBJ.filter(function(o){return o.t==='@spawn';}).length+
+      ' · 패드 '+OBJ.filter(function(o){return o.t==='@pad';}).length+'\n'+
     '기즈모 '+(MODE==='T'?'이동 Q':MODE==='R'?'회전 R':'크기 E')+'  (막대=축 · 네모=면 · 큐브=전체)\n'+
     '더미 '+(DUMMY.on?('켬 · 서 있는 높이 '+r2(DUMMY.y)+'m'):'끔')+' (사람 키 1.8m)\n'+
     'WASD 이동 · Space 위 · Ctrl 아래 · Shift 가속\n'+
@@ -995,7 +1105,7 @@ function loop(now){
   draw();
   requestAnimationFrame(loop);
 }
-rebuild(); rebuildDummy(); syncPanel(); hud();
+setArena(false); rebuild(); rebuildDummy(); syncPanel(); hud();
 requestAnimationFrame(loop);
 </script>
 </body></html>
