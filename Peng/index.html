@@ -44,7 +44,8 @@
     padding:6px 11px;display:flex;align-items:center;gap:8px;min-width:176px;
     font-size:12.5px;font-weight:800;letter-spacing:.4px;color:#fff}
   #items .it.use{border-style:dashed}
-  #items .it .ic{font-size:14px;line-height:1}
+  #items .it .ic{flex:none;width:22px;height:22px;font-size:16px;line-height:22px;text-align:center}
+  #items .it img.ic{display:block;object-fit:contain}
   #items .it .nm{flex:1;color:var(--c)}
   #items .it b{font-family:var(--mono);font-weight:700}
   #items .it kbd{font-family:var(--mono);font-size:10.5px;font-weight:700;
@@ -312,6 +313,13 @@
 <script src="bulletbaked.js"></script>
 <script src="stationbaked.js"></script>
 <script src="playerbaked.js"></script>
+<!-- 아이템 6종의 표식 메시와 HUD 아이콘(Kenney Food Kit, CC0).
+     itembaked.js/itemicons.js 는 tools/bakefood.js 가 미리 구워둔 데이터다 —
+     둘 중 뭐가 빠져도 그것만 예전 모습(큐브 표식·이모지)으로 떨어진다. -->
+<script src="meshlib.js"></script>
+<script src="itemmesh.js"></script>
+<script src="itembaked.js"></script>
+<script src="itemicons.js"></script>
 
 <script>
 "use strict";
@@ -1002,6 +1010,15 @@ function grantItem(who, padI, item){
    · 보유 중  : 내가 눌러야 나가는 것(펄스 F, 글라이딩 Space). 어떤 키인지 같이 띄운다.
    매 프레임 innerHTML 을 다시 쓰면 레이아웃이 계속 다시 계산된다 → 줄 구성이 바뀔 때만
    다시 만들고, 평소엔 숫자와 바 길이만 갱신한다. */
+/* HUD 아이콘 한 칸. 구운 그림이 있으면 그걸 쓰고, 없으면 이모지로 떨어진다 —
+   itemicons.js 를 못 불러와도(굽기 전이거나 파일이 빠졌거나) HUD 는 그대로 돌아간다.
+   활공처럼 패드에 없는 가짜 항목은 애초에 그림이 없어서 자연히 이모지가 된다.
+   채팅 줄(pushChat)은 텍스트 흐름이라 이모지 그대로 둔다 — 그림을 끼우면 줄 높이가 흔들린다. */
+function iconHTML(key, def){
+  var src=window.ITEM_ICONS && window.ITEM_ICONS[key];
+  return src ? '<img class="ic" src="'+src+'" alt="">'
+             : '<span class="ic">'+def.icon+'</span>';
+}
 var itemsSig='';
 function renderItems(s){
   var host=document.getElementById('items'); if(!host) return;
@@ -1022,12 +1039,12 @@ function renderItems(s){
     var html='';
     live.forEach(function(r){
       html+='<div class="it on" style="--c:'+r.def.col+'" data-k="'+r.k+'">'
-        +'<span class="ic">'+r.def.icon+'</span><span class="nm">'+r.def.name+'</span>'
+        +iconHTML(r.k, r.def)+'<span class="nm">'+r.def.name+'</span>'
         +'<b>0</b><i></i></div>';
     });
     hold.forEach(function(r){
       html+='<div class="it use" style="--c:'+r.def.col+'">'
-        +'<span class="ic">'+r.def.icon+'</span><span class="nm">'+r.def.name+'</span>'
+        +iconHTML(r.k, r.def)+'<span class="nm">'+r.def.name+'</span>'
         +'<kbd>'+r.key+'</kbd><b>×'+r.n+'</b></div>';
     });
     host.innerHTML=html;
@@ -2064,9 +2081,15 @@ function ringGL(cx,cy,cz,r0,r1,frac,col,bright){
             [cx+ch*r1,cy,cz-sh*r1],[cx+ch*r0,cy,cz-sh*r0]], c, false);
   }
 }
-/* 패드 위에 떠 있는 아이템 표식 — 작은 큐브 몇 개를 Y축으로 돌린다.
-   회전 메시가 없어 큐브 자체는 축 정렬이지만, 작아서 궤도만 보인다. */
-function drawGlyph(def, x, y, z, ang, bright){
+/* 패드 위에 떠 있는 아이템 표식.
+   구운 메시(itembaked.js)가 있으면 그걸 쓰고, 없으면 원래의 큐브 조합으로 떨어진다
+   — 작은 큐브 몇 개를 Y축으로 돌린 것으로, 회전 메시가 없어 큐브 자체는 축 정렬이지만
+   작아서 궤도만 보인다. 메시는 정적 VBO 라 매 프레임 CPU 로 옮기지 않고 '어디에' 만
+   모아뒀다가 불투명 패스에서 모델행렬만 바꿔 그린다(총과 같은 방식). */
+var ITEMQ=[];
+function itemMeshOK(key){ return ITEMMESH_ON && window.ItemMesh && ItemMesh.has(key); }
+function drawGlyph(def, key, x, y, z, ang, bright){
+  if(itemMeshOK(key)){ ITEMQ.push({k:key, x:x, y:y, z:z, a:ang}); return; }
   var g=def.glyph; if(!g) return;
   var col=hexRGB(def.col), lit='#'+[0,1,2].map(function(i){
     return ('0'+Math.round(Math.min(255,col[i]*255*bright)).toString(16)).slice(-2); }).join('');
@@ -2109,7 +2132,7 @@ function render(dt){
   gl.depthMask(true); gl.enable(gl.DEPTH_TEST);
   if(!sim){ if(usePost) drawPost(); return; }
 
-  TRI.length=0; LINE.length=0; BB.length=0; OUTL.length=0; GUNQ.length=0; CHARQ.length=0;
+  TRI.length=0; LINE.length=0; BB.length=0; OUTL.length=0; GUNQ.length=0; CHARQ.length=0; ITEMQ.length=0;
   /* 레벨 — 꺼진 연동 발판은 지우지 말고 어둡게 남긴다. "여기에 다리가 생길 수 있다"가
      보여야 퍼즐이 성립한다(안 보이면 그냥 못 넘는 협곡으로 읽힌다). */
   for(var i=0;i<LEVEL.boxes.length;i++){ var bx=LEVEL.boxes[i], bcol=bx.col;
@@ -2149,7 +2172,7 @@ function render(dt){
       if(def){
         var bob=0.62+Math.sin(padT*2.2+pdi)*0.07;
         var ang=(def.spin===false)?0:padT*1.4+pdi;
-        drawGlyph(def, pd.x, pd.y+bob, pd.z, ang, 1);
+        drawGlyph(def, pd.item, pd.x, pd.y+bob, pd.z, ang, 1);
       }
     }
   }
@@ -2214,16 +2237,20 @@ function render(dt){
     gl.drawArrays(gl.TRIANGLES,0,STATION.count);
   }
   gl.disable(gl.POLYGON_OFFSET_FILL);
-  // 총 메시 — 정적 VBO 라 매 프레임 옮기지 않고 모델행렬만 바꿔 그린다
+  // 총·아이템 메시 — 정적 VBO 라 매 프레임 옮기지 않고 모델행렬만 바꿔 그린다
   for(var qi=0;qi<GUNQ.length;qi++){ var Q=GUNQ[qi];
     GunMesh.drawBody(gl, PROG.main, VP, Q.O,Q.R,Q.U,Q.F, Q.k, Q.e); }
+  for(var ii=0;ii<ITEMQ.length;ii++){ var IT=ITEMQ[ii];
+    ItemMesh.draw(gl, PROG.main, VP, IT.k, IT.x, IT.y, IT.z, IT.a); }
   // 윤곽선 껍질 — 카메라를 등진 면만 남겨야 실루엣 테두리가 된다.
   // 이 메시들은 바깥면이 CW(=GL 기준 뒷면)라 BACK 을 컬링해야 바깥이 지워진다.
-  if(OUTL.length || GUNQ.length || CHARQ.length){
+  if(OUTL.length || GUNQ.length || CHARQ.length || ITEMQ.length){
     gl.enable(gl.CULL_FACE); gl.cullFace(gl.BACK);
     if(OUTL.length) drawArr(BUF.outl, OUTL, PROG.main, gl.TRIANGLES);
     for(var qo=0;qo<GUNQ.length;qo++){ var QO=GUNQ[qo];
       GunMesh.drawOutline(gl, PROG.main, VP, QO.O,QO.R,QO.U,QO.F, QO.k, QO.e); }
+    for(var io=0;io<ITEMQ.length;io++){ var ITO=ITEMQ[io];
+      ItemMesh.drawOutline(gl, PROG.main, VP, ITO.k, ITO.x, ITO.y, ITO.z, ITO.a); }
     flushCharOutlines(VP);                      // 캐릭터 실루엣
     gl.disable(gl.CULL_FACE);
   }
@@ -2465,9 +2492,14 @@ var GUN_TP=[0.15,0,-0.05]; // 3인칭: 오른쪽 가슴 쪽으로 살짝만(몸�
    (gunmesh.js). 못 읽으면(file:// 직접 열기 등) 박스가 그대로 나온다. */
 var GUNMESH_ON=1;
 function gunMeshOK(){ return GUNMESH_ON && window.GunMesh && GunMesh.ready; }
+/* 아이템 표식도 같은 스위치를 둔다 — 끄면 ITEMS 의 glyph(큐브)로 돌아간다.
+   itemMeshOK() 는 위(drawGlyph 옆)에 있고 이 값을 본다. */
+var ITEMMESH_ON=1;
 // 디버그 패널용 — gunmesh.js 가 없어도 슬라이더가 터지지 않게 빈 객체를 준다
 var GM_NULL={scale:0,ox:0,oy:0,oz:0,outlineW:0};
 function GM(){ return window.GunMesh || GM_NULL; }
+var IM_NULL={SIZE:0,outlineW:0};
+function IM(){ return window.ItemMesh || IM_NULL; }
 /* 총 하나를 그릴 자리를 등록한다. (O,R,U,F)=붙일 기저, extra=3인칭 추가 오프셋.
    메시는 정적 VBO + 모델행렬로 따로 그려야 해서(1만 삼각형을 매 프레임 CPU 로 옮길 수는 없다)
    여기서는 '어디에' 만 모아두고, 실제 draw 는 아래 불투명 패스에서 한다. */
@@ -2876,6 +2908,10 @@ var DBG_SPEC=[
   ['화면 반경 상한',0.05,1.5, 0.05, function(){return LENS_MAXSCR;},   function(v){LENS_MAXSCR=v;}],
   ['변위 상한',     0,   0.6, 0.01, function(){return LENS_KMAX;},     function(v){LENS_KMAX=v;}],
   ['탄환 크기',     0.5, 12,  0.1,  function(){return BULLET_SCALE;}, function(v){BULLET_SCALE=v;}],
+  ['sec','아이템 표식 메시(.glb)'],
+  ['메시 쓰기(0/1)', 0,   1,   1,    function(){return ITEMMESH_ON;},function(v){ITEMMESH_ON=v?1:0;}],
+  ['표식 크기(m)',   0.1, 1.2, 0.01, function(){return IM().SIZE;},  function(v){IM().SIZE=v;}],
+  ['윤곽선 두께',    0,   0.03,0.001,function(){return IM().outlineW;},function(v){IM().outlineW=v;}],
   ['sec','아이템'],
   ['패드 판정 반경',  0.2, 3,   0.05, function(){return PAD_R;},      function(v){PAD_R=v;}],
   ['패드 원판 반경',  0.1, 2,   0.05, function(){return PAD_VIS_R;},  function(v){PAD_VIS_R=v;}],
@@ -3221,6 +3257,8 @@ try{
 // 총 3D 메시 — gunbaked.js 가 있으면 즉시, 없으면 원본 .glb 를 받아 그 자리에서 굽는다.
 // 둘 다 안 되면(예: file:// 로 열었고 구운 파일도 없을 때) 박스 총이 그려진다.
 if(window.GunMesh) GunMesh.init('Mesh/ShockWave_Gun.glb');
+// 아이템 표식 — 구운 데이터(itembaked.js)만 쓴다. 없으면 큐브 표식으로 남는다.
+if(window.ItemMesh) ItemMesh.init();
 layout(); requestAnimationFrame(loop);
 
 /* ---------- 검증 노출 ---------- */
