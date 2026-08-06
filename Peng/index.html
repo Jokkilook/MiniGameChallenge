@@ -390,6 +390,60 @@ var MARKS=[];
 /* 아이템 패드 — setLevel 이 로드 시점에 buildPads() 를 부르므로 선언이 여기 있어야 한다.
    아래 아이템 구역에 두면 그 시점엔 아직 undefined 라 터진다(var 는 선언만 끌어올려진다). */
 var PADS=[];
+/* 킷 조각 설정 — 이것도 선언이 여기 있어야 한다. setLevel 은 로드 시점에 불리고,
+   그 안의 buildStaticPieces()/buildCollapseFloor() 가 STATION 과 PIECE_* 를 읽는다.
+   아래 렌더 구역에 두면 그 시점엔 아직 undefined 라 터지고(var 는 선언만 끌어올려진다),
+   스크립트가 통째로 멈춰 메인 메뉴의 맵 목록까지 안 채워진다.
+   실제로 에디터로 만든 조각 맵이 알파벳순 첫 번째가 되어 기본 맵으로 잡히자 그렇게 됐다. */
+/* 1킷유닛 = 몇 미터인가. 레벨의 collapse.size 가 진짜 출처이고 여기는 폴백이다.
+   2.95 인 이유: 킷의 문 구멍이 0.65유닛인데 플레이어가 1.8m 라, 2.6 으로 두면
+   구멍이 1.69m 라서 문을 못 지나간다(Kenney 는 더 작은 캐릭터 기준으로 만들었다).
+   2.95 면 구멍이 1.92m 가 되어 머리 위로 여유가 생긴다. */
+var STATION={ buf:null, count:0, parts:null, unit:2.95 };
+var STATION_LIGHT=[0.42,0.80,0.43];        // 간이 방향광 — 킷 색만 쓰면 전부 납작해 보인다
+/* 조각 모양에서 충돌 박스를 뽑는다.
+   손으로 "벽=1x1x0.3" 식으로 적으면 문이 뚫린 벽도 통짜가 되고 탁자 밑도 막힌다.
+   대신 XZ 를 격자로 나눠 기둥마다 '지오메트리가 있는 y 구간'을 재고, 같은 구간을 가진
+   기둥을 직사각형으로 합친다. 킷 조각은 대부분 상자를 이어 붙인 형태라 이 방법이
+   모양을 거의 그대로 잡는다 — 문 구멍·탁자 밑·난간 사이가 자동으로 비워진다.
+   기둥 안에 지오메트리가 있는지는 '기둥 중심이 삼각형의 XZ 투영 안에 있는가'로 본다.
+   삼각형의 XZ 바운딩박스를 쓰면 넉넉하게 잡혀서 문 구멍이 도로 막힌다. */
+var PIECE_RES=8;                       // 1칸을 몇 등분해 훑을지
+/* 바닥 조각은 표면 장식을 무시하고 '평평한 한 장'으로 친다.
+   요철까지 판정에 넣으면 데크에 15~30cm 턱이 흩어져 달리다 걸린다 —
+   빠르게 밀고 밀리는 경기에서 그건 그냥 사고다.
+   값은 두께(킷유닛), 또는 [두께, 안쪽으로 줄일 비율].
+   피크의 바위 슬래브는 원반 가장자리가 베벨이라 통째로 잡으면 그만큼 발이 뜬다.
+   실측(체비셰프 반경별 최고점): 반경 0.9 까지는 윗면이 거의 그대로고(낙차 rock-flat
+   0.03 · rock-flat-grass 0.06 유닛) 마지막 10% 에서만 확 떨어진다 — 0.90 으로 자른다. */
+var PIECE_FLAT={ 'floor':0.3, 'floor-detail':0.3, 'floor-panel':0.3,
+  'rock-flat':[0.195,0.90], 'rock-flat-grass':[0.226,0.90] };
+/* 난간은 기둥과 가로대뿐이라 기둥 방식으로 뽑으면 사이가 숭숭 빈다.
+   막을 거면 통짜 한 장이어야 몸이 새지 않는다(높이는 원본 그대로 0.4유닛). */
+/* 울타리·간판은 기둥과 얇은 판뿐이라 기둥 방식으로 뽑으면 사이가 숭숭 빈다.
+   막을 거면 통짜여야 몸이 안 샌다. 다행히 킷 울타리는 1.56m 라 점프로 넘어갈 수 있다. */
+var PIECE_SOLID={ 'rail':1, 'fence':1, 'fence-fortified':1, 'fence-doorway':1,
+  'signpost':1, 'structure-metal-wall':1 };
+/* 나무는 수관(잎덩어리)까지 충돌로 잡으면 허공에 올라설 수 있는 발판이 생긴다.
+   줄기만 기둥으로 막는다 — 값은 줄기 반폭(킷유닛). 시야는 잎이 가리고 몸은 통과한다. */
+var PIECE_TRUNK={ 'tree':0.075, 'tree-tall':0.075, 'tree-autumn':0.075 };
+/* 조각 자체의 원점이 어긋난 것들을 로컬에서 보정한다(회전 전에 더한다).
+   wall 의 슬래브는 칸 중심선(z=0)에 있는데 wall-corner 의 두 팔은 ±0.25 에 있어서
+   그냥 놓으면 벽과 0.25 만큼 어긋나 틈이 벌어진다. 두께는 둘 다 0.3 으로 같으므로
+   (-0.25,-0.25) 옮기면 팔이 이웃 벽의 슬래브와 정확히 한 줄이 된다. */
+var PIECE_OFF={ 'wall-corner':[-0.25,-0.25] };
+/* 코너는 팔이 0.8 인데 필요한 길이는 0.65 라, 정렬하면 이웃 벽과 0.15(=0.44m) 겹친다.
+   길이를 줄이면 반대로 틈이 벌어지므로 겹침은 그대로 두되, 조각을 3% 줄여
+   옆면이 벽면보다 안쪽(4.5mm)에 오게 한다 — 같은 평면이 사라져 깜박임이 없어지고,
+   겹침이 남아 있어 틈도 안 생긴다. */
+var PIECE_SCALE={ 'wall-corner':0.97 };
+var RAIL_SOLID=1;                      // 0 이면 난간을 장식으로(통과) 되돌린다
+/* 킷 목록도 여기 있어야 한다 — 로드 시점 setLevel 이 stationParts() 를 부르는데,
+   이게 아래에 있으면 그때 undefined 라 조각 사전이 통째로 비고, 그 빈 사전이
+   캐시돼 그 뒤로 모든 맵이 조각 없이 뜬다. */
+var KIT_ORDER=[['station','STATION_BAKED'],['survival','SURVIVAL_BAKED'],
+               ['factory','FACTORY_BAKED'],['forest','FOREST_BAKED'],['proto','PROTO_BAKED']];
+function baseName(t){ var i=t.lastIndexOf('/'); return i<0?t:t.slice(i+1); }
 /* 절차적 아레나 시드. MATCH_SEED 는 방장이 굴려 start 에 실어 보내고(전원이 같은 지형을
    봐야 한다), FLOOR_SEED 는 거기에 라운드 번호를 섞은 값이라 라운드마다 판이 바뀐다.
    선언이 여기 있어야 한다 — setLevel 이 로드 시점에 buildCollapseFloor 를 부른다. */
@@ -435,6 +489,9 @@ function setLevel(id){
   if(!d){ id=PENG.defaultLevel(); d=PENG.getLevel(id); }   // 모르는 맵이면 기본 맵으로
   if(!d) return false;
   LEVEL=cloneLevel(d); CURLEVEL=id;
+  /* 킷 조각 VBO 를 비우고 시작한다. 안 그러면 조각 맵에서 박스 코스로 넘어갈 때
+     지난 맵의 조각이 그대로 남아 허공에 떠 있는다(그리기는 STATION.count 만 본다). */
+  STATION.count=0; STATION.pending=null;
   buildCollapseFloor();                                    // 아레나 바닥은 여기서 깔린다
   buildStaticPieces();                                     // 에디터로 놓은 조각
   buildPads();                                             // 아이템 패드 위치
@@ -613,7 +670,19 @@ try{
     if(_pt){ var _d=JSON.parse(_pt); _d.name='시험 플레이: '+(_d.name||''); PENG.defineLevel('__playtest', _d); }
   }
 }catch(e){}
-setLevel(PENG.getLevel('__playtest') ? '__playtest' : PENG.defaultLevel());
+/* 로드 시점의 기본 맵. 여기서 터지면 아래 초기화가 통째로 멈춰 메인 메뉴의 맵
+   목록까지 사라진다 — 실제로 에디터로 만든 맵이 알파벳순 첫 번째가 되어 기본 맵으로
+   잡히면서 그렇게 됐다. 어떤 맵이 들어와도 메뉴는 떠야 하므로 감싸 둔다. */
+(function(){
+  var want = PENG.getLevel('__playtest') ? '__playtest' : PENG.defaultLevel();
+  try{ setLevel(want); }
+  catch(e){
+    if(console&&console.warn) console.warn('[peng] 기본 맵 "'+want+'" 을 못 열었습니다', e);
+    var alt=['canyon','arena','spire'];
+    for(var i=0;i<alt.length;i++){ if(!PENG.getLevel(alt[i])) continue;
+      try{ setLevel(alt[i]); break; }catch(e2){} }
+  }
+})();
 // 혼자 플레이 맵은 따로 기억한다(지난번에 고른 게 남아 있으면 그대로)
 SOLO_LEVEL=CURLEVEL;
 try{ var _sm=localStorage.getItem('peng.solomap'); if(_sm && PENG.getLevel(_sm)) SOLO_LEVEL=_sm; }catch(e){}
@@ -1015,12 +1084,20 @@ var PAD_VIS_R=PH_HX, PAD_R=PH_HX*2, PAD_CD=20;
 /* 패드 3색 — 기본 바탕 / 빈 링 트랙 / 차오른 링. 바탕과 트랙이 확실히 달라야
    "링이 어디까지 찼는지"가 보인다(같은 색이면 빈 구간이 바탕에 묻힌다). */
 var PAD_COL_BASE='#16222f', PAD_COL_TRACK='#44607d', PAD_COL_FILL='#3fe0b4';
-function randItem(){ return ITEM_IDS[Math.floor(Math.random()*ITEM_IDS.length)]; }
+/* ITEM_IDS 는 아래 아이템 구역에서 만들어진다. setLevel 이 로드 시점에 buildPads 를
+   부르므로, 패드가 있는 맵이 기본 맵이면 그때는 아직 undefined 다 — 그래서 비어 있으면
+   조용히 빈 패드로 둔다(padTick 이 첫 프레임에 채운다). 예전엔 여기서 터지면서
+   스크립트가 통째로 멈춰 메인 메뉴의 맵 목록까지 사라졌다. */
+function randItem(){
+  var L=(typeof ITEM_IDS!=='undefined') ? ITEM_IDS : null;
+  return (L && L.length) ? L[Math.floor(Math.random()*L.length)] : null;
+}
 function buildPads(){
   PADS.length=0;
   var L=LEVEL&&LEVEL.pads; if(!L) return;
   // 일단 로컬로 채워 둔다. 멀티면 서버가 padset 으로 덮어써서 전원이 같은 걸 본다.
   for(var i=0;i<L.length;i++) PADS.push({x:L[i].x, y:L[i].y, z:L[i].z, cd:0, item:randItem()});
+  PADS_NEEDITEM = PADS.some(function(p){ return !p.item; });
 }
 /* 패드를 밟았다. 멀티에서는 서버가 중재한다 — 둘이 동시에 밟으면 먼저 도착한
    쪽만 받는다. 클라가 아이템을 제안하고 서버는 '누가 먼저인가'만 판정한다
@@ -1098,7 +1175,11 @@ function renderItems(s){
     rows[i].querySelector('i').style.width=(Math.max(0,Math.min(1,r.t/r.max))*100).toFixed(1)+'%';
   }
 }
+var PADS_NEEDITEM=false;
 function padTick(dt){
+  // 로드 시점에 아이템 표가 아직 없어 비워 둔 패드를 여기서 채운다
+  if(PADS_NEEDITEM){ PADS_NEEDITEM=false;
+    for(var q=0;q<PADS.length;q++) if(!PADS[q].item) PADS[q].item=randItem(); }
   if(!PADS.length || !sim || sim.practice || mode!=='play') return;
   for(var i=0;i<PADS.length;i++){ var p=PADS[i];
     if(p.cd>0){ p.cd-=dt; continue; }
@@ -1680,49 +1761,6 @@ function quadGL(v,c,outline){
    조각이 100~300개라 매 프레임 CPU 로 옮기면 낭비다. 분리될 때 말고는 안 움직이므로
    판을 만들 때 한 번만 정점을 굽고 정적 VBO 로 올린다 — 그린 뒤엔 드로우콜 하나다.
    조각이 떨어져 나가면 그때만 다시 만든다(경기당 서너 번). */
-/* 1킷유닛 = 몇 미터인가. 레벨의 collapse.size 가 진짜 출처이고 여기는 폴백이다.
-   2.95 인 이유: 킷의 문 구멍이 0.65유닛인데 플레이어가 1.8m 라, 2.6 으로 두면
-   구멍이 1.69m 라서 문을 못 지나간다(Kenney 는 더 작은 캐릭터 기준으로 만들었다).
-   2.95 면 구멍이 1.92m 가 되어 머리 위로 여유가 생긴다. */
-var STATION={ buf:null, count:0, parts:null, unit:2.95 };
-var STATION_LIGHT=[0.42,0.80,0.43];        // 간이 방향광 — 킷 색만 쓰면 전부 납작해 보인다
-/* 조각 모양에서 충돌 박스를 뽑는다.
-   손으로 "벽=1x1x0.3" 식으로 적으면 문이 뚫린 벽도 통짜가 되고 탁자 밑도 막힌다.
-   대신 XZ 를 격자로 나눠 기둥마다 '지오메트리가 있는 y 구간'을 재고, 같은 구간을 가진
-   기둥을 직사각형으로 합친다. 킷 조각은 대부분 상자를 이어 붙인 형태라 이 방법이
-   모양을 거의 그대로 잡는다 — 문 구멍·탁자 밑·난간 사이가 자동으로 비워진다.
-   기둥 안에 지오메트리가 있는지는 '기둥 중심이 삼각형의 XZ 투영 안에 있는가'로 본다.
-   삼각형의 XZ 바운딩박스를 쓰면 넉넉하게 잡혀서 문 구멍이 도로 막힌다. */
-var PIECE_RES=8;                       // 1칸을 몇 등분해 훑을지
-/* 바닥 조각은 표면 장식을 무시하고 '평평한 한 장'으로 친다.
-   요철까지 판정에 넣으면 데크에 15~30cm 턱이 흩어져 달리다 걸린다 —
-   빠르게 밀고 밀리는 경기에서 그건 그냥 사고다.
-   값은 두께(킷유닛), 또는 [두께, 안쪽으로 줄일 비율].
-   피크의 바위 슬래브는 원반 가장자리가 베벨이라 통째로 잡으면 그만큼 발이 뜬다.
-   실측(체비셰프 반경별 최고점): 반경 0.9 까지는 윗면이 거의 그대로고(낙차 rock-flat
-   0.03 · rock-flat-grass 0.06 유닛) 마지막 10% 에서만 확 떨어진다 — 0.90 으로 자른다. */
-var PIECE_FLAT={ 'floor':0.3, 'floor-detail':0.3, 'floor-panel':0.3,
-  'rock-flat':[0.195,0.90], 'rock-flat-grass':[0.226,0.90] };
-/* 난간은 기둥과 가로대뿐이라 기둥 방식으로 뽑으면 사이가 숭숭 빈다.
-   막을 거면 통짜 한 장이어야 몸이 새지 않는다(높이는 원본 그대로 0.4유닛). */
-/* 울타리·간판은 기둥과 얇은 판뿐이라 기둥 방식으로 뽑으면 사이가 숭숭 빈다.
-   막을 거면 통짜여야 몸이 안 샌다. 다행히 킷 울타리는 1.56m 라 점프로 넘어갈 수 있다. */
-var PIECE_SOLID={ 'rail':1, 'fence':1, 'fence-fortified':1, 'fence-doorway':1,
-  'signpost':1, 'structure-metal-wall':1 };
-/* 나무는 수관(잎덩어리)까지 충돌로 잡으면 허공에 올라설 수 있는 발판이 생긴다.
-   줄기만 기둥으로 막는다 — 값은 줄기 반폭(킷유닛). 시야는 잎이 가리고 몸은 통과한다. */
-var PIECE_TRUNK={ 'tree':0.075, 'tree-tall':0.075, 'tree-autumn':0.075 };
-/* 조각 자체의 원점이 어긋난 것들을 로컬에서 보정한다(회전 전에 더한다).
-   wall 의 슬래브는 칸 중심선(z=0)에 있는데 wall-corner 의 두 팔은 ±0.25 에 있어서
-   그냥 놓으면 벽과 0.25 만큼 어긋나 틈이 벌어진다. 두께는 둘 다 0.3 으로 같으므로
-   (-0.25,-0.25) 옮기면 팔이 이웃 벽의 슬래브와 정확히 한 줄이 된다. */
-var PIECE_OFF={ 'wall-corner':[-0.25,-0.25] };
-/* 코너는 팔이 0.8 인데 필요한 길이는 0.65 라, 정렬하면 이웃 벽과 0.15(=0.44m) 겹친다.
-   길이를 줄이면 반대로 틈이 벌어지므로 겹침은 그대로 두되, 조각을 3% 줄여
-   옆면이 벽면보다 안쪽(4.5mm)에 오게 한다 — 같은 평면이 사라져 깜박임이 없어지고,
-   겹침이 남아 있어 틈도 안 생긴다. */
-var PIECE_SCALE={ 'wall-corner':0.97 };
-var RAIL_SOLID=1;                      // 0 이면 난간을 장식으로(통과) 되돌린다
 function pieceBoxes(m, name){
   if(m._boxes) return m._boxes;
   name=name?baseName(name):name;      // PIECE_* 표는 킷 접두사 없는 이름으로 적혀 있다
@@ -1800,9 +1838,6 @@ function pieceBoxes(m, name){
    겹치는 이름이 나온다. 그래서 'kit/name' 으로 넣고, 짧은 이름은 아직 안 쓰인
    경우에만 같이 등록한다 — 예전 레벨과 생성기가 'floor'·'rock-flat' 처럼 짧게
    쓰고 있어서(정거장·서바이벌을 먼저 넣으므로 그쪽으로 붙는다). */
-var KIT_ORDER=[['station','STATION_BAKED'],['survival','SURVIVAL_BAKED'],
-               ['factory','FACTORY_BAKED'],['forest','FOREST_BAKED'],['proto','PROTO_BAKED']];
-function baseName(t){ var i=t.lastIndexOf('/'); return i<0?t:t.slice(i+1); }
 function stationParts(){
   if(STATION.parts) return STATION.parts;
   var out={};
@@ -1817,8 +1852,9 @@ function stationParts(){
       });
     }
   }catch(e){ out={}; }
-  STATION.parts=out;
-  return STATION.parts;
+  // 비어 있으면 캐시하지 않는다 — 한 번 삐끗했다고 그 뒤로 영영 조각 없는 맵이 되면 안 된다
+  if(Object.keys(out).length) STATION.parts=out;
+  return out;
 }
 /* 조각 하나의 3x3 변환(배율 → 회전)을 만든다. 그리기와 충돌이 같은 식을 써야
    보이는 것과 부딪히는 것이 어긋나지 않는다.
