@@ -667,166 +667,169 @@ PENG.genArenaOnce = function(C, seed){
  *   위성(가장 바깥) → 포드 → 복도(바깥→안) → 코어(안 떨어짐).
  */
 /* ---------- 피크 — 절벽 위의 평지 (Kenney Survival Kit) ----------
-   정거장(genStation)이 '칸을 조립하는' 방식이었다면 여기는 반대다. 서바이벌 킷의
-   조각은 격자에 맞물리는 건축 부품이 아니라 바위·나무·천막 같은 소품이라, 격자에
-   억지로 끼우면 전부 어긋난다. 그래서 지형(고원)을 먼저 깎고 그 위에 소품을 놓는다.
+   판을 통째로 킷 조각으로만 만든다. 색칠한 박스 지면도, 박스로 쌓은 절벽도 없다.
 
-   배율: 1킷유닛 = 3m(레벨의 collapse.size). 실측 bbox 기준으로 이 배율이라야
-     나무 4.2~5.1m · 큰 바위 2.5m 폭 · 울타리 1.56m · 천막 1.7m 로 제 크기가 되고,
-     특히 울타리가 점프 정점(v0^2/2g = 8.6^2/44 = 1.68m)보다 낮아 "뛰어넘을 수 있는
-     엄폐물"이 된다. 6m로 잡으면 전부 두 배가 되어 울타리가 넘을 수 없는 벽이 된다.
+   왜 큰 바위 '한 장'이 아니라 모자이크인가 —
+     킷의 rock-flat / rock-flat-grass 는 평평한 판이 아니라 가운데가 볼록한 접시다
+     (실측: 윗면이 평평한 구간이 반폭의 71%까지고, 나머지는 가장자리로 흘러내린다).
+     하나를 아레나 크기로 키우면 그 흘러내림도 같이 커져서, 판판한 콜리전을 씌우면
+     가장자리에서 발이 몇 미터씩 뜬다. 그래서 지름 9~13m 짜리를 35% 겹쳐 깐다 —
+     서로의 흘러내리는 테두리를 이웃이 덮어 주고, 바깥 테두리만 자연스러운 바위 입술로
+     남는다. 콜리전은 조각마다 '제 윗면 높이의 평평한 한 장'(PIECE_FLAT)이라 데크 전체가
+     정확히 한 평면이다.
 
-   공정성: 윤곽 반지름을 cos(4θ)·cos(8θ) 로만 흔든다 — 주기가 90도라 위상에 상관없이
-     윤곽 자체가 4겹 대칭이다. 소품은 한 사분면에 놓고 (i,j)->(j,-i) 로 네 번 찍는다.
-     네 진영이 완전히 같은 지형을 받는다.
+   층 구성(첨부 스케치대로) — 정상 소대지(+1.35m) · 본 데크(0) · 네 귀퉁이 아래 선반
+     (-2.55m, 밀려나도 한 번은 살아남는 자리) · 그 아래는 킬존.
+   산체(butte)는 큰 바위를 고리로 쌓아 만들고 전부 deco 다. 실체로 두면 떨어진 사람이
+   산 중턱에 올라서서 안 죽는다.
 
-   붕괴: 고리 = 중심에서의 칸 거리. 바깥 절벽부터 무너져 들어오고 정상(고리 0~2)은
-     남는다. 절벽면(cliff)은 deco 라 보이기만 하고 통과된다 — 안 그러면 떨어진 사람이
-     절벽 중턱에 올라서서 안 죽는다. */
+   배율: 1킷유닛 = 3m(collapse.size). 나무 4.2~5.1m · 천막 1.7m · 울타리 1.56m 로
+   실측 크기가 맞고, 울타리가 점프 정점(1.68m)보다 낮아 넘어 다닐 수 있는 엄폐물이 된다.
+   공정성: 소품·발판 모두 사분면 하나에 놓고 (i,j)->(j,-i) 로 네 번 찍는다. */
 PENG.genPeak = function(seed){
-  var rnd = PENG.rng32(seed >>> 0);
+  var rnd  = PENG.rng32(seed >>> 0);
   var ri   = function(a,b){ return a + Math.floor(rnd()*(b-a+1)); };
   var pick = function(a){ return a[Math.floor(rnd()*a.length)]; };
 
-  var N = 12;                                   // 격자 반경(칸)
-  var MESA_R = 2;                               // 정상 대지 — 체비셰프 반경(5x5칸 = 15m)
-  var MESA_H = 0.45;                            // 정상 높이(칸) = 1.35m, 점프로 오를 수 있다
-  var CAMP   = 3.7;                             // 진영 캠프 중심(대각선 방향)
+  /* 조각 윗면 높이(킷유닛). 데크를 정확히 한 평면에 맞추려면 조각마다
+     '내 윗면이 얼마나 위인지'를 알고 그만큼 내려 놓아야 한다. */
+  var TOP = { 'rock-flat':0.195, 'rock-flat-grass':0.226,
+    'rock-a':0.390, 'rock-b':0.419, 'rock-c':0.510,
+    'rock-sand-a':0.390, 'rock-sand-b':0.450, 'rock-sand-c':0.510 };
+  var DECK_SLABS = ['rock-flat','rock-flat','rock-flat','rock-flat-grass'];
 
-  /* --- 1) 고원 윤곽 --- */
-  var R0 = 7.6 + rnd()*1.2;
-  var a4 = 0.45 + rnd()*0.65, p4 = rnd()*6.2832;
-  var a8 = 0.22 + rnd()*0.40, p8 = rnd()*6.2832;
-  function radiusAt(th){ return R0 + a4*Math.cos(4*th+p4) + a8*Math.cos(8*th+p8); }
+  var SUMMIT_Y = 0.45;      // 정상 소대지 높이(킷유닛) = 1.35m — 점프로 오를 수 있다
+  var SHELF_Y  = -0.85;     // 아래 선반 = -2.55m
+  var RINGS    = [0, 1.6, 3.1, 4.5, 5.9, 7.2];   // 데크 고리의 반지름(킷유닛)
+  var DECK_R   = RINGS[RINGS.length-1];
 
-  var cell = {}, maxRing = 0;
-  for(var i=-N;i<=N;i++) for(var j=-N;j<=N;j++){
-    var d = Math.hypot(i,j);
-    if(d > radiusAt(Math.atan2(j,i))) continue;
-    var h = (Math.max(Math.abs(i),Math.abs(j)) <= MESA_R) ? MESA_H : 0;
-    var ring = Math.round(d);
-    cell[i+','+j] = { i:i, j:j, h:h, ring:ring };
-    if(ring > maxRing) maxRing = ring;
-  }
-  function at(i,j){ return cell[i+','+j] || null; }
-
-  /* --- 2) 같은 고리·같은 높이의 칸을 직사각형으로 합친다 ---
-     낱개 타일로 깔면 3m 눈금이 그대로 보여 아무리 꾸며도 바둑판으로 읽힌다.
-     합쳐 두면 이음매가 사라지고, 어느 고리가 무너질지는 예고 깜빡임이 알려 준다. */
-  function mergeBy(keyOf){
-    var used = {}, out = [];
-    for(var i=-N;i<=N;i++) for(var j=-N;j<=N;j++){
-      var k0 = keyOf(i,j);
-      if(k0 == null || used[i+','+j]) continue;
-      var w = 1;
-      while(j+w<=N && keyOf(i,j+w)===k0 && !used[i+','+(j+w)]) w++;
-      var h = 1, grow = true;
-      while(grow && i+h<=N){
-        for(var q=0;q<w;q++){ var kk=keyOf(i+h,j+q);
-          if(kk!==k0 || used[(i+h)+','+(j+q)]){ grow=false; break; } }
-        if(grow) h++;
-      }
-      for(var a=0;a<h;a++) for(var b=0;b<w;b++) used[(i+a)+','+(j+b)] = 1;
-      out.push({ ci:i+(h-1)/2, cj:j+(w-1)/2, hi:h/2, hj:w/2, key:k0 });
-    }
-    return out;
-  }
-  var slabs = mergeBy(function(i,j){ var c=at(i,j); return c ? (c.ring+'|'+c.h) : null; })
-    .map(function(s){ var p=s.key.split('|');
-      return { ci:s.ci, cj:s.cj, hi:s.hi, hj:s.hj, ring:+p[0], h:+p[1] }; });
-
-  /* --- 3) 절벽면 --- 윤곽을 아래로 밀어내며 조금씩 넓힌다(뷰트 실루엣).
-     붕괴로 바깥 고리가 사라져도 절벽은 그대로 남는다 — 무너진 건 '위의 땅'이지
-     산이 통째로 사라지는 게 아니다. */
-  /* 첫 단의 윗면을 지면과 같은 높이에 두면 두 면이 겹쳐 고원 전체가 절벽 색으로
-     덮인다(윤곽을 통째로 채우는 덩어리라 가장자리만 나오는 게 아니다).
-     지면 슬랩의 밑면(=collapse.y-hy = -1m = 1/3칸)보다 아래에서 시작한다. */
-  var cliff = [], BANDS = 6, BAND_H = 2.6, TOP_GAP = 1/3;
-  for(var b0=0; b0<BANDS; b0++){
-    var grow = b0*0.32;
-    var rects = mergeBy((function(g){ return function(i,j){
-      return (Math.hypot(i,j) <= radiusAt(Math.atan2(j,i)) + g) ? 'x' : null; }; })(grow));
-    var shade = 1 - b0*0.13;
-    for(var q0=0;q0<rects.length;q0++){ var r0=rects[q0];
-      cliff.push({ ci:r0.ci, cj:r0.cj, hi:r0.hi, hj:r0.hj,
-        y0:-(TOP_GAP+(b0+1)*BAND_H), y1:-(TOP_GAP+b0*BAND_H), shade:shade });
-    }
-  }
-
-  /* --- 4) 소품 --- 한 사분면에 놓고 네 번 돌려 찍는다.
-     회전은 (i,j)->(j,-i) 이고 조각의 rot 도 같이 1 씩 올린다(buildStation 과 같은 규약). */
   var pieces = [];
-  function put(t, i, j, rot, deco){
-    var c = at(Math.round(i), Math.round(j));
-    if(!c) return;                              // 땅 밖으로 삐져나간 소품은 버린다
+  /* 한 조각을 놓고 네 번 돌려 찍는다. rot 도 같이 1씩 올라가야 모양까지 대칭이 된다. */
+  function put4(t, i, j, rot, s, y, order, deco){
     var x=i, z=j, r=(rot||0)&3;
     for(var k=0;k<4;k++){
-      var cc = at(Math.round(x), Math.round(z));
-      if(cc) pieces.push({ t:t, i:x, j:z, y:cc.h, rot:r&3, order:cc.ring, deco:!!deco });
+      pieces.push({ t:t, i:x, j:z, y:y, rot:r&3, s:s, order:order, deco:!!deco });
       var tx=z; z=-x; x=tx; r++;
     }
   }
-
-  // 4-1) 정상으로 오르는 디딤 — 평평한 바위 슬래브(두께 0.23유닛 = 0.69m 턱)
-  put('rock-flat-grass', MESA_R+0.75, 0, 1);
-
-  // 4-2) 진영 캠프 — 천막·모닥불·상자·작업대. 울타리는 바깥쪽(중심 반대편)에만 세워
-  //      등 뒤를 막고 싸움터 쪽으로는 열어 둔다.
-  var CX=CAMP, CZ=CAMP;
-  put('tent',          CX-0.55, CZ+0.25, 2);
-  put('campfire-pit',  CX+0.30, CZ+0.05, 0);
-  put('chest',         CX+0.55, CZ+0.75, 1);
-  put('barrel',        CX-0.85, CZ-0.45, 0);
-  put('box',           CX+0.85, CZ-0.55, 3);
-  put('workbench',     CX-0.15, CZ+0.95, 2);
-  put('signpost',      CX+1.05, CZ+0.25, 1);
-  // 울타리는 폭 0.5유닛이라 0.5 간격으로 놓으면 딱 이어진다
-  for(var f=0; f<5; f++){
-    var jj = CZ-1.0+f*0.5;
-    put(f===2 ? 'fence-doorway' : (f===0?'fence-fortified':'fence'), CX+1.35, jj, 1);
+  // 윗면을 원하는 높이에 맞춰 놓는다(조각 원점은 바닥이라 윗면만큼 내린다)
+  function putDeck(t, i, j, rot, s, deckY, order){
+    put4(t, i, j, rot, s, deckY - TOP[t]*s, order, false);
   }
-  for(var g=0; g<4; g++){
-    var iii = CX-1.0+g*0.5;
-    put(g===3 ? 'fence-fortified' : 'fence', iii, CZ+1.35, 0);
-  }
-  put('structure-metal-wall', CX-1.45, CZ-0.95, 1);   // 주워온 철판 바리케이드
 
-  // 4-3) 벼랑 끝 바위 — 가장자리를 따라 둘러 세운다. 절벽 입술이 보이고 엄폐도 된다.
-  var ROCKS=['rock-a','rock-b','rock-c','rock-sand-a','rock-sand-b'];
-  for(var th=0.06; th<1.5707; th+=0.135){
-    if(rnd() < 0.38) continue;
-    var rr = radiusAt(th) - 0.55 - rnd()*0.35;
-    put(pick(ROCKS), Math.cos(th)*rr, Math.sin(th)*rr, ri(0,3));
+  /* --- 1) 데크 모자이크 --- 고리마다 4의 배수 개를 둘러 깐다(대칭). */
+  var maxRing = 0;
+  for(var g=0; g<RINGS.length; g++){
+    var R = RINGS[g];
+    var s0 = 1.65 + rnd()*0.55;                       // 지름 8.9~11.8m
+    if(R === 0){                                       // 중심 한 장 + 정상 소대지
+      putDeck('rock-flat', 0, 0, 0, s0*1.25, 0, g);
+      continue;
+    }
+    /* 조각 폭의 65% 간격으로 두르면 이웃과 35% 겹친다 — 흘러내리는 테두리가 서로 가려진다.
+       개수는 4의 배수로 올림해야 네 사분면이 똑같아진다. */
+    var n = Math.max(4, Math.round(2*Math.PI*R / (1.79*s0*0.65)));
+    n = Math.ceil(n/4)*4;
+    var quad = n/4, base = rnd()*Math.PI*0.5;
+    for(var q=0; q<quad; q++){
+      var th = base + q*(Math.PI*0.5/quad);
+      var rr = R + (rnd()-0.5)*0.45;                  // 살짝 흔들어 고리 티를 없앤다
+      var sc = s0 * (0.9 + rnd()*0.25);
+      putDeck(pick(DECK_SLABS), Math.cos(th)*rr, Math.sin(th)*rr, ri(0,3), sc, 0, g);
+    }
+    if(g > maxRing) maxRing = g;
   }
-  // 4-4) 나무 — 중간 반경에 흩어 시야를 끊는다. 그루터기·통나무는 낮은 엄폐물.
+  // 정상 소대지 — 고리 0 이라 끝까지 남는다. 마지막 결전이 여기서 난다.
+  putDeck('rock-flat-grass', 0.62, 0.62, 0, 1.5, SUMMIT_Y, 0);
+  putDeck('rock-flat',       0.0,  0.95, 1, 1.3, SUMMIT_Y, 0);
+  // 정상에 오르는 디딤돌(0.68m) — 1.35m 를 한 번에 뛰지 않아도 되게
+  put4('rock-a', 1.55, 0.55, 0, 1.15, 0, 1, false);
+
+  /* --- 2) 아래 선반 --- 네 귀퉁이. 밀려나도 한 번은 살아남는 자리이자,
+     로켓점프로 되올라오는 동안 상대에게 노출되는 위험한 자리다. */
+  /* 데크 바깥 고리의 슬래브가 반지름 26m 까지 뻗으므로, 선반을 그보다 안쪽에 두면
+     데크 밑에 깔려 보이지도 닿지도 않는다(실측: 25.4m 에 뒀더니 완전히 가려졌다). */
+  var shR = DECK_R + 2.6;
+  putDeck('rock-flat', Math.cos(0.785)*shR, Math.sin(0.785)*shR, 0, 2.15, SHELF_Y, RINGS.length-1);
+  putDeck('rock-flat-grass', Math.cos(0.62)*(shR+1.5), Math.sin(0.62)*(shR+1.5), 2, 1.5, SHELF_Y-0.5, RINGS.length-1);
+
+  /* --- 3) 산체 --- 큰 바위를 고리로 쌓아 스케치의 뷰트를 만든다. 전부 deco 다.
+     각 층은 '윗면'을 기준으로 놓는다(조각 원점이 바닥이라 제 높이만큼 내려야 한다).
+     층 간격(2.6유닛)보다 바위가 높아야 층 사이로 하늘이 안 비친다 — 배율 6 이면
+     가장 낮은 rock-a 도 0.39*6 = 2.34... 라서 아래로 갈수록 배율을 키워 겹치게 한다.
+     맨 위 층의 윗면은 -0.15유닛이다. 0 으로 두면 데크 위로 바위가 솟는다. */
+  /* 배율 하한이 중요하다: 가장 낮은 rock-b(0.419) 가 흔들림 최소(0.92)에서도 층
+     간격보다 높아야 한다 → 0.419*7.8*0.92 = 3.0 > 2.6. 이보다 작게 잡으면 층 사이로
+     저 아래 골짜기가 초록으로 비친다(실제로 그랬다). */
+  var BODY = ['rock-c','rock-sand-c','rock-b','rock-sand-b'];
+  var BODY_LAYERS = 7, BODY_STEP = 2.6;
+  for(var L=0; L<BODY_LAYERS; L++){
+    var bTop = -0.15 - L*BODY_STEP;                   // 층 윗면(킷유닛)
+    var br   = DECK_R*0.90 + L*0.42;                  // 아래로 갈수록 넓어진다
+    var bs   = 7.8 + L*1.1;
+    var qn = 4;                                       // 사분면당 4개 → 층마다 16개
+    var ph = rnd()*Math.PI*0.5;
+    for(var c=0; c<qn; c++){
+      var bth = ph + c*(Math.PI*0.5/qn);
+      var bt  = pick(BODY), bsc = bs*(0.92+rnd()*0.23);
+      put4(bt, Math.cos(bth)*br, Math.sin(bth)*br, ri(0,3),
+           bsc, bTop - TOP[bt]*bsc, 0, true);
+    }
+  }
+
+  /* --- 4) 데크 위 소품 --- 진영 캠프 · 벼랑 끝 바위 · 나무 --- */
+  function onDeck(i,j){ return Math.hypot(i,j) <= DECK_R + 0.4; }
+  function prop(t, i, j, rot, s, deco){
+    if(!onDeck(i,j)) return;
+    put4(t, i, j, rot, s||1, 0, Math.round(Math.hypot(i,j)/DECK_R*(RINGS.length-1)), deco);
+  }
+  var CX=4.3, CZ=4.3;                                  // 캠프 중심(대각선)
+  prop('tent',         CX-0.55, CZ+0.25, 2);
+  prop('campfire-pit', CX+0.30, CZ+0.05, 0);
+  prop('chest',        CX+0.55, CZ+0.75, 1);
+  prop('barrel',       CX-0.85, CZ-0.45, 0);
+  prop('box',          CX+0.85, CZ-0.55, 3);
+  prop('workbench',    CX-0.15, CZ+0.95, 2);
+  prop('signpost',     CX+1.05, CZ+0.25, 1);
+  for(var f=0; f<5; f++)
+    prop(f===2?'fence-doorway':(f===0?'fence-fortified':'fence'), CX+1.35, CZ-1.0+f*0.5, 1);
+  for(var w=0; w<4; w++)
+    prop(w===3?'fence-fortified':'fence', CX-1.0+w*0.5, CZ+1.35, 0);
+  prop('structure-metal-wall', CX-1.45, CZ-0.95, 1);
+
+  // 벼랑 끝 바위 — 데크 가장자리를 따라. 엄폐도 되고 절벽 입술도 된다.
+  var EDGE=['rock-a','rock-b','rock-c','rock-sand-a','rock-sand-b','rock-sand-c'];
+  for(var eth=0.08; eth<1.5707; eth+=0.16){
+    if(rnd() < 0.42) continue;
+    var er = DECK_R - 0.5 - rnd()*0.5;
+    prop(pick(EDGE), Math.cos(eth)*er, Math.sin(eth)*er, ri(0,3), 0.9+rnd()*0.6);
+  }
+  // 나무 — 중간 반경에서 시야를 끊는다
   var TREES=['tree','tree-tall','tree-autumn'];
   for(var tn=0; tn<4; tn++){
-    var ta = 0.18 + rnd()*1.2, tr = 4.1 + rnd()*2.4;
-    put(pick(TREES), Math.cos(ta)*tr, Math.sin(ta)*tr, ri(0,3));
+    var ta=0.16+rnd()*1.25, tr=2.6+rnd()*3.2;
+    prop(pick(TREES), Math.cos(ta)*tr, Math.sin(ta)*tr, ri(0,3), 0.9+rnd()*0.35);
   }
-  var sa = 0.25 + rnd()*1.0, sr = 3.4 + rnd()*1.6;
-  put('tree-trunk', Math.cos(sa)*sr, Math.sin(sa)*sr, ri(0,3));
-  var la = 0.30 + rnd()*1.0, lr = 5.0 + rnd()*1.5;
-  put('tree-log',  Math.cos(la)*lr, Math.sin(la)*lr, ri(0,3));
-  // 4-5) 풀 — 순수 장식(deco). 밟히지도 총알을 막지도 않는다.
+  var ga=0.3+rnd()*0.95, gr=2.2+rnd()*2.6;
+  prop('tree-trunk', Math.cos(ga)*gr, Math.sin(ga)*gr, ri(0,3), 1.1);
+  var la=0.35+rnd()*0.9, lr=3.4+rnd()*2.0;
+  prop('tree-log',   Math.cos(la)*lr, Math.sin(la)*lr, ri(0,3), 1.1);
   for(var gn=0; gn<5; gn++){
-    var ga = 0.1 + rnd()*1.37, gr = 2.6 + rnd()*4.6;
-    put('grass-large', Math.cos(ga)*gr, Math.sin(ga)*gr, ri(0,3), true);
+    var qa=0.1+rnd()*1.37, qr=1.6+rnd()*4.4;
+    prop('grass-large', Math.cos(qa)*qr, Math.sin(qa)*qr, ri(0,3), 1.2, true);
   }
 
-  /* --- 5) 스폰·아이템 패드 --- */
-  var spawns = [], pads = [];
-  var sx=CAMP, sz=CAMP;
-  for(var s=0;s<4;s++){ var sc=at(Math.round(sx),Math.round(sz));
-    spawns.push({ i:sx, j:sz, h:sc?sc.h:0 }); var t2=sz; sz=-sx; sx=t2; }
-  pads.push({ i:0, j:0, h:MESA_H });                       // 정상 — 가장 다투는 자리
-  var px=5.9, pz=0;
-  for(var p=0;p<4;p++){ var pc=at(Math.round(px),Math.round(pz));
-    if(pc) pads.push({ i:px, j:pz, h:pc.h }); var t3=pz; pz=-px; px=t3; }
+  /* --- 5) 스폰·패드 --- 데크 위(월드 y=0), 정상 패드만 위에 있다. */
+  var spawns=[], pads=[];
+  var sx=CX, sz=CZ;
+  for(var sp=0; sp<4; sp++){ spawns.push({i:sx, j:sz, h:0}); var t2=sz; sz=-sx; sx=t2; }
+  pads.push({ i:0.35, j:0.35, h:SUMMIT_Y });
+  var px=DECK_R-1.6, pz=0;
+  for(var p=0;p<4;p++){ pads.push({i:px, j:pz, h:0}); var t3=pz; pz=-px; px=t3; }
 
-  return { slabs:slabs, cliff:cliff, pieces:pieces, spawns:spawns, pads:pads,
-           maxRing:maxRing, mesaH:MESA_H,
-           info:'반지름'+R0.toFixed(1)+'칸 소품'+pieces.length+'개' };
+  return { pieces:pieces, spawns:spawns, pads:pads, maxRing:RINGS.length-1,
+           deckR:DECK_R, summitY:SUMMIT_Y,
+           info:'데크'+(DECK_R*3).toFixed(0)+'m 조각'+pieces.length+'개' };
 };
 
 PENG.genStation = function(seed){

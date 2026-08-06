@@ -476,31 +476,19 @@ function buildCollapseFloor(){
     LEVEL._gen   = [ST.info];
     buildStation(ST.pieces);
   } else if(C.gen==='peak'){
-    /* 피크 — 절벽 위의 평지. 정거장과 달리 '땅'은 합쳐진 잔디 슬랩이고 킷 조각은
-       그 위에 얹는 소품이다. 충돌은 여기(LEVEL.boxes), 그림은 STATION VBO 가 맡는다. */
+    /* 피크 — 판 전체가 킷 조각이다. 색칠한 박스 지면도, 박스로 쌓은 절벽도 없다.
+       그림은 STATION 정적 VBO 가, 충돌은 조각 모양에서 뽑은 박스가 맡는다.
+       바위 슬래브는 배율을 키워 '발판'으로 쓰고, 윗면이 전부 같은 평면에 오도록
+       생성기가 y 를 내려 놓는다(자세한 건 level.js 의 genPeak 주석). */
     STATION.unit = C.size || STATION.unit;
     var PK=PENG.genPeak(FLOOR_SEED), U2=STATION.unit, PP2=stationParts();
-    PK.slabs.forEach(function(sl){
-      var col=sl.h>0 ? (C.platCol||C.col) : C.col;
-      LEVEL.boxes.push({ cx:sl.ci*U2, cy:C.y+sl.h*U2, cz:sl.cj*U2,
-        hx:sl.hi*U2, hy:C.hy, hz:sl.hj*U2, col:col, _tile:true, _ring:sl.ring, _col0:col });
-      if(sl.ring>maxR) maxR=sl.ring;
-    });
-    /* 절벽면은 순수 장식이다(deco = 안 밟히고 총알도 안 막는다). 실체로 두면
-       떨어진 사람이 절벽 중턱에 올라서서 안 죽는다. */
-    PK.cliff.forEach(function(cf){
-      var sh=cf.shade, cr=Math.round(0x6b*sh), cg=Math.round(0x5f*sh), cb=Math.round(0x4c*sh);
-      LEVEL.boxes.push({ cx:cf.ci*U2, cy:(cf.y0+cf.y1)/2*U2, cz:cf.cj*U2,
-        hx:cf.hi*U2, hy:(cf.y1-cf.y0)/2*U2, hz:cf.hj*U2, deco:true,
-        col:'#'+((1<<24)+(cr<<16)+(cg<<8)+cb).toString(16).slice(1) });
-    });
     PK.pieces.forEach(function(pc){
-      if(pc.deco) return;                       // 풀 등 순수 장식
+      if(pc.order>maxR) maxR=pc.order;
+      if(pc.deco) return;                       // 산체·풀 — 보이기만 하고 통과
       var m=PP2[pc.t]; if(!m) return;
       var bs=pieceBoxes(m, pc.t), r=pc.rot&3;
-      // 보정 테이블은 정거장 쪽과 같은 규약으로 적용한다 — 지금 서바이벌 조각은
-      // 쓰는 게 없지만, 나중에 하나라도 넣으면 그림과 충돌이 어긋난다
-      var po2=PIECE_OFF[pc.t], pox2=po2?po2[0]:0, poz2=po2?po2[1]:0, ps2=PIECE_SCALE[pc.t]||1;
+      var po2=PIECE_OFF[pc.t], pox2=po2?po2[0]:0, poz2=po2?po2[1]:0;
+      var ps2=(PIECE_SCALE[pc.t]||1)*(pc.s||1);
       for(var q=0;q<bs.length;q++){
         var bb=bs[q], x=(bb.cx+pox2)*ps2, z=(bb.cz+poz2)*ps2, hx=bb.hx*ps2, hz=bb.hz*ps2;
         for(var t=0;t<r;t++){ var tx=z; z=-x; x=tx; var th=hz; hz=hx; hx=th; }
@@ -509,6 +497,7 @@ function buildCollapseFloor(){
           col:C.col, _tile:true, _ring:pc.order, _col0:C.col, _hide:true });
       }
     });
+    if(PK.maxRing>maxR) maxR=PK.maxRing;
     LEVEL._pieces = PK.pieces;
     LEVEL.spawns = PK.spawns.map(function(s2){ return {x:s2.i*U2, y:s2.h*U2, z:s2.j*U2}; });
     LEVEL.pads   = PK.pads.map(function(p2){ return {x:p2.i*U2, y:p2.h*U2, z:p2.j*U2}; });
@@ -1695,8 +1684,13 @@ var STATION_LIGHT=[0.42,0.80,0.43];        // 간이 방향광 — 킷 색만 �
 var PIECE_RES=8;                       // 1칸을 몇 등분해 훑을지
 /* 바닥 조각은 표면 장식을 무시하고 '평평한 한 장'으로 친다.
    요철까지 판정에 넣으면 데크에 15~30cm 턱이 흩어져 달리다 걸린다 —
-   빠르게 밀고 밀리는 경기에서 그건 그냥 사고다. 두께는 킷 규격(0.3)으로 고정한다. */
-var PIECE_FLAT={ 'floor':0.3, 'floor-detail':0.3, 'floor-panel':0.3 };
+   빠르게 밀고 밀리는 경기에서 그건 그냥 사고다.
+   값은 두께(킷유닛), 또는 [두께, 안쪽으로 줄일 비율].
+   피크의 바위 슬래브는 원반 가장자리가 베벨이라 통째로 잡으면 그만큼 발이 뜬다.
+   실측(체비셰프 반경별 최고점): 반경 0.9 까지는 윗면이 거의 그대로고(낙차 rock-flat
+   0.03 · rock-flat-grass 0.06 유닛) 마지막 10% 에서만 확 떨어진다 — 0.90 으로 자른다. */
+var PIECE_FLAT={ 'floor':0.3, 'floor-detail':0.3, 'floor-panel':0.3,
+  'rock-flat':[0.195,0.90], 'rock-flat-grass':[0.226,0.90] };
 /* 난간은 기둥과 가로대뿐이라 기둥 방식으로 뽑으면 사이가 숭숭 빈다.
    막을 거면 통짜 한 장이어야 몸이 새지 않는다(높이는 원본 그대로 0.4유닛). */
 /* 울타리·간판은 기둥과 얇은 판뿐이라 기둥 방식으로 뽑으면 사이가 숭숭 빈다.
@@ -1720,9 +1714,9 @@ var RAIL_SOLID=1;                      // 0 이면 난간을 장식으로(통과
 function pieceBoxes(m, name){
   if(m._boxes) return m._boxes;
   if(name && PIECE_FLAT[name]!=null){
-    var t=PIECE_FLAT[name];
+    var fl=PIECE_FLAT[name], t=(fl.length?fl[0]:fl), ins=(fl.length?fl[1]:1);
     m._boxes=[{ cx:(m.min[0]+m.max[0])/2, cy:t/2, cz:(m.min[2]+m.max[2])/2,
-                hx:(m.max[0]-m.min[0])/2, hy:t/2, hz:(m.max[2]-m.min[2])/2 }];
+                hx:(m.max[0]-m.min[0])/2*ins, hy:t/2, hz:(m.max[2]-m.min[2])/2*ins }];
     return m._boxes;
   }
   if(name && PIECE_TRUNK[name]!=null){  // 줄기만 — 수관은 통과
@@ -1814,7 +1808,8 @@ function buildStation(pieces){
     var m=P[pc.t]; if(!m) continue;
     var r=pc.rot&3, ox=pc.i*S, oy=pc.y*S, oz=pc.j*S;
     var off=PIECE_OFF[pc.t], offx=off?off[0]:0, offz=off?off[1]:0;
-    var psc=PIECE_SCALE[pc.t]||1;
+    // pc.s = 그 조각 하나만의 배율. 피크는 같은 바위를 크기만 바꿔 발판·산체로 쓴다
+    var psc=(PIECE_SCALE[pc.t]||1)*(pc.s||1);
     for(var k=0;k<m.idx.length;k++){
       var v=m.idx[k], x=(m.pos[v*3]+offx)*psc*S, y=m.pos[v*3+1]*psc*S, z=(m.pos[v*3+2]+offz)*psc*S;
       var nx=m.nrm?m.nrm[v*3]:0, ny=m.nrm?m.nrm[v*3+1]:1, nz=m.nrm?m.nrm[v*3+2]:0;
