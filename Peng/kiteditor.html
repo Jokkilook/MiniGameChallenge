@@ -191,6 +191,11 @@ var KITS=[
   { id:'proto',    label:'프로토타입', names:[], src:'PROTO_BAKED' }
 ];
 function baseName(t){ var i=t.lastIndexOf('/'); return i<0?t:t.slice(i+1); }
+/* 짧은 이름을 어느 킷에 붙일지는 게임(index.html 의 KIT_ORDER)과 같아야 한다.
+   탭 순서는 손에 익는 순서(서바이벌 먼저)라 다르므로, 별칭은 따로 한 번 더 돈다 —
+   안 그러면 서바이벌에도 floor 가 생긴 뒤로 에디터의 'floor' 와 게임의 'floor' 가
+   서로 다른 조각을 가리킨다. */
+var ALIAS_ORDER=['station','survival','factory','forest','proto'];
 (function(){
   if(!window.GunMesh) return;
   KITS.forEach(function(K){
@@ -198,11 +203,15 @@ function baseName(t){ var i=t.lastIndexOf('/'); return i<0?t:t.slice(i+1); }
     for(var k in bag){
       try{ var m=GunMesh.decodeBaked(bag[k]);
         var key=K.id+'/'+k;
-        PARTS[key]=m; if(!(k in PARTS)) PARTS[k]=m;
-        K.names.push(key); NAMES.push(key);
+        PARTS[key]=m; K.names.push(key); NAMES.push(key);
       }catch(e){}
     }
     K.names.sort();
+  });
+  ALIAS_ORDER.forEach(function(id){
+    var K=KITS.filter(function(k){ return k.id===id; })[0]; if(!K) return;
+    K.names.forEach(function(full){
+      var bare=baseName(full); if(!(bare in PARTS)) PARTS[bare]=PARTS[full]; });
   });
   NAMES.sort();
 })();
