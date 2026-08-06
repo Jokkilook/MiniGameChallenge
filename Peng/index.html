@@ -408,7 +408,15 @@ var STATION_LIGHT=[0.42,0.80,0.43];        // 간이 방향광 — 킷 색만 �
    모양을 거의 그대로 잡는다 — 문 구멍·탁자 밑·난간 사이가 자동으로 비워진다.
    기둥 안에 지오메트리가 있는지는 '기둥 중심이 삼각형의 XZ 투영 안에 있는가'로 본다.
    삼각형의 XZ 바운딩박스를 쓰면 넉넉하게 잡혀서 문 구멍이 도로 막힌다. */
-var PIECE_RES=8;                       // 1칸을 몇 등분해 훑을지
+var PIECE_RES=16;                      // 1칸을 몇 등분해 훑을지(1유닛=3m 이므로 칸당 19cm)
+/* override 표는 '킷/이름' 과 '이름' 을 둘 다 갖는다. 예전엔 이름만 썼는데 킷이 다섯이
+   되면서 factory/floor 가 station 의 floor 규칙을, forest/tree 가 survival 의 나무
+   규칙을 물려받아 엉뚱한 콜리전을 갖게 됐다(실측 4건). 짧은 이름은 예전 레벨·생성기
+   호환으로 남긴다 — 그쪽은 정거장·서바이벌을 가리킨다. */
+function kitTbl(kit, obj){ var o={}; for(var k in obj){ o[k]=obj[k]; o[kit+'/'+k]=obj[k]; } return o; }
+function tblMerge(){ var o={};
+  for(var i=0;i<arguments.length;i++){ var a=arguments[i]; for(var k in a) o[k]=a[k]; }
+  return o; }
 /* 바닥 조각은 표면 장식을 무시하고 '평평한 한 장'으로 친다.
    요철까지 판정에 넣으면 데크에 15~30cm 턱이 흩어져 달리다 걸린다 —
    빠르게 밀고 밀리는 경기에서 그건 그냥 사고다.
@@ -416,27 +424,27 @@ var PIECE_RES=8;                       // 1칸을 몇 등분해 훑을지
    피크의 바위 슬래브는 원반 가장자리가 베벨이라 통째로 잡으면 그만큼 발이 뜬다.
    실측(체비셰프 반경별 최고점): 반경 0.9 까지는 윗면이 거의 그대로고(낙차 rock-flat
    0.03 · rock-flat-grass 0.06 유닛) 마지막 10% 에서만 확 떨어진다 — 0.90 으로 자른다. */
-var PIECE_FLAT={ 'floor':0.3, 'floor-detail':0.3, 'floor-panel':0.3,
-  'rock-flat':[0.195,0.90], 'rock-flat-grass':[0.226,0.90] };
-/* 난간은 기둥과 가로대뿐이라 기둥 방식으로 뽑으면 사이가 숭숭 빈다.
-   막을 거면 통짜 한 장이어야 몸이 새지 않는다(높이는 원본 그대로 0.4유닛). */
-/* 울타리·간판은 기둥과 얇은 판뿐이라 기둥 방식으로 뽑으면 사이가 숭숭 빈다.
-   막을 거면 통짜여야 몸이 안 샌다. 다행히 킷 울타리는 1.56m 라 점프로 넘어갈 수 있다. */
-var PIECE_SOLID={ 'rail':1, 'fence':1, 'fence-fortified':1, 'fence-doorway':1,
-  'signpost':1, 'structure-metal-wall':1 };
-/* 나무는 수관(잎덩어리)까지 충돌로 잡으면 허공에 올라설 수 있는 발판이 생긴다.
-   줄기만 기둥으로 막는다 — 값은 줄기 반폭(킷유닛). 시야는 잎이 가리고 몸은 통과한다. */
-var PIECE_TRUNK={ 'tree':0.075, 'tree-tall':0.075, 'tree-autumn':0.075 };
+var PIECE_FLAT=tblMerge(
+  kitTbl('station',  {'floor':0.3, 'floor-detail':0.3, 'floor-panel':0.3}),
+  kitTbl('survival', {'rock-flat':[0.195,0.90], 'rock-flat-grass':[0.226,0.90]}));
+/* 통짜 상자·줄기 기둥 같은 '단순화' override 는 없앴다. 격자를 8 → 16 으로 올리니
+   기둥 방식만으로도 몸이 안 샌다(실측: 울타리·문 달린 울타리·간판·철판·나무 모두
+   최대 틈 0~0.19m 로 몸 지름 0.7m 보다 좁다). 보이는 모양과 부딪히는 모양이 같은 게
+   맞고, 손으로 맵을 만들 때 예측이 된다.
+   난간(rail)만 기둥 사이가 1.6m 로 벌어져 몸이 지나간다 — 그건 실제 생김새가 그렇다.
+   PIECE_SOLID={'rail':1} 로 되돌리면 예전처럼 통짜 낮은 벽이 된다. */
+var PIECE_SOLID={};
+var PIECE_TRUNK={};
 /* 조각 자체의 원점이 어긋난 것들을 로컬에서 보정한다(회전 전에 더한다).
    wall 의 슬래브는 칸 중심선(z=0)에 있는데 wall-corner 의 두 팔은 ±0.25 에 있어서
    그냥 놓으면 벽과 0.25 만큼 어긋나 틈이 벌어진다. 두께는 둘 다 0.3 으로 같으므로
    (-0.25,-0.25) 옮기면 팔이 이웃 벽의 슬래브와 정확히 한 줄이 된다. */
-var PIECE_OFF={ 'wall-corner':[-0.25,-0.25] };
+var PIECE_OFF=kitTbl('station', {'wall-corner':[-0.25,-0.25]});
 /* 코너는 팔이 0.8 인데 필요한 길이는 0.65 라, 정렬하면 이웃 벽과 0.15(=0.44m) 겹친다.
    길이를 줄이면 반대로 틈이 벌어지므로 겹침은 그대로 두되, 조각을 3% 줄여
    옆면이 벽면보다 안쪽(4.5mm)에 오게 한다 — 같은 평면이 사라져 깜박임이 없어지고,
    겹침이 남아 있어 틈도 안 생긴다. */
-var PIECE_SCALE={ 'wall-corner':0.97 };
+var PIECE_SCALE=kitTbl('station', {'wall-corner':0.97});
 var RAIL_SOLID=1;                      // 0 이면 난간을 장식으로(통과) 되돌린다
 /* 킷 목록도 여기 있어야 한다 — 로드 시점 setLevel 이 stationParts() 를 부르는데,
    이게 아래에 있으면 그때 undefined 라 조각 사전이 통째로 비고, 그 빈 사전이
@@ -1050,7 +1058,7 @@ function botsRespawn(){
 /* glyph = 패드 위에 떠 있는 표식. 작은 큐브 몇 개의 상대 위치·크기다.
    Y축으로 천천히 도는데, 큐브가 작아야 '축 정렬 박스가 궤도를 도는' 게
    어색하지 않고 의도한 것처럼 보인다(회전 메시가 없으므로).
-   [dx,dy,dz,s] — s 는 한 변의 반. spin:false 면 안 돌린다. */
+   [dx,dy,dz,s] — s 는 한 변의 반. */
 var ITEMS={
   reverse:{name:'리버스캡슐', icon:'🌀', dur:12, col:'#b07bff',
     desc:'폭발이 밀어내는 대신 끌어당긴다',
@@ -1059,16 +1067,16 @@ var ITEMS={
     desc:'폭발 위력·반경이 커진다',
     glyph:[[0,0,0,.085],[.19,0,0,.045],[-.19,0,0,.045],[0,0,.19,.045],[0,0,-.19,.045],[0,.19,0,.045]]},
   drum:   {name:'드럼 탄창',  icon:'🥁', dur:15, col:'#ffd23a',
-    desc:'탄창 즉시 충전 + 재장전 3배', spin:false,
+    desc:'탄창 즉시 충전 + 재장전 3배',
     glyph:[[0,0,0,.15,.075,.15],[0,.11,0,.16,.02,.16],[0,-.11,0,.16,.02,.16]]},
   feather:{name:'깃털',       icon:'🪶', dur:15, col:'#7ce0ff',
     desc:'더 멀리 날지만 더 잘 날아간다 · 공중에서 1초 글라이딩 1회',
     glyph:[[0,.15,0,.04],[.05,.06,0,.05],[.1,-.04,0,.055],[.15,-.14,0,.045]]},
   anchor: {name:'닻',         icon:'⚓', dur:10, col:'#8fd67a',
-    desc:'밀려나지 않는다(로켓점프도 약해진다)', spin:false,
+    desc:'밀려나지 않는다(로켓점프도 약해진다)',
     glyph:[[0,.04,0,.035,.16,.035],[0,.17,0,.1,.03,.03],[-.12,-.13,0,.05],[.12,-.13,0,.05]]},
   pulse:  {name:'펄스',       icon:'⚡', dur:0, charges:1, col:'#ff4d7d',
-    desc:'F — 내 주위로 대형 폭발', spin:false,
+    desc:'F — 내 주위로 대형 폭발',
     glyph:[[.07,.16,0,.055],[0,.05,0,.055],[-.06,-.05,0,.055],[.02,-.16,0,.055]]}
 };
 var ITEM_IDS=Object.keys(ITEMS);
@@ -1763,7 +1771,6 @@ function quadGL(v,c,outline){
    조각이 떨어져 나가면 그때만 다시 만든다(경기당 서너 번). */
 function pieceBoxes(m, name){
   if(m._boxes) return m._boxes;
-  name=name?baseName(name):name;      // PIECE_* 표는 킷 접두사 없는 이름으로 적혀 있다
   if(name && PIECE_FLAT[name]!=null){
     var fl=PIECE_FLAT[name], t=(fl.length?fl[0]:fl), ins=(fl.length?fl[1]:1);
     m._boxes=[{ cx:(m.min[0]+m.max[0])/2, cy:t/2, cz:(m.min[2]+m.max[2])/2,
@@ -1809,7 +1816,7 @@ function pieceBoxes(m, name){
      한 장이 9박스로 쪼개져 충돌 비용만 늘고 감각은 그대로다.
      ※ 실제 박스 크기는 원래 값을 쓴다. 예전엔 hi 를 올림해서 조각이 통째로 부풀었고,
         그 바람에 바닥 윗면이 0 대신 +0.15m 가 돼 문 상인방에 머리가 3cm 걸렸다. */
-  var QY=20;
+  var QY=50;                                 // 0.02유닛(6cm) 단위로 구분 — 계단 한 칸이 살아난다
   var used=new Uint8Array(nx*nz), out=[];
   var key=function(c){ return got[c] ? (Math.round(lo[c]*QY)+':'+Math.round(hi[c]*QY)) : null; };
   for(i=0;i<nx;i++) for(j=0;j<nz;j++){
@@ -1863,7 +1870,7 @@ function stationParts(){
      s / sx,sy,sz — 균일 / 축별 배율.
    열 우선 3x3(m[열*3+행]). 회전 순서는 Ry*Rx*Rz. */
 function pieceBasis(pc){
-  var bn=baseName(pc.t), pu=PIECE_SCALE[bn]||1, s0=pc.s||1;
+  var pu=PIECE_SCALE[pc.t]||1, s0=pc.s||1;
   var kx=pu*(pc.sx!=null?pc.sx:s0), ky=pu*(pc.sy!=null?pc.sy:s0), kz=pu*(pc.sz!=null?pc.sz:s0);
   var D=Math.PI/180;
   var ay=(((pc.rot||0)&3)*90+(pc.ry||0))*D, ax=(pc.rx||0)*D, az=(pc.rz||0)*D;
@@ -1885,7 +1892,7 @@ function xf3(M,x,y,z){ return [M[0]*x+M[3]*y+M[6]*z, M[1]*x+M[4]*y+M[7]*z, M[2]*
    90도 배수일 때는 이 바운딩박스가 원래 상자와 정확히 같아서 손해가 없다. */
 function pieceColliders(pc, m, U, extra){
   var M=pieceBasis(pc), bs=pieceBoxes(m, pc.t), out=[];
-  var off=PIECE_OFF[baseName(pc.t)], ox=off?off[0]:0, oz=off?off[1]:0;
+  var off=PIECE_OFF[pc.t], ox=off?off[0]:0, oz=off?off[1]:0;
   for(var q=0;q<bs.length;q++){
     var b=bs[q], mn=[1e9,1e9,1e9], mx=[-1e9,-1e9,-1e9];
     for(var k=0;k<8;k++){
@@ -1908,7 +1915,7 @@ function buildStation(pieces){
     var pc=pieces[p]; if(pc._gone) continue;
     var m=P[pc.t]; if(!m) continue;
     var ox=pc.i*S, oy=pc.y*S, oz=pc.j*S;
-    var off=PIECE_OFF[baseName(pc.t)], offx=off?off[0]:0, offz=off?off[1]:0;
+    var off=PIECE_OFF[pc.t], offx=off?off[0]:0, offz=off?off[1]:0;
     var M=pieceBasis(pc);
     /* 법선은 변환의 역전치로 보내야 한다. 배율만 있을 때는 축별 역수와 같은데,
        세로로 14배 늘린 기둥에서 이걸 빼먹으면 옆면이 위를 보는 것처럼 밝아져
@@ -2082,7 +2089,7 @@ function render(dt){
       var def=ITEMS[pd.item];
       if(def){
         var bob=0.62+Math.sin(padT*2.2+pdi)*0.07;
-        var ang=(def.spin===false)?0:padT*1.4+pdi;
+        var ang=padT*1.4+pdi;               // 전부 돈다 — 안 도는 게 섞이면 고장 난 걸로 보인다
         drawGlyph(def, pd.item, pd.x, pd.y+bob, pd.z, ang, 1);
       }
     }
