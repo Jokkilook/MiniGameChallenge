@@ -492,7 +492,10 @@ window.addEventListener('mousemove',function(e){
     var dx=e.clientX-drag.x, dy=e.clientY-drag.y;
     drag.x=e.clientX; drag.y=e.clientY;
     if(Math.abs(dx)+Math.abs(dy)>2) moved=true;
-    cam.yaw-=dx*0.0032;
+    /* 오른쪽으로 끌면 시점도 오른쪽으로 돈다. 이 카메라는 yaw 가 커질수록 전방이
+       +X(=화면 오른쪽)로 가므로 부호가 + 다. 예전엔 - 라 좌우가 뒤집혀 있었다.
+       상하는 FPS 관습대로 아래로 끌면 아래를 본다. */
+    cam.yaw+=dx*0.0032;
     cam.pitch=Math.max(-1.5,Math.min(1.5, cam.pitch-dy*0.0032));
   } else {
     var r=cv.getBoundingClientRect(), mx=e.clientX-r.left, my=e.clientY-r.top;
