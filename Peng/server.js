@@ -116,6 +116,7 @@ function handleBake(req, res){
     if(body.indexOf('window.GUN_BAKED=') >= 0) name = 'gunbaked.js';
     else if(body.indexOf('window.BULLET_BAKED=') >= 0) name = 'bulletbaked.js';
     else if(body.indexOf('window.STATION_BAKED=') >= 0) name = 'stationbaked.js';
+    else if(body.indexOf('window.SURVIVAL_BAKED=') >= 0) name = 'survivalbaked.js';
     if(!name) return fail(400, '구운 데이터가 아닙니다.');
     fs.writeFile(path.join(ROOT, name), body, function(err){
       if(err) return fail(500, '저장 실패: ' + err.message);

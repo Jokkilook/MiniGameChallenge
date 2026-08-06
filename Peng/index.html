@@ -312,6 +312,7 @@
 <script src="gunbaked.js"></script>
 <script src="bulletbaked.js"></script>
 <script src="stationbaked.js"></script>
+<script src="survivalbaked.js"></script>
 <!-- 아이템 6종의 표식 메시와 HUD 아이콘(Kenney Food Kit, CC0).
      itembaked.js/itemicons.js 는 tools/bakefood.js 가 미리 구워둔 데이터다 —
      둘 중 뭐가 빠져도 그것만 예전 모습(큐브 표식·이모지)으로 떨어진다. -->
@@ -474,6 +475,46 @@ function buildCollapseFloor(){
     LEVEL.start  = LEVEL.spawns[0];
     LEVEL._gen   = [ST.info];
     buildStation(ST.pieces);
+  } else if(C.gen==='peak'){
+    /* 피크 — 절벽 위의 평지. 정거장과 달리 '땅'은 합쳐진 잔디 슬랩이고 킷 조각은
+       그 위에 얹는 소품이다. 충돌은 여기(LEVEL.boxes), 그림은 STATION VBO 가 맡는다. */
+    STATION.unit = C.size || STATION.unit;
+    var PK=PENG.genPeak(FLOOR_SEED), U2=STATION.unit, PP2=stationParts();
+    PK.slabs.forEach(function(sl){
+      var col=sl.h>0 ? (C.platCol||C.col) : C.col;
+      LEVEL.boxes.push({ cx:sl.ci*U2, cy:C.y+sl.h*U2, cz:sl.cj*U2,
+        hx:sl.hi*U2, hy:C.hy, hz:sl.hj*U2, col:col, _tile:true, _ring:sl.ring, _col0:col });
+      if(sl.ring>maxR) maxR=sl.ring;
+    });
+    /* 절벽면은 순수 장식이다(deco = 안 밟히고 총알도 안 막는다). 실체로 두면
+       떨어진 사람이 절벽 중턱에 올라서서 안 죽는다. */
+    PK.cliff.forEach(function(cf){
+      var sh=cf.shade, cr=Math.round(0x6b*sh), cg=Math.round(0x5f*sh), cb=Math.round(0x4c*sh);
+      LEVEL.boxes.push({ cx:cf.ci*U2, cy:(cf.y0+cf.y1)/2*U2, cz:cf.cj*U2,
+        hx:cf.hi*U2, hy:(cf.y1-cf.y0)/2*U2, hz:cf.hj*U2, deco:true,
+        col:'#'+((1<<24)+(cr<<16)+(cg<<8)+cb).toString(16).slice(1) });
+    });
+    PK.pieces.forEach(function(pc){
+      if(pc.deco) return;                       // 풀 등 순수 장식
+      var m=PP2[pc.t]; if(!m) return;
+      var bs=pieceBoxes(m, pc.t), r=pc.rot&3;
+      // 보정 테이블은 정거장 쪽과 같은 규약으로 적용한다 — 지금 서바이벌 조각은
+      // 쓰는 게 없지만, 나중에 하나라도 넣으면 그림과 충돌이 어긋난다
+      var po2=PIECE_OFF[pc.t], pox2=po2?po2[0]:0, poz2=po2?po2[1]:0, ps2=PIECE_SCALE[pc.t]||1;
+      for(var q=0;q<bs.length;q++){
+        var bb=bs[q], x=(bb.cx+pox2)*ps2, z=(bb.cz+poz2)*ps2, hx=bb.hx*ps2, hz=bb.hz*ps2;
+        for(var t=0;t<r;t++){ var tx=z; z=-x; x=tx; var th=hz; hz=hx; hx=th; }
+        LEVEL.boxes.push({ cx:(pc.i+x)*U2, cy:(pc.y+bb.cy*ps2)*U2, cz:(pc.j+z)*U2,
+          hx:hx*U2, hy:bb.hy*ps2*U2, hz:hz*U2,
+          col:C.col, _tile:true, _ring:pc.order, _col0:C.col, _hide:true });
+      }
+    });
+    LEVEL._pieces = PK.pieces;
+    LEVEL.spawns = PK.spawns.map(function(s2){ return {x:s2.i*U2, y:s2.h*U2, z:s2.j*U2}; });
+    LEVEL.pads   = PK.pads.map(function(p2){ return {x:p2.i*U2, y:p2.h*U2, z:p2.j*U2}; });
+    LEVEL.start  = LEVEL.spawns[0];
+    LEVEL._gen   = [PK.info];
+    buildStation(PK.pieces);
   } else if(C.gen){
     /* 절차적 판 — 시드 하나로 전원이 같은 지형을 만든다(릴레이라 지형 권위가 없다).
        FLOOR_SEED 는 라운드마다 바뀐다: 경기 시드 + 라운드 번호. */
@@ -1658,7 +1699,13 @@ var PIECE_RES=8;                       // 1칸을 몇 등분해 훑을지
 var PIECE_FLAT={ 'floor':0.3, 'floor-detail':0.3, 'floor-panel':0.3 };
 /* 난간은 기둥과 가로대뿐이라 기둥 방식으로 뽑으면 사이가 숭숭 빈다.
    막을 거면 통짜 한 장이어야 몸이 새지 않는다(높이는 원본 그대로 0.4유닛). */
-var PIECE_SOLID={ 'rail':1 };
+/* 울타리·간판은 기둥과 얇은 판뿐이라 기둥 방식으로 뽑으면 사이가 숭숭 빈다.
+   막을 거면 통짜여야 몸이 안 샌다. 다행히 킷 울타리는 1.56m 라 점프로 넘어갈 수 있다. */
+var PIECE_SOLID={ 'rail':1, 'fence':1, 'fence-fortified':1, 'fence-doorway':1,
+  'signpost':1, 'structure-metal-wall':1 };
+/* 나무는 수관(잎덩어리)까지 충돌로 잡으면 허공에 올라설 수 있는 발판이 생긴다.
+   줄기만 기둥으로 막는다 — 값은 줄기 반폭(킷유닛). 시야는 잎이 가리고 몸은 통과한다. */
+var PIECE_TRUNK={ 'tree':0.075, 'tree-tall':0.075, 'tree-autumn':0.075 };
 /* 조각 자체의 원점이 어긋난 것들을 로컬에서 보정한다(회전 전에 더한다).
    wall 의 슬래브는 칸 중심선(z=0)에 있는데 wall-corner 의 두 팔은 ±0.25 에 있어서
    그냥 놓으면 벽과 0.25 만큼 어긋나 틈이 벌어진다. 두께는 둘 다 0.3 으로 같으므로
@@ -1676,6 +1723,12 @@ function pieceBoxes(m, name){
     var t=PIECE_FLAT[name];
     m._boxes=[{ cx:(m.min[0]+m.max[0])/2, cy:t/2, cz:(m.min[2]+m.max[2])/2,
                 hx:(m.max[0]-m.min[0])/2, hy:t/2, hz:(m.max[2]-m.min[2])/2 }];
+    return m._boxes;
+  }
+  if(name && PIECE_TRUNK[name]!=null){  // 줄기만 — 수관은 통과
+    var tw=PIECE_TRUNK[name];
+    m._boxes=[{ cx:(m.min[0]+m.max[0])/2, cy:(m.min[1]+m.max[1])/2, cz:(m.min[2]+m.max[2])/2,
+                hx:tw, hy:(m.max[1]-m.min[1])/2, hz:tw }];
     return m._boxes;
   }
   if(name && PIECE_SOLID[name]){       // 바운딩박스 통짜
@@ -1735,16 +1788,20 @@ function pieceBoxes(m, name){
   m._boxes=out;
   return out;
 }
+/* 킷 두 벌(정거장·서바이벌)을 한 사전에 담는다. 조각 이름이 겹치지 않아 접두사가
+   필요 없다 — 정거장은 floor/wall/rail 계열, 서바이벌은 rock/tree/tent 계열이다. */
 function stationParts(){
   if(STATION.parts) return STATION.parts;
-  var out=null;
+  var out={};
   try{
-    if(window.STATION_BAKED && window.GunMesh && GunMesh.decodeBaked){
-      out={};
-      for(var k in window.STATION_BAKED) out[k]=GunMesh.decodeBaked(window.STATION_BAKED[k]);
+    if(window.GunMesh && GunMesh.decodeBaked){
+      [window.STATION_BAKED, window.SURVIVAL_BAKED].forEach(function(kit){
+        if(!kit) return;
+        for(var k in kit) out[k]=GunMesh.decodeBaked(kit[k]);
+      });
     }
-  }catch(e){ out=null; }
-  STATION.parts=out||{};
+  }catch(e){ out={}; }
+  STATION.parts=out;
   return STATION.parts;
 }
 /* pieces → 정점 배열. rot 은 90도 단위(0..3), (x,z) 를 (z,-x) 로 r 번 돌린다.
@@ -2957,8 +3014,10 @@ fillMapPickers();
     ms.addEventListener('change',function(){
       GAMEMODE=ms.value; syncModePicker();
       if(mpIsHost()) mpSend({t:'gm', mode:GAMEMODE});
-      // 경쟁으로 바꾸면 아레나 맵을 자동으로 골라준다(협동 맵엔 떨어질 곳이 없다)
-      if(GAMEMODE==='versus' && PENG.getLevel('arena') && CURLEVEL!=='arena'){
+      /* 경쟁으로 바꾸면 아레나 맵을 자동으로 골라준다(협동 맵엔 떨어질 곳이 없다).
+         이미 아레나를 고른 상태면 건드리지 않는다 — 아레나가 둘 이상이라
+         'arena' 로 되돌리면 방금 고른 피크가 도로 정거장이 된다. */
+      if(GAMEMODE==='versus' && PENG.getLevel('arena') && !(LEVEL&&LEVEL.arena)){
         if(setLevel('arena')){ syncMapPickers(); applyLevelToPractice();
           if(mpIsHost()) mpSend({t:'lvl', level:'arena'}); }
       }

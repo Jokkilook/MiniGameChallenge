@@ -36,6 +36,7 @@
     <option value="gun">총 (gunbaked.js)</option>
     <option value="bullet">투사체 (bulletbaked.js)</option>
     <option value="station">정거장 킷 전체 (stationbaked.js)</option>
+    <option value="survival">서바이벌 킷 전체 (survivalbaked.js)</option>
   </select>
   <label>원본 GLB 경로</label>
   <input type="text" id="url" value="../Mesh/blaster-h.glb">
@@ -60,24 +61,34 @@ function clearLog(){ logEl.textContent=''; logN=0; }
    (킷 전체가 같은 규약: 1x1 격자, 원점 중심, Y=0 바닥). */
 var STATION_PARTS=['floor','floor-detail','floor-panel','wall','wall-window','wall-door',
   'wall-corner','rail','container','container-wide','skip','computer-system','table','pipe'];
-function bakeStation(btn){
+/* 서바이벌 킷 — 절벽 위 평지(피크) 맵의 재료. 격자 조각이 아니라 '소품'이라
+   회전만 90도 단위로 쓰고 위치는 생성기가 미터로 정한다. */
+var SURVIVAL_PARTS=['rock-a','rock-b','rock-c','rock-sand-a','rock-sand-b','rock-flat-grass',
+  'tree','tree-tall','tree-autumn','tree-trunk','tree-log','tent','campfire-pit','chest',
+  'barrel','box','workbench','signpost','fence','fence-doorway','fence-fortified',
+  'grass-large','structure-metal-wall'];
+var KITS={
+  station : {list:STATION_PARTS,  dir:'../Mesh/station/',  global:'STATION_BAKED',  file:'stationbaked.js'},
+  survival: {list:SURVIVAL_PARTS, dir:'../Mesh/survival/', global:'SURVIVAL_BAKED', file:'survivalbaked.js'}
+};
+function bakeStation(btn, kit){
+  var K=KITS[kit], PARTS=K.list;
   var out={}, i=0;
   (function next(){
-    if(i>=STATION_PARTS.length){
+    if(i>=PARTS.length){
       var NL=String.fromCharCode(10);
-      var text='/* 자동 생성 — tools/bake.html [정거장 킷 전체].'
-        + ' Kenney Space Station Kit (CC0) */' + NL
-        + 'window.STATION_BAKED=' + JSON.stringify(out) + ';' + NL;
+      var text='/* 자동 생성 — tools/bake.html [' + kit + ' 킷 전체]. Kenney (CC0) */' + NL
+        + 'window.' + K.global + '=' + JSON.stringify(out) + ';' + NL;
       say('묶음 크기: '+Math.round(text.length/1024)+'KB');
       fetch('/__bake',{method:'POST',headers:{'Content-Type':'text/plain; charset=utf-8'},body:text})
         .then(function(r){ return r.text().then(function(t){ if(!r.ok) throw new Error(t); return t; }); })
-        .then(function(){ say('저장 완료 → stationbaked.js','ok'); btn.disabled=false; })
+        .then(function(){ say('저장 완료 → '+K.file,'ok'); btn.disabled=false; })
         .catch(function(e){ say('저장 실패: '+e.message,'err'); btn.disabled=false; });
       return;
     }
-    var nm=STATION_PARTS[i++];
+    var nm=PARTS[i++];
     GunMesh.axes='station'; GunMesh.ready=false; GunMesh.loading=false;
-    GunMesh.load('../Mesh/station/'+nm+'.glb', function(ok){
+    GunMesh.load(K.dir+nm+'.glb', function(ok){
       if(!ok){ say(nm+' 실패: '+GunMesh.err,'err'); btn.disabled=false; return; }
       try{ out[nm]=JSON.parse(GunMesh.serialize('__T').replace(/^[\s\S]*?window\.__T=/,'').replace(/;\s*$/,'')); }
       catch(e){ say(nm+' 직렬화 실패: '+e.message,'err'); btn.disabled=false; return; }
@@ -89,7 +100,7 @@ function bakeStation(btn){
 document.getElementById('go').addEventListener('click', function(){
   var btn=this; btn.disabled=true; clearLog();
   var tgt=document.getElementById('target').value;
-  if(tgt==='station'){ bakeStation(btn); return; }
+  if(tgt==='station'||tgt==='survival'){ bakeStation(btn, tgt); return; }
   var url=document.getElementById('url').value.trim();
   // 축 매핑은 굽기 전에 정해야 한다 — 정점 좌표에 그대로 구워지기 때문
   GunMesh.axes = (tgt==='bullet') ? 'bullet' : 'kenney';

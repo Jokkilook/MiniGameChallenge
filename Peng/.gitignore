@@ -11,6 +11,10 @@ Mesh/*
 !Mesh/station/*.glb
 !Mesh/station/Textures/
 !Mesh/station/Textures/*.png
+!Mesh/survival/
+!Mesh/survival/*.glb
+!Mesh/survival/Textures/
+!Mesh/survival/Textures/*.png
 
 # 아이템 표식·HUD 아이콘의 원본(Kenney Food Kit, CC0).
 # 킷 전체는 16MB(FBX·OBJ 까지 들어 있다)라 통째로는 안 올리고,
