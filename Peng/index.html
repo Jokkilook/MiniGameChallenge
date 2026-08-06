@@ -953,6 +953,19 @@ function surfY(V,o, x0,x1,z0,z1, wantMax){
   }
   return best;
 }
+/* 면이 얼마나 누워 있나 — 정규화한 법선의 |y|. 1 이면 수평, 0 이면 수직.
+   감기 방향(앞/뒤면)이 조각마다 다를 수 있어 절댓값을 쓴다. */
+function triNy(V,o){
+  var ux=V[o+3]-V[o], uy=V[o+4]-V[o+1], uz=V[o+5]-V[o+2];
+  var wx=V[o+6]-V[o], wy=V[o+7]-V[o+1], wz=V[o+8]-V[o+2];
+  var nx=uy*wz-uz*wy, ny=uz*wx-ux*wz, nz=ux*wy-uy*wx;
+  var L=Math.sqrt(nx*nx+ny*ny+nz*nz);
+  return L>1e-12 ? Math.abs(ny)/L : 0;
+}
+/* 걸어 오를 수 있는 최대 경사. cos 값이라 0.65 = 약 49도.
+   이게 없으면 '높이차가 턱(0.34m) 안쪽이면 통과' 규칙 때문에 거의 수직인 벽도
+   한 스텝에 조금씩만 파고들며 계속 기어오를 수 있다 — 실측으로 81도까지 올라갔다. */
+var SLOPE_MAX=0.65;
 function triBlocked(px,py,pz){
   if(!TSOUP) return false;
   var cy=py+PH_HY;
@@ -1603,6 +1616,8 @@ function moveAxis(s, axis, delta){
       var o=TCAND[q];
       if(!boxTri(s.p.x,cyB,s.p.z, PH_HX,PH_HY,PH_HZ, TSOUP.v,o)) continue;
       if(axis==='y'){
+        // 내려앉을 때 가파른 면은 발판이 아니다 — 벽에 기대 서 있게 되면 안 된다
+        if(delta<0 && triNy(TSOUP.v,o) < SLOPE_MAX) continue;
         var y2=surfY(TSOUP.v,o, qx0,qx1,qz0,qz1, delta<0);
         if(y2==null) continue;                     // 수직면 — y 로는 밀 곳이 없다
         hit=true;
@@ -1610,13 +1625,15 @@ function moveAxis(s, axis, delta){
         if(best===null) best=cand;
         else best=(delta<0)?Math.max(best,cand):Math.min(best,cand);
       } else {
+        /* 오를 수 있는 면인지는 '높이차'가 아니라 '기울기'로 본다. 높이차만 보면
+           한 스텝에 파고드는 깊이가 얕아서 어떤 벽이든 조금씩 기어오르게 된다. */
+        if(triNy(TSOUP.v,o) < SLOPE_MAX){ hit=true; canStep=false; continue; }  // 가파름 = 벽
         var top=surfY(TSOUP.v,o, qx0,qx1,qz0,qz1, true);
-        if(top==null){ hit=true; canStep=false; continue; }   // 수직벽
-        /* 발에서 턱 높이(STEP_H) 안쪽이면 아예 막지 않는다. 상자였을 때는 되돌린 뒤
-           riseTo 로 올려 세웠는데, 경사면에서는 그 방법이 안 통한다 — 올려 세운 자리도
-           경사면 안이라 '머리 공간 확인'이 계속 실패해서 램프 앞에 벽이 섰다.
-           그냥 통과시키면 바로 뒤따르는 y 패스(x→z→y 순서)가 그 면 위로 올려 준다.
-           그보다 높으면 벽이다. */
+        if(top==null){ hit=true; canStep=false; continue; }   // 수직면
+        /* 걸을 수 있는 기울기이고 턱 높이 안쪽이면 아예 막지 않는다. 되돌린 뒤 올려
+           세우는 예전 방식은 경사면에서 안 통한다 — 올라선 자리도 경사면 안이라
+           머리 공간 확인이 계속 실패해 램프 앞에 벽이 섰다. 그냥 통과시키면 바로
+           뒤따르는 y 패스(x→z→y 순서)가 그 면 위로 올려 준다. */
         if(top - s.p.y <= STEP_H) continue;
         hit=true; canStep=false;
       }
@@ -2989,6 +3006,7 @@ var DBG_SPEC=[
   ['점프 선입력',   0,   0.4, 0.01, function(){return JUMP_BUF;},   function(v){JUMP_BUF=v;}],
   ['폭발 후 점프',  0,   0.5, 0.01, function(){return BJ_GRACE;},   function(v){BJ_GRACE=v;}],
   ['오를 턱 높이',  0,   1.2, 0.02, function(){return STEP_H;},     function(v){STEP_H=v;}],
+  ['최대 경사(cos)',0.2, 1,   0.01, function(){return SLOPE_MAX;},  function(v){SLOPE_MAX=v;}],
   ['sec','펑건'],
   ['폭발 세기',     0,   40,  0.5,  function(){return BLAST_F;},    function(v){BLAST_F=v;}],
   ['폭발 반경',     0.5, 12,  0.1,  function(){return BLAST_R;},    function(v){BLAST_R=v;}],
