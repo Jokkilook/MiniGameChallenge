@@ -71,6 +71,15 @@
       <button id="btnSnap" style="flex:1">격자 스냅: 끔</button>
     </div>
 
+    <h2>더미 플레이어</h2>
+    <div class="grid2">
+      <button id="btnDummy" class="on">보기: 켬</button>
+      <button id="btnMoveDummy">여기로 옮기기</button>
+    </div>
+    <p class="hint">게임의 실제 몸 크기(<b>0.7 × 1.8 × 0.7 m</b>)입니다. 노란 선이 충돌
+    상자, 가는 선이 눈높이(1.6m)예요. 발판이 좁은지·턱이 넘을 만한지 눈으로 재보세요.
+    <b>이 자리가 맵의 시작 지점으로 저장됩니다.</b></p>
+
     <h2>선택한 조각</h2>
     <div id="selName" class="hint" style="margin:0 0 8px">없음</div>
     <div id="props" style="display:none">
@@ -181,6 +190,79 @@ function aabbOf(o){
   }
   return { mn:[o.x+mn[0]*UNIT, o.y+mn[1]*UNIT, o.z+mn[2]*UNIT],
            mx:[o.x+mx[0]*UNIT, o.y+mx[1]*UNIT, o.z+mx[2]*UNIT] };
+}
+
+/* ---------- 더미 플레이어 ----------
+   발판이 좁은지, 저 턱을 넘을 수 있는지는 숫자보다 사람 크기를 옆에 놓아 보는 게 빠르다.
+   게임이 실제로 그리는 캡슐(반지름 0.35 · 원통 반높이 0.55 → 총 1.8m)과 눈 위치를
+   그대로 쓴다. 충돌 상자는 물리 상수(PH_HX/HY/HZ)와 같은 0.7 × 1.8 × 0.7m 다. */
+var PH={ HX:0.35, HY:0.9, HZ:0.35, EYE:1.6, R:0.35, CYL:0.55, EYE_Y:1.42, EYE_X:0.15, EYE_Z:0.33 };
+var DUMMY={ x:0, y:0, z:0, on:true }, ARM_DUMMY=false;
+var BUFD={ tri:gl.createBuffer(), triN:0, line:gl.createBuffer(), lineN:0 };
+function capsuleTris(cx,cy,cz,r,hh,col,out){
+  var SEG=14, RING=5;
+  function P(i,j){                       // j: 0..2*RING+1 (아래 반구 → 원통 → 위 반구)
+    var a=i/SEG*Math.PI*2, ca=Math.cos(a), sa=Math.sin(a);
+    var t, y, rr;
+    if(j<=RING){ t=(j/RING)*Math.PI*0.5; y=cy-hh-r*Math.cos(t); rr=r*Math.sin(t); }
+    else { t=((j-RING-1)/RING)*Math.PI*0.5; y=cy+hh+r*Math.sin(t); rr=r*Math.cos(t); }
+    return [cx+ca*rr, y, cz+sa*rr];
+  }
+  for(var j=0;j<=2*RING;j++) for(var i=0;i<SEG;i++){
+    var a=P(i,j), b=P(i+1,j), c=P(i+1,j+1), d=P(i,j+1);
+    // 위쪽일수록 밝게 — 실루엣이 납작해 보이지 않게
+    var sh=0.55+0.45*Math.max(0,Math.min(1,(a[1]-(cy-hh-r))/(2*(hh+r))));
+    var C=[col[0]*sh,col[1]*sh,col[2]*sh];
+    out.push(a[0],a[1],a[2],C[0],C[1],C[2], b[0],b[1],b[2],C[0],C[1],C[2], c[0],c[1],c[2],C[0],C[1],C[2]);
+    out.push(a[0],a[1],a[2],C[0],C[1],C[2], c[0],c[1],c[2],C[0],C[1],C[2], d[0],d[1],d[2],C[0],C[1],C[2]);
+  }
+}
+function ballTris(cx,cy,cz,r,col,out){
+  var SEG=8, RING=5;
+  function P(i,j){ var a=i/SEG*Math.PI*2, t=j/RING*Math.PI;
+    return [cx+Math.cos(a)*Math.sin(t)*r, cy+Math.cos(t)*r, cz+Math.sin(a)*Math.sin(t)*r]; }
+  for(var j=0;j<RING;j++) for(var i=0;i<SEG;i++){
+    var a=P(i,j), b=P(i+1,j), c=P(i+1,j+1), d=P(i,j+1);
+    out.push(a[0],a[1],a[2],col[0],col[1],col[2], b[0],b[1],b[2],col[0],col[1],col[2], c[0],c[1],c[2],col[0],col[1],col[2]);
+    out.push(a[0],a[1],a[2],col[0],col[1],col[2], c[0],c[1],c[2],col[0],col[1],col[2], d[0],d[1],d[2],col[0],col[1],col[2]);
+  }
+}
+function rebuildDummy(){
+  var T=[], L=[], x=DUMMY.x, y=DUMMY.y, z=DUMMY.z;
+  capsuleTris(x, y+PH.HY, z, PH.R, PH.CYL, [0.98,0.54,0.23], T);
+  for(var e=-1;e<=1;e+=2){                       // 눈 — 앞쪽(+Z)을 본다
+    ballTris(x+e*PH.EYE_X, y+PH.EYE_Y, z+PH.EYE_Z, 0.115, [1,1,1], T);
+    ballTris(x+e*PH.EYE_X, y+PH.EYE_Y, z+PH.EYE_Z+0.075, 0.055, [0.06,0.11,0.2], T);
+  }
+  // 충돌 상자(노랑) — 물리가 실제로 쓰는 크기
+  var c=[1,0.82,0.28];
+  var q=[[x-PH.HX,y,z-PH.HZ],[x+PH.HX,y,z-PH.HZ],[x+PH.HX,y,z+PH.HZ],[x-PH.HX,y,z+PH.HZ],
+         [x-PH.HX,y+PH.HY*2,z-PH.HZ],[x+PH.HX,y+PH.HY*2,z-PH.HZ],
+         [x+PH.HX,y+PH.HY*2,z+PH.HZ],[x-PH.HX,y+PH.HY*2,z+PH.HZ]];
+  var E=[0,1,1,2,2,3,3,0, 4,5,5,6,6,7,7,4, 0,4,1,5,2,6,3,7];
+  for(var i=0;i<E.length;i+=2){
+    L.push(q[E[i]][0],q[E[i]][1],q[E[i]][2], c[0],c[1],c[2]);
+    L.push(q[E[i+1]][0],q[E[i+1]][1],q[E[i+1]][2], c[0],c[1],c[2]);
+  }
+  // 눈높이 십자 — '이 높이에서 세상이 보인다'
+  var ec=[1,0.95,0.62];
+  L.push(x-0.6,y+PH.EYE,z, ec[0],ec[1],ec[2],  x+0.6,y+PH.EYE,z, ec[0],ec[1],ec[2]);
+  L.push(x,y+PH.EYE,z-0.6, ec[0],ec[1],ec[2],  x,y+PH.EYE,z+0.6, ec[0],ec[1],ec[2]);
+  gl.bindBuffer(gl.ARRAY_BUFFER,BUFD.tri);
+  gl.bufferData(gl.ARRAY_BUFFER,new Float32Array(T),gl.DYNAMIC_DRAW); BUFD.triN=T.length/6;
+  gl.bindBuffer(gl.ARRAY_BUFFER,BUFD.line);
+  gl.bufferData(gl.ARRAY_BUFFER,new Float32Array(L),gl.DYNAMIC_DRAW); BUFD.lineN=L.length/6;
+}
+/* 광선이 먼저 맞는 조각의 윗면(없으면 바닥)에 발을 붙인다 — 배치와 같은 규칙 */
+function dummyTo(mx,my){
+  var d=rayAt(mx,my), best=Infinity, hit=null;
+  for(var i=0;i<OBJ.length;i++){ var b=aabbOf(OBJ[i]); if(!b) continue;
+    var q=rayAABB(cam,d,b); if(q<best){ best=q; hit=b; } }
+  if(hit && best<Infinity){ DUMMY.x=cam.x+d.x*best; DUMMY.y=hit.mx[1]; DUMMY.z=cam.z+d.z*best; }
+  else { if(Math.abs(d.y)<1e-4) return;
+    var t=(0-cam.y)/d.y; if(t<=0||t>4000) return;
+    DUMMY.x=cam.x+d.x*t; DUMMY.y=0; DUMMY.z=cam.z+d.z*t; }
+  rebuildDummy(); hud();
 }
 
 /* ---------- 카메라 ---------- */
@@ -363,6 +445,18 @@ function draw(){
     gl.vertexAttribPointer(PROG.aPos,3,gl.FLOAT,false,24,0);
     gl.vertexAttribPointer(PROG.aCol,3,gl.FLOAT,false,24,12);
     gl.drawArrays(gl.TRIANGLES,0,BUF.meshN); }
+  if(DUMMY.on && BUFD.triN){
+    gl.bindBuffer(gl.ARRAY_BUFFER,BUFD.tri);
+    gl.vertexAttribPointer(PROG.aPos,3,gl.FLOAT,false,24,0);
+    gl.vertexAttribPointer(PROG.aCol,3,gl.FLOAT,false,24,12);
+    gl.drawArrays(gl.TRIANGLES,0,BUFD.triN);
+    gl.bindBuffer(gl.ARRAY_BUFFER,BUFD.line);
+    gl.vertexAttribPointer(PROG.aPos,3,gl.FLOAT,false,24,0);
+    gl.vertexAttribPointer(PROG.aCol,3,gl.FLOAT,false,24,12);
+    gl.disable(gl.DEPTH_TEST);
+    gl.drawArrays(gl.LINES,0,BUFD.lineN);
+    gl.enable(gl.DEPTH_TEST);
+  }
   drawGizmo(VP);
 }
 
@@ -410,7 +504,11 @@ window.addEventListener('mouseup',function(e){
   if(!drag) return;
   var was=drag; drag=null; cv.classList.remove('looking');
   if(was.kind==='look' && !moved){
-    var r=cv.getBoundingClientRect(); pickAt(e.clientX-r.left, e.clientY-r.top);
+    var r=cv.getBoundingClientRect(), mx=e.clientX-r.left, my=e.clientY-r.top;
+    if(ARM_DUMMY){ ARM_DUMMY=false;
+      document.getElementById('btnMoveDummy').classList.remove('on');
+      cv.style.cursor=''; dummyTo(mx,my); toast('더미 이동'); }
+    else pickAt(mx,my);
   }
 });
 cv.addEventListener('contextmenu',function(e){ e.preventDefault(); });
@@ -577,6 +675,13 @@ function setMode(m){ MODE=m;
 document.getElementById('mT').onclick=function(){ setMode('T'); };
 document.getElementById('mR').onclick=function(){ setMode('R'); };
 document.getElementById('mS').onclick=function(){ setMode('S'); };
+document.getElementById('btnDummy').onclick=function(){
+  DUMMY.on=!DUMMY.on; this.textContent='보기: '+(DUMMY.on?'켬':'끔');
+  this.classList.toggle('on',DUMMY.on); hud(); };
+document.getElementById('btnMoveDummy').onclick=function(){
+  ARM_DUMMY=!ARM_DUMMY; this.classList.toggle('on',ARM_DUMMY);
+  cv.style.cursor=ARM_DUMMY?'cell':'';
+  toast(ARM_DUMMY?'놓을 자리를 클릭하세요':'취소'); };
 document.getElementById('btnSnap').onclick=function(){
   SNAP = SNAP ? 0 : UNIT/2;
   this.textContent='격자 스냅: '+(SNAP?(SNAP+'m'):'끔'); this.classList.toggle('on',!!SNAP); };
@@ -627,15 +732,8 @@ function serialize(){
   L.push("});");
   return L.join('\n')+'\n';
 }
-// 시작 지점 — 가장 높은 조각의 윗면 가운데. 없으면 원점
-function startPoint(){
-  var best=null;
-  for(var i=0;i<OBJ.length;i++){ if(OBJ[i].deco) continue;
-    var b=aabbOf(OBJ[i]); if(!b) continue;
-    if(!best || b.mx[1]>best.mx[1]) best=b; }
-  if(!best) return {x:0,y:0,z:0};
-  return { x:(best.mn[0]+best.mx[0])/2, y:best.mx[1], z:(best.mn[2]+best.mx[2])/2 };
-}
+// 시작 지점 = 더미가 서 있는 자리. 눈으로 확인한 곳이 그대로 스폰이 된다.
+function startPoint(){ return { x:DUMMY.x, y:DUMMY.y, z:DUMMY.z }; }
 document.getElementById('btnSave').onclick=function(){
   if(!OBJ.length){ toast('놓인 조각이 없습니다'); return; }
   var id=(document.getElementById('mapId').value||'').trim();
@@ -670,6 +768,7 @@ document.getElementById('btnLoad').onclick=function(){
           deco:!!p.deco };
       }).filter(function(o){ return PARTS[o.t]; });
       if(got.name) document.getElementById('mapName').value=got.name;
+      if(got.start){ DUMMY.x=got.start.x; DUMMY.y=got.start.y; DUMMY.z=got.start.z; rebuildDummy(); }
       SEL=-1; rebuild(); syncPanel(); toast(OBJ.length+'개 불러옴');
     })
     .catch(function(e){ toast('불러오기 실패: '+(e.message||e)); });
@@ -680,6 +779,7 @@ function hud(){
   document.getElementById('hud').textContent=
     '조각 '+OBJ.length+'개 · 정점 '+BUF.meshN+'\n'+
     '기즈모 '+(MODE==='T'?'이동':MODE==='R'?'회전':'크기')+' (1/2/3 전환)\n'+
+    '더미 '+(DUMMY.on?('켬 · 서 있는 높이 '+r2(DUMMY.y)+'m'):'끔')+' (사람 키 1.8m)\n'+
     'WASD 이동 · Q/E 위아래 · Shift 가속\n'+
     '좌클릭 드래그 시점 · 클릭 선택 · Del 삭제';
 }
@@ -701,7 +801,7 @@ function loop(now){
   draw();
   requestAnimationFrame(loop);
 }
-rebuild(); syncPanel(); hud();
+rebuild(); rebuildDummy(); syncPanel(); hud();
 requestAnimationFrame(loop);
 </script>
 </body></html>
