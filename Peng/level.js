@@ -712,21 +712,26 @@ PENG.genPeak = function(seed){
 
   var pieces = [];
   /* 한 조각을 놓고 네 번 돌려 찍는다. rot 도 같이 1씩 올라가야 모양까지 대칭이 된다. */
-  function put4(t, i, j, rot, s, y, order, deco){
+  /* sv = 축별 배율 [x,y,z]. 없으면 s 를 세 축에 똑같이 쓴다. 절벽 기둥은 세로로만
+     길게 늘여 만들기 때문에 이게 필요하다. */
+  function put4(t, i, j, rot, s, y, order, deco, sv){
     var x=i, z=j, r=(rot||0)&3;
     for(var k=0;k<4;k++){
-      pieces.push({ t:t, i:x, j:z, y:y, rot:r&3, s:s, order:order, deco:!!deco });
+      var pc={ t:t, i:x, j:z, y:y, rot:r&3, s:s, order:order, deco:!!deco };
+      if(sv){ pc.sx=sv[0]; pc.sy=sv[1]; pc.sz=sv[2]; }
+      pieces.push(pc);
       var tx=z; z=-x; x=tx; r++;
     }
   }
   // 윗면을 원하는 높이에 맞춰 놓는다(조각 원점이 바닥이라 제 윗면 높이만큼 내린다)
-  function putTop(t, i, j, rot, s, topY, order, deco){
-    put4(t, i, j, rot, s, topY - TOP[t]*s, order, !!deco);
+  function putTop(t, i, j, rot, s, topY, order, deco, sv){
+    var sy = sv ? sv[1] : s;
+    put4(t, i, j, rot, s, topY - TOP[t]*sy, order, !!deco, sv);
   }
   // 반지름 R 의 고리에 4의 배수 개를 두른다(사분면당 qn 개)
   function ringOf(R, qn, fn){
     var base = rnd()*Math.PI*0.5;
-    for(var q=0;q<qn;q++) fn(base + q*(Math.PI*0.5/qn));
+    for(var q=0;q<qn;q++) fn(base + q*(Math.PI*0.5/qn), q);
   }
 
   /* --- 1) 데크 모자이크 --- */
@@ -767,21 +772,36 @@ PENG.genPeak = function(seed){
   putTop('rock-flat', Math.cos(0.785)*shR, Math.sin(0.785)*shR, 0, 1.6, SHELF_Y, RINGS.length-1);
   putTop('rock-flat-grass', Math.cos(0.60)*(shR+1.3), Math.sin(0.60)*(shR+1.3), 2, 1.15, SHELF_Y-0.55, RINGS.length-1);
 
-  /* --- 4) 산체 --- 큰 바위를 고리로 쌓아 스케치의 뷰트를 만든다.
-     층 간격보다 바위가 높아야 사이로 저 아래 골짜기가 비치지 않는다:
-     가장 낮은 rock-b 가 흔들림 최소(0.92)에서도 0.419*7*0.92 = 2.70 > 2.6 이 되게
-     배율 하한을 잡았다. 반지름은 '바위 바깥 끝'이 데크 끝에서 아래로 갈수록
-     벌어지도록 역산한다(바위 반폭 ≈ 0.415*배율). */
-  var BODY = ['rock-c','rock-sand-c','rock-b','rock-sand-b'];
-  var BODY_LAYERS = 7, BODY_STEP = 2.6;
-  for(var L=0; L<BODY_LAYERS; L++){
-    var bTop = -0.15 - L*BODY_STEP;
-    var bs   = 7.0 + L*1.0;
-    var br   = (DECK_OUT + L*0.35) - 0.415*bs;
-    ringOf(0, 4, function(th){
-      var bt = pick(BODY), bsc = bs*(0.92 + rnd()*0.23);
-      putTop(bt, Math.cos(th)*br, Math.sin(th)*br, ri(0,3), bsc, bTop, 0, true);
-    });
+  /* --- 4) 산체 --- 절벽 기둥.
+     예전엔 큰 바위를 무작위 각도·반지름으로 흩뿌렸는데, 돌덩이 더미로 보일 뿐
+     기둥이 되지 않았다. 지금은 바위 하나를 '세로로만' 길게 늘여 기둥 한 줄로 쓰고
+     일정한 간격으로 둘러 세운다 — 실제 메사 절벽의 세로 결과 같은 실루엣이 나온다.
+     위치·간격·배율에 무작위를 넣지 않는다(그게 '막 놓은' 인상의 원인이었다).
+
+     겹침이 관건이다. 킷 바위는 꼭대기에서 폭이 82% 로 줄어드는데(실측), 기둥 폭을
+     둘레 간격과 같게 잡으면 원통들이 점으로만 맞닿아 사이로 하늘이 비친다.
+     그래서 꼭대기 폭이 간격의 1.5배 이상이 되게 폭을 먼저 정하고, 반지름은
+     '기둥 바깥 끝'이 원하는 자리에 오도록 역산한다(반폭 = 0.39*폭배율).
+     그래도 남는 틈은 안쪽 심(core)이 뒤에서 막아 준다.
+     단은 세 단이고 아래로 갈수록 굵어져(18m → 22m 반경) 스케치의 뷰트처럼 벌어진다. */
+  var RIB = ['rock-c','rock-sand-c'];
+  var TIERS = [
+    // out = 그 단의 바깥 반지름(킷유닛), w = 가로 배율, n = 사분면당 기둥 수
+    { top:-0.20, span:7.0, out:DECK_OUT,     w:4.2, n:4, core:8.0 },
+    { top:-6.60, span:7.5, out:DECK_OUT+0.6, w:5.0, n:4, core:9.5 },
+    { top:-13.6, span:8.5, out:DECK_OUT+1.3, w:6.0, n:4, core:11.0 }
+  ];
+  for(var T=0; T<TIERS.length; T++){
+    var ti = TIERS[T], sy = ti.span/TOP['rock-c'], R = ti.out - 0.39*ti.w;
+    ringOf(0, ti.n, (function(cfg, syy, rr, idx){ return function(th, q){
+      putTop(RIB[(idx+q)%RIB.length], Math.cos(th)*rr, Math.sin(th)*rr, (idx+q)&3,
+             cfg.w, cfg.top, 0, true, [cfg.w, syy, cfg.w]);
+    }; })(ti, sy, R, T));
+    // 심 — 기둥 사이로 하늘이 비치지 않게 뒤를 채운다. 안쪽이라 실루엣에는 안 나온다.
+    ringOf(0, 1, (function(cfg, syy, idx){ return function(th){
+      putTop('rock-c', Math.cos(th)*1.2, Math.sin(th)*1.2, idx&3, cfg.core,
+             cfg.top-0.1, 0, true, [cfg.core, syy, cfg.core]);
+    }; })(ti, sy, T));
   }
 
   /* --- 5) 데크 위 소품 --- 진영 캠프 · 벼랑 끝 바위 · 나무 --- */
