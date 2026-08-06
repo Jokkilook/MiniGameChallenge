@@ -63,13 +63,16 @@
 
     <h2>기즈모</h2>
     <div class="grid3">
-      <button id="mT" class="on">이동 1</button>
-      <button id="mR">회전 2</button>
-      <button id="mS">크기 3</button>
+      <button id="mT" class="on">이동 Q</button>
+      <button id="mR">회전 R</button>
+      <button id="mS">크기 E</button>
     </div>
     <div class="row" style="margin-top:6px">
       <button id="btnSnap" style="flex:1">격자 스냅: 끔</button>
     </div>
+    <p class="hint">축 <b>막대</b>는 그 축만, 모서리의 <b>작은 네모</b>는 그 면(두 축)만,
+    가운데 <b>큐브</b>는 세 축 전부에 걸립니다. 회전 모드에서는 막대가 고리가 되고,
+    면 네모는 그 면의 <b>법선 축</b>을 중심으로 돌립니다.</p>
 
     <h2>더미 플레이어</h2>
     <div class="grid2">
@@ -349,78 +352,275 @@ function rebuild(){
   BUF.lineN=arr.length/6;
 })();
 
-/* ---------- 기즈모 ---------- */
-var AXCOL=[[1,0.28,0.32],[0.42,0.92,0.42],[0.35,0.6,1]];
+/* ---------- 기즈모 ----------
+   언리얼식: 축 막대 3개 + 면 손잡이 3개 + 가운데 손잡이. 모드는 Q(이동)/E(크기)/R(회전).
+
+   판정은 화면 거리가 아니라 '월드 광선'으로 한다. 기즈모가 월드 축에 정렬돼 있어
+   손잡이가 전부 축정렬 상자·사각형이라 정확하고 싸다(회전 고리만 평면 교점으로 잰다).
+
+   끌 때는 증분이 아니라 '잡은 순간 값 + 지금까지의 변화량'으로 절대값을 다시 계산한다.
+   증분으로 쌓으면 프레임을 건너뛸 때마다 조금씩 어긋난다. */
+var AXCOL=[[1,0.30,0.34],[0.42,0.92,0.42],[0.36,0.62,1]];
+var HLCOL=[1,0.86,0.25];
+var GZ={ bar:0.048, gap:0.14, p0:0.26, p1:0.58, ctr:0.11, ring:0.10 };
+var HOVER=null, GRAB=null;
+var BUFG={ tri:gl.createBuffer(), triN:0, pl:gl.createBuffer(), plN:0,
+           line:gl.createBuffer(), lineN:0 };
+
 function gizmoOrigin(){
   if(SEL<0) return null; var b=aabbOf(OBJ[SEL]); if(!b) return null;
   return { x:(b.mn[0]+b.mx[0])/2, y:(b.mn[1]+b.mx[1])/2, z:(b.mn[2]+b.mx[2])/2 };
 }
 function gizmoLen(){                                   // 화면에서 늘 비슷한 크기로
   var g=gizmoOrigin(); if(!g) return 1;
-  return Math.max(1.2, Math.hypot(g.x-cam.x,g.y-cam.y,g.z-cam.z)*0.13);
+  return Math.max(1.2, Math.hypot(g.x-cam.x,g.y-cam.y,g.z-cam.z)*0.15);
 }
-function axisEnd(a){
-  var g=gizmoOrigin(), L=gizmoLen();
-  return { x:g.x+(a===0?L:0), y:g.y+(a===1?L:0), z:g.z+(a===2?L:0) };
-}
-// 마우스가 어느 축 손잡이 위인가(화면 거리 기준)
-function pickAxis(mx,my,VP){
-  var g=gizmoOrigin(); if(!g) return -1;
-  var o=project(g.x,g.y,g.z,VP); if(!o) return -1;
-  var best=-1, bd=14;
-  for(var a=0;a<3;a++){
-    var e=axisEnd(a), p=project(e.x,e.y,e.z,VP); if(!p) continue;
-    var vx=p.x-o.x, vy=p.y-o.y, len=Math.hypot(vx,vy)||1;
-    var t=Math.max(0,Math.min(1,((mx-o.x)*vx+(my-o.y)*vy)/(len*len)));
-    var d=Math.hypot(o.x+vx*t-mx, o.y+vy*t-my);
-    if(t>0.12 && d<bd){ bd=d; best=a; }
+function sameH(a,b){ return a&&b&&a.kind===b.kind&&a.a===b.a&&a.b===b.b; }
+// 면 손잡이 세 개. c 는 그 면의 법선 축(회전 모드에서 이 축을 돌린다)
+var PLANES=[{a:0,b:2,c:1},{a:0,b:1,c:2},{a:1,b:2,c:0}];
+
+function handleAABB(h){
+  var g=gizmoOrigin(), L=gizmoLen(), o=[g.x,g.y,g.z], mn=[0,0,0], mx=[0,0,0], k;
+  if(h.kind==='axis'){
+    for(k=0;k<3;k++){
+      if(k===h.a){ mn[k]=o[k]+L*GZ.gap; mx[k]=o[k]+L*1.24; }
+      else { mn[k]=o[k]-L*GZ.bar*2.2; mx[k]=o[k]+L*GZ.bar*2.2; }
+    }
+  } else if(h.kind==='plane'){
+    for(k=0;k<3;k++){
+      if(k===h.a||k===h.b){ mn[k]=o[k]+L*GZ.p0; mx[k]=o[k]+L*GZ.p1; }
+      else { mn[k]=o[k]-L*0.04; mx[k]=o[k]+L*0.04; }
+    }
+  } else {
+    for(k=0;k<3;k++){ mn[k]=o[k]-L*GZ.ctr; mx[k]=o[k]+L*GZ.ctr; }
   }
-  return best;
+  return {mn:mn, mx:mx};
+}
+/* 마우스 밑의 손잡이. 가까운 것부터 고른다. */
+function pickHandle(px,py){
+  var g=gizmoOrigin(); if(!g) return null;
+  var d=rayAt(px,py), L=gizmoLen(), best=Infinity, hit=null, i;
+  function test(h){ var t=rayAABB(cam,d,handleAABB(h)); if(t<best){ best=t; hit=h; } }
+  test({kind:'center'});
+  for(i=0;i<PLANES.length;i++) test({kind:'plane', a:PLANES[i].a, b:PLANES[i].b});
+  if(MODE==='R'){
+    // 고리는 상자로 못 잰다 — 축에 수직인 평면과의 교점이 반지름 L 근처인지 본다
+    for(var ax=0;ax<3;ax++){
+      var n=[0,0,0]; n[ax]=1;
+      var dn=d.x*n[0]+d.y*n[1]+d.z*n[2]; if(Math.abs(dn)<1e-4) continue;
+      var t=((g.x-cam.x)*n[0]+(g.y-cam.y)*n[1]+(g.z-cam.z)*n[2])/dn; if(t<=0) continue;
+      var q=[cam.x+d.x*t-g.x, cam.y+d.y*t-g.y, cam.z+d.z*t-g.z];
+      var r=Math.hypot(q[0],q[1],q[2]);
+      if(Math.abs(r-L)<L*GZ.ring && t<best){ best=t; hit={kind:'axis', a:ax}; }
+    }
+  } else {
+    for(var a2=0;a2<3;a2++) test({kind:'axis', a:a2});
+  }
+  return hit;
+}
+
+/* ---- 끌기 계산 ---- */
+// 축 위에서 마우스 광선과 가장 가까운 점의 파라미터(월드 미터)
+function axisParam(px,py,g,axis){
+  var d=rayAt(px,py), D=[0,0,0]; D[axis]=1;
+  var w=[g.x-cam.x, g.y-cam.y, g.z-cam.z];
+  var b=D[0]*d.x+D[1]*d.y+D[2]*d.z;
+  var dw=D[0]*w[0]+D[1]*w[1]+D[2]*w[2];
+  var ew=d.x*w[0]+d.y*w[1]+d.z*w[2];
+  var den=1-b*b; if(Math.abs(den)<1e-5) return null;
+  return (b*ew-dw)/den;
+}
+// 법선 n 인 평면(원점 g)과 광선의 교점
+function planeHit(px,py,g,n){
+  var d=rayAt(px,py);
+  var dn=d.x*n[0]+d.y*n[1]+d.z*n[2]; if(Math.abs(dn)<1e-5) return null;
+  var t=((g.x-cam.x)*n[0]+(g.y-cam.y)*n[1]+(g.z-cam.z)*n[2])/dn;
+  if(t<=0||t>1e5) return null;
+  return [cam.x+d.x*t, cam.y+d.y*t, cam.z+d.z*t];
+}
+function normalOf(h){
+  if(h.kind==='plane'){ var n=[0,0,0]; n[3-h.a-h.b]=1; return n; }
+  var B=camBasis(); return [-B.f.x,-B.f.y,-B.f.z];        // 가운데 손잡이는 화면 평면
+}
+function beginGrab(h,px,py){
+  var g=gizmoOrigin(), o=OBJ[SEL];
+  GRAB={ h:h, g:g, L:gizmoLen(),
+         o0:{x:o.x,y:o.y,z:o.z, rx:o.rx,ry:o.ry,rz:o.rz, sx:o.sx,sy:o.sy,sz:o.sz} };
+  if(MODE==='R'){
+    var ax=(h.kind==='axis')?h.a:(3-h.a-h.b);
+    GRAB.ax=ax; GRAB.ang0=ringAngle(px,py,g,ax);
+  } else if(h.kind==='axis'){
+    GRAB.t0=axisParam(px,py,g,h.a);
+  } else {
+    GRAB.n=normalOf(h);
+    GRAB.p0=planeHit(px,py,g,GRAB.n);
+    /* 크기 조절은 '잡은 지점까지의 거리 비율'로 잰다. 가운데 큐브를 원점 가까이서
+       잡으면 그 거리가 0 에 가까워 손을 조금만 움직여도 배율이 폭발한다 — 하한을 둔다. */
+    if(GRAB.p0) GRAB.d0=Math.max(GRAB.L*0.45,
+      Math.hypot(GRAB.p0[0]-g.x, GRAB.p0[1]-g.y, GRAB.p0[2]-g.z));
+  }
+  snapshot();
+}
+function ringAngle(px,py,g,ax){
+  var n=[0,0,0]; n[ax]=1;
+  var p=planeHit(px,py,g,n); if(!p) return null;
+  var u=(ax+1)%3, v=(ax+2)%3, go=[g.x,g.y,g.z];
+  return Math.atan2(p[v]-go[v], p[u]-go[u]);
+}
+function dragGizmo(px,py){
+  if(!GRAB || SEL<0) return;
+  var o=OBJ[SEL], g=GRAB.g, h=GRAB.h, z=GRAB.o0, L=GRAB.L;
+  var P=['x','y','z'], R=['rx','ry','rz'], S=['sx','sy','sz'];
+  if(MODE==='R'){
+    var ang=ringAngle(px,py,g,GRAB.ax);
+    if(ang==null || GRAB.ang0==null) return;
+    var dd=(GRAB.ang0-ang)*180/Math.PI;              // 화면에서 도는 방향과 맞춘다
+    var v=z[R[GRAB.ax]]+dd;
+    if(SNAP) v=Math.round(v/15)*15;
+    o[R[GRAB.ax]]=v;
+  } else if(MODE==='T'){
+    if(h.kind==='axis'){
+      var t=axisParam(px,py,g,h.a); if(t==null||GRAB.t0==null) return;
+      o[P[h.a]]=z[P[h.a]]+(t-GRAB.t0);
+    } else {
+      var p=planeHit(px,py,g,GRAB.n); if(!p||!GRAB.p0) return;
+      if(h.kind==='plane'){
+        o[P[h.a]]=z[P[h.a]]+(p[h.a]-GRAB.p0[h.a]);
+        o[P[h.b]]=z[P[h.b]]+(p[h.b]-GRAB.p0[h.b]);
+      } else for(var k=0;k<3;k++) o[P[k]]=z[P[k]]+(p[k]-GRAB.p0[k]);
+    }
+    if(SNAP){ o.x=Math.round(o.x/SNAP)*SNAP; o.y=Math.round(o.y/SNAP)*SNAP; o.z=Math.round(o.z/SNAP)*SNAP; }
+  } else {
+    var f;
+    if(h.kind==='axis'){
+      var t2=axisParam(px,py,g,h.a); if(t2==null||GRAB.t0==null) return;
+      f=1+(t2-GRAB.t0)/L;                            // 기즈모 길이만큼 끌면 2배
+      o[S[h.a]]=Math.max(0.02, z[S[h.a]]*f);
+    } else {
+      var p2=planeHit(px,py,g,GRAB.n); if(!p2||!GRAB.d0) return;
+      f=Math.max(0.05, Math.hypot(p2[0]-g.x,p2[1]-g.y,p2[2]-g.z)/GRAB.d0);
+      if(h.kind==='plane'){
+        o[S[h.a]]=Math.max(0.02, z[S[h.a]]*f);
+        o[S[h.b]]=Math.max(0.02, z[S[h.b]]*f);
+      } else for(var q=0;q<3;q++) o[S[q]]=Math.max(0.02, z[S[q]]*f);
+    }
+  }
+  rebuild(); syncPanel();
+}
+
+/* ---- 그리기 ---- 막대는 굵은 상자, 화살촉은 사각뿔, 고리는 띠 ---- */
+function pushBox(out,mn,mx,c){
+  var P=[[mn[0],mn[1],mn[2]],[mx[0],mn[1],mn[2]],[mx[0],mn[1],mx[2]],[mn[0],mn[1],mx[2]],
+         [mn[0],mx[1],mn[2]],[mx[0],mx[1],mn[2]],[mx[0],mx[1],mx[2]],[mn[0],mx[1],mx[2]]];
+  var F=[[0,1,2,3],[7,6,5,4],[0,4,5,1],[1,5,6,2],[2,6,7,3],[3,7,4,0]];
+  for(var i=0;i<F.length;i++){ var q=F[i], sh=0.72+0.28*(i===1?1:(i===0?0.4:0.75));
+    var C=[c[0]*sh,c[1]*sh,c[2]*sh];
+    var v=[P[q[0]],P[q[1]],P[q[2]],P[q[3]]];
+    out.push(v[0][0],v[0][1],v[0][2],C[0],C[1],C[2], v[1][0],v[1][1],v[1][2],C[0],C[1],C[2],
+             v[2][0],v[2][1],v[2][2],C[0],C[1],C[2]);
+    out.push(v[0][0],v[0][1],v[0][2],C[0],C[1],C[2], v[2][0],v[2][1],v[2][2],C[0],C[1],C[2],
+             v[3][0],v[3][1],v[3][2],C[0],C[1],C[2]);
+  }
+}
+function pushCone(out,g,ax,r0,r1,rad,c){            // 축을 따라 r0→r1, 밑면 반지름 rad
+  var u=(ax+1)%3, v=(ax+2)%3, SEGN=10;
+  function pt(i,at,rr){ var a=i/SEGN*Math.PI*2, p=[g.x,g.y,g.z];
+    p[ax]+=at; p[u]+=Math.cos(a)*rr; p[v]+=Math.sin(a)*rr; return p; }
+  var tip=[g.x,g.y,g.z]; tip[ax]+=r1;
+  for(var i=0;i<SEGN;i++){
+    var A=pt(i,r0,rad), B=pt(i+1,r0,rad), sh=0.7+0.3*(i/SEGN);
+    var C=[c[0]*sh,c[1]*sh,c[2]*sh];
+    out.push(A[0],A[1],A[2],C[0],C[1],C[2], B[0],B[1],B[2],C[0],C[1],C[2],
+             tip[0],tip[1],tip[2],c[0],c[1],c[2]);
+    var O=[g.x,g.y,g.z]; O[ax]+=r0;
+    out.push(A[0],A[1],A[2],C[0],C[1],C[2], O[0],O[1],O[2],C[0],C[1],C[2],
+             B[0],B[1],B[2],C[0],C[1],C[2]);
+  }
+}
+function pushRing(out,g,ax,R,w,c){
+  var u=(ax+1)%3, v=(ax+2)%3, SEGN=56, prev=null;
+  for(var i=0;i<=SEGN;i++){
+    var a=i/SEGN*Math.PI*2, ca=Math.cos(a), sa=Math.sin(a);
+    var i0=[g.x,g.y,g.z], o0=[g.x,g.y,g.z];
+    i0[u]+=ca*(R-w); i0[v]+=sa*(R-w); o0[u]+=ca*(R+w); o0[v]+=sa*(R+w);
+    if(prev){
+      out.push(prev[0][0],prev[0][1],prev[0][2],c[0],c[1],c[2],
+               prev[1][0],prev[1][1],prev[1][2],c[0],c[1],c[2], o0[0],o0[1],o0[2],c[0],c[1],c[2]);
+      out.push(prev[0][0],prev[0][1],prev[0][2],c[0],c[1],c[2],
+               o0[0],o0[1],o0[2],c[0],c[1],c[2], i0[0],i0[1],i0[2],c[0],c[1],c[2]);
+    }
+    prev=[i0,o0];
+  }
 }
 function drawGizmo(VP){
   if(SEL<0) return;
   var g=gizmoOrigin(); if(!g) return;
-  var arr=[], b=aabbOf(OBJ[SEL]);
+  var L=gizmoLen(), act=GRAB?GRAB.h:HOVER;
+  var T=[], PL=[], LN=[];
   // 선택 상자
-  var c=[1,0.85,0.3];
-  var P=[[b.mn[0],b.mn[1],b.mn[2]],[b.mx[0],b.mn[1],b.mn[2]],[b.mx[0],b.mn[1],b.mx[2]],[b.mn[0],b.mn[1],b.mx[2]],
+  var b=aabbOf(OBJ[SEL]), c=[1,0.85,0.3];
+  var Q=[[b.mn[0],b.mn[1],b.mn[2]],[b.mx[0],b.mn[1],b.mn[2]],[b.mx[0],b.mn[1],b.mx[2]],[b.mn[0],b.mn[1],b.mx[2]],
          [b.mn[0],b.mx[1],b.mn[2]],[b.mx[0],b.mx[1],b.mn[2]],[b.mx[0],b.mx[1],b.mx[2]],[b.mn[0],b.mx[1],b.mx[2]]];
   var E=[0,1,1,2,2,3,3,0, 4,5,5,6,6,7,7,4, 0,4,1,5,2,6,3,7];
   for(var i=0;i<E.length;i+=2){
-    arr.push(P[E[i]][0],P[E[i]][1],P[E[i]][2], c[0],c[1],c[2]);
-    arr.push(P[E[i+1]][0],P[E[i+1]][1],P[E[i+1]][2], c[0],c[1],c[2]);
+    LN.push(Q[E[i]][0],Q[E[i]][1],Q[E[i]][2], c[0],c[1],c[2]);
+    LN.push(Q[E[i+1]][0],Q[E[i+1]][1],Q[E[i+1]][2], c[0],c[1],c[2]);
   }
-  // 축 손잡이 — 회전 모드에서는 축을 중심으로 한 고리로 그린다
-  for(var a=0;a<3;a++){
-    var col=AXCOL[a], L=gizmoLen();
-    if(MODE==='R'){
-      var u=(a+1)%3, w=(a+2)%3, prev=null;
-      for(var s=0;s<=32;s++){
-        var th=s/32*Math.PI*2, p=[g.x,g.y,g.z];
-        p[u]+= Math.cos(th)*L; p[w]+= Math.sin(th)*L;
-        if(prev){ arr.push(prev[0],prev[1],prev[2],col[0],col[1],col[2]);
-                  arr.push(p[0],p[1],p[2],col[0],col[1],col[2]); }
-        prev=p;
-      }
-    } else {
-      var e=axisEnd(a);
-      arr.push(g.x,g.y,g.z, col[0],col[1],col[2]);
-      arr.push(e.x,e.y,e.z, col[0],col[1],col[2]);
-      if(MODE==='S'){                                  // 끝에 작은 십자 = 크기 조절 손잡이
-        var h=L*0.09;
-        for(var q=0;q<3;q++){ var p1=[e.x,e.y,e.z], p2=[e.x,e.y,e.z];
-          p1[q]-=h; p2[q]+=h;
-          arr.push(p1[0],p1[1],p1[2],col[0],col[1],col[2]);
-          arr.push(p2[0],p2[1],p2[2],col[0],col[1],col[2]); }
-      }
+  // 축
+  for(var ax=0;ax<3;ax++){
+    var on=act&&act.kind==='axis'&&act.a===ax, col=on?HLCOL:AXCOL[ax];
+    if(MODE==='R'){ pushRing(T,g,ax,L,L*0.035,col); continue; }
+    var mn=[g.x,g.y,g.z], mx=[g.x,g.y,g.z], k;
+    for(k=0;k<3;k++){
+      if(k===ax){ mn[k]+=L*GZ.gap; mx[k]+=L*(MODE==='S'?0.86:0.92); }
+      else { mn[k]-=L*GZ.bar; mx[k]+=L*GZ.bar; }
     }
+    pushBox(T,mn,mx,col);
+    if(MODE==='S'){                                  // 끝에 큐브
+      var s=L*GZ.bar*2.6, e=[g.x,g.y,g.z]; e[ax]+=L*0.95;
+      pushBox(T,[e[0]-s,e[1]-s,e[2]-s],[e[0]+s,e[1]+s,e[2]+s],col);
+    } else pushCone(T,g,ax,L*0.92,L*1.22,L*GZ.bar*2.6,col);
   }
-  gl.bindBuffer(gl.ARRAY_BUFFER, BUF.dyn);
-  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(arr), gl.DYNAMIC_DRAW);
-  gl.enableVertexAttribArray(PROG.aPos); gl.vertexAttribPointer(PROG.aPos,3,gl.FLOAT,false,24,0);
-  gl.enableVertexAttribArray(PROG.aCol); gl.vertexAttribPointer(PROG.aCol,3,gl.FLOAT,false,24,12);
+  // 면 손잡이
+  for(var pi=0;pi<PLANES.length;pi++){
+    var pl=PLANES[pi];
+    var onp=act&&act.kind==='plane'&&act.a===pl.a&&act.b===pl.b;
+    var cc=onp?HLCOL:[(AXCOL[pl.a][0]+AXCOL[pl.b][0])/2,(AXCOL[pl.a][1]+AXCOL[pl.b][1])/2,
+                      (AXCOL[pl.a][2]+AXCOL[pl.b][2])/2];
+    var A=[g.x,g.y,g.z], B2=[g.x,g.y,g.z], C2=[g.x,g.y,g.z], D2=[g.x,g.y,g.z];
+    A[pl.a]+=L*GZ.p0; A[pl.b]+=L*GZ.p0;
+    B2[pl.a]+=L*GZ.p1; B2[pl.b]+=L*GZ.p0;
+    C2[pl.a]+=L*GZ.p1; C2[pl.b]+=L*GZ.p1;
+    D2[pl.a]+=L*GZ.p0; D2[pl.b]+=L*GZ.p1;
+    PL.push(A[0],A[1],A[2],cc[0],cc[1],cc[2], B2[0],B2[1],B2[2],cc[0],cc[1],cc[2],
+            C2[0],C2[1],C2[2],cc[0],cc[1],cc[2]);
+    PL.push(A[0],A[1],A[2],cc[0],cc[1],cc[2], C2[0],C2[1],C2[2],cc[0],cc[1],cc[2],
+            D2[0],D2[1],D2[2],cc[0],cc[1],cc[2]);
+    // 테두리를 그어 어느 면인지 또렷하게
+    var ring=[A,B2,C2,D2];
+    for(var q2=0;q2<4;q2++){ var p1=ring[q2], p2=ring[(q2+1)%4];
+      LN.push(p1[0],p1[1],p1[2],cc[0],cc[1],cc[2], p2[0],p2[1],p2[2],cc[0],cc[1],cc[2]); }
+  }
+  // 가운데
+  var onc=act&&act.kind==='center', ccol=onc?HLCOL:[0.86,0.88,0.94], cs=L*GZ.ctr*0.72;
+  pushBox(T,[g.x-cs,g.y-cs,g.z-cs],[g.x+cs,g.y+cs,g.z+cs],ccol);
+
   gl.disable(gl.DEPTH_TEST);
-  gl.drawArrays(gl.LINES,0,arr.length/6);
+  function drawArr(buf,arr,mode,alpha){
+    if(!arr.length) return;
+    gl.bindBuffer(gl.ARRAY_BUFFER,buf);
+    gl.bufferData(gl.ARRAY_BUFFER,new Float32Array(arr),gl.DYNAMIC_DRAW);
+    gl.vertexAttribPointer(PROG.aPos,3,gl.FLOAT,false,24,0);
+    gl.vertexAttribPointer(PROG.aCol,3,gl.FLOAT,false,24,12);
+    gl.uniform1f(PROG.uFade,alpha);
+    gl.drawArrays(mode,0,arr.length/6);
+  }
+  drawArr(BUFG.tri,T,gl.TRIANGLES,1);
+  gl.enable(gl.BLEND); gl.blendFunc(gl.SRC_ALPHA,gl.ONE_MINUS_SRC_ALPHA);
+  drawArr(BUFG.pl,PL,gl.TRIANGLES,0.5);
+  gl.disable(gl.BLEND);
+  drawArr(BUFG.line,LN,gl.LINES,1);
+  gl.uniform1f(PROG.uFade,1);
   gl.enable(gl.DEPTH_TEST);
 }
 
@@ -465,7 +665,16 @@ var keys={}, drag=null, moved=false;
 window.addEventListener('keydown',function(e){
   var tag=(e.target.tagName||'').toLowerCase();
   if(tag==='input'||tag==='textarea') return;
-  keys[e.key.toLowerCase()]=true;
+  var K=e.key.toLowerCase();
+  keys[K]=true;
+  if(e.key===' ') e.preventDefault();                 // 위로 이동(페이지 스크롤 방지)
+  /* 기즈모 전환은 언리얼과 같은 자리 — Q 이동 / E 크기 / R 회전.
+     Q·E 는 예전에 카메라 상하였는데, 그건 Space(위)·Ctrl(아래)로 옮겼다. */
+  if(!e.ctrlKey && !e.metaKey){
+    if(K==='q'){ setMode('T'); e.preventDefault(); }
+    if(K==='e'){ setMode('S'); e.preventDefault(); }
+    if(K==='r'){ setMode('R'); e.preventDefault(); }
+  }
   if(e.key==='1'){ setMode('T'); e.preventDefault(); }
   if(e.key==='2'){ setMode('R'); e.preventDefault(); }
   if(e.key==='3'){ setMode('S'); e.preventDefault(); }
@@ -481,31 +690,30 @@ cv.addEventListener('mousedown',function(e){
   if(e.button!==0) return;
   var r=cv.getBoundingClientRect(), mx=e.clientX-r.left, my=e.clientY-r.top;
   moved=false;
-  var ax=pickAxis(mx,my,viewProj());
-  if(ax>=0 && SEL>=0){ snapshot(); drag={kind:'gizmo', ax:ax, x:mx, y:my, VP:viewProj()}; }
-  else drag={kind:'look', x:e.clientX, y:e.clientY};
-  cv.classList.add('looking');
+  var h=(SEL>=0)?pickHandle(mx,my):null;
+  if(h){ beginGrab(h,mx,my); drag={kind:'gizmo'}; }
+  else { drag={kind:'look', x:e.clientX, y:e.clientY}; cv.classList.add('looking'); }
 });
 window.addEventListener('mousemove',function(e){
-  if(!drag) return;
+  var r=cv.getBoundingClientRect(), mx=e.clientX-r.left, my=e.clientY-r.top;
+  if(!drag){                                   // 손잡이 위에 있으면 미리 밝혀 준다
+    var h=(SEL>=0 && mx>=0 && my>=0 && mx<r.width && my<r.height) ? pickHandle(mx,my) : null;
+    if(!sameH(h,HOVER)){ HOVER=h; cv.style.cursor=h?'grab':''; }
+    return;
+  }
   if(drag.kind==='look'){
     var dx=e.clientX-drag.x, dy=e.clientY-drag.y;
     drag.x=e.clientX; drag.y=e.clientY;
     if(Math.abs(dx)+Math.abs(dy)>2) moved=true;
     /* 오른쪽으로 끌면 시점도 오른쪽으로 돈다. 이 카메라는 yaw 가 커질수록 전방이
-       +X(=화면 오른쪽)로 가므로 부호가 + 다. 예전엔 - 라 좌우가 뒤집혀 있었다.
-       상하는 FPS 관습대로 아래로 끌면 아래를 본다. */
+       +X(=화면 오른쪽)로 가므로 부호가 + 다. 상하는 FPS 관습대로. */
     cam.yaw+=dx*0.0032;
     cam.pitch=Math.max(-1.5,Math.min(1.5, cam.pitch-dy*0.0032));
-  } else {
-    var r=cv.getBoundingClientRect(), mx=e.clientX-r.left, my=e.clientY-r.top;
-    applyGizmo(mx-drag.x, my-drag.y, drag);
-    drag.x=mx; drag.y=my; moved=true;
-  }
+  } else { dragGizmo(mx,my); moved=true; }
 });
 window.addEventListener('mouseup',function(e){
   if(!drag) return;
-  var was=drag; drag=null; cv.classList.remove('looking');
+  var was=drag; drag=null; GRAB=null; cv.classList.remove('looking');
   if(was.kind==='look' && !moved){
     var r=cv.getBoundingClientRect(), mx=e.clientX-r.left, my=e.clientY-r.top;
     if(ARM_DUMMY){ ARM_DUMMY=false;
@@ -515,32 +723,6 @@ window.addEventListener('mouseup',function(e){
   }
 });
 cv.addEventListener('contextmenu',function(e){ e.preventDefault(); });
-
-/* 기즈모 끌기 — 축을 화면에 투영해 마우스 이동을 그 방향 성분으로 환산한다.
-   화면 좌표로 재기 때문에 카메라가 어디를 보든 손이 가는 방향과 결과가 맞는다. */
-function applyGizmo(dx,dy,st){
-  var o=OBJ[SEL]; if(!o) return;
-  var g=gizmoOrigin(), VP=viewProj();
-  var p0=project(g.x,g.y,g.z,VP), e=axisEnd(st.ax), p1=project(e.x,e.y,e.z,VP);
-  if(!p0||!p1) return;
-  var vx=p1.x-p0.x, vy=p1.y-p0.y, len=Math.hypot(vx,vy)||1;
-  var t=(dx*vx+dy*vy)/len;                       // 화면 픽셀 단위 이동량
-  if(MODE==='T'){
-    var world=t/len*gizmoLen();                  // 픽셀 → 월드 미터
-    if(st.ax===0) o.x+=world; else if(st.ax===1) o.y+=world; else o.z+=world;
-    if(SNAP){ o.x=Math.round(o.x/SNAP)*SNAP; o.y=Math.round(o.y/SNAP)*SNAP; o.z=Math.round(o.z/SNAP)*SNAP; }
-  } else if(MODE==='R'){
-    var d=t*0.45;
-    if(st.ax===0) o.rx+=d; else if(st.ax===1) o.ry+=d; else o.rz+=d;
-    if(SNAP) { var q=15;
-      if(st.ax===0) o.rx=Math.round(o.rx/q)*q; else if(st.ax===1) o.ry=Math.round(o.ry/q)*q; else o.rz=Math.round(o.rz/q)*q; }
-  } else {
-    var f=1+t/160;
-    if(st.ax===0) o.sx=Math.max(0.02,o.sx*f); else if(st.ax===1) o.sy=Math.max(0.02,o.sy*f);
-    else o.sz=Math.max(0.02,o.sz*f);
-  }
-  rebuild(); syncPanel();
-}
 
 function pickAt(mx,my){
   var d=rayAt(mx,my), best=Infinity, bi=-1;
@@ -781,9 +963,9 @@ document.getElementById('btnLoad').onclick=function(){
 function hud(){
   document.getElementById('hud').textContent=
     '조각 '+OBJ.length+'개 · 정점 '+BUF.meshN+'\n'+
-    '기즈모 '+(MODE==='T'?'이동':MODE==='R'?'회전':'크기')+' (1/2/3 전환)\n'+
+    '기즈모 '+(MODE==='T'?'이동 Q':MODE==='R'?'회전 R':'크기 E')+'  (막대=축 · 네모=면 · 큐브=전체)\n'+
     '더미 '+(DUMMY.on?('켬 · 서 있는 높이 '+r2(DUMMY.y)+'m'):'끔')+' (사람 키 1.8m)\n'+
-    'WASD 이동 · Q/E 위아래 · Shift 가속\n'+
+    'WASD 이동 · Space 위 · Ctrl 아래 · Shift 가속\n'+
     '좌클릭 드래그 시점 · 클릭 선택 · Del 삭제';
 }
 var toastT=0;
@@ -797,7 +979,7 @@ function loop(now){
   var dt=Math.min(0.05,(now-last)/1000); last=now;
   var B=camBasis(), sp=(keys['shift']?54:14)*dt;
   var f=(keys['w']?1:0)-(keys['s']?1:0), r=(keys['d']?1:0)-(keys['a']?1:0);
-  var u=(keys['e']?1:0)-(keys['q']?1:0);
+  var u=(keys[' ']?1:0)-(keys['control']?1:0);        // Q·E 는 기즈모 전환으로 갔다
   if(f||r||u){
     cam.x+=(B.f.x*f+B.r.x*r)*sp; cam.y+=(B.f.y*f)*sp+u*sp; cam.z+=(B.f.z*f+B.r.z*r)*sp;
   }
