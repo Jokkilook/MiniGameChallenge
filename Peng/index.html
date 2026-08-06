@@ -1788,54 +1788,84 @@ function pieceBoxes(m, name){
                 hx:(m.max[0]-m.min[0])/2, hy:(m.max[1]-m.min[1])/2, hz:(m.max[2]-m.min[2])/2 }];
     return m._boxes;
   }
+  /* 기둥마다 '속이 찬 y 구간'을 통째로 구한다.
+     예전엔 기둥의 최저~최고 y 한 덩어리로 봤는데, 그러면 세로로 뚫린 것이 전부 막힌다 —
+     탁자 밑·의자 아래·아치·천막 속이 다 채워졌다(실측 과잉: 의자 56% · 천막 188%).
+     지금은 기둥 중심에서 위로 광선을 쏴 삼각형과 만나는 y 를 전부 모으고, 정렬해
+     둘씩 짝지어 구간을 만든다(닫힌 메시라 교차는 들어감/나옴이 번갈아 온다).
+     교차가 홀수면(한쪽 면만 있는 판 등) 예전처럼 최저~최고로 물러난다. */
   var mn=m.min, mx=m.max;
   var nx=Math.max(1,Math.round((mx[0]-mn[0])*PIECE_RES)), nz=Math.max(1,Math.round((mx[2]-mn[2])*PIECE_RES));
   var sx=(mx[0]-mn[0])/nx, sz=(mx[2]-mn[2])/nz;
-  var lo=new Float32Array(nx*nz), hi=new Float32Array(nx*nz), got=new Uint8Array(nx*nz);
+  var hit=new Array(nx*nz);
   var P=m.pos, I=m.idx;
-  for(var c=0;c<nx*nz;c++){ lo[c]=1e9; hi[c]=-1e9; }
   for(var k=0;k<I.length;k+=3){
     var a=I[k]*3, b=I[k+1]*3, d=I[k+2]*3;
     var ax=P[a],ay=P[a+1],az=P[a+2], bx=P[b],by=P[b+1],bz=P[b+2], cx2=P[d],cy2=P[d+1],cz2=P[d+2];
-    var t0=Math.min(ay,by,cy2), t1=Math.max(ay,by,cy2);
     var i0=Math.max(0,Math.floor((Math.min(ax,bx,cx2)-mn[0])/sx)), i1=Math.min(nx-1,Math.floor((Math.max(ax,bx,cx2)-mn[0])/sx));
     var j0=Math.max(0,Math.floor((Math.min(az,bz,cz2)-mn[2])/sz)), j1=Math.min(nz-1,Math.floor((Math.max(az,bz,cz2)-mn[2])/sz));
+    var A=(bz-cz2)*(ax-cx2)+(cx2-bx)*(az-cz2);
+    if(Math.abs(A)<1e-12) continue;                 // XZ 로 눕혀 보면 선이 되는 삼각형(수직면)
     for(var i=i0;i<=i1;i++) for(var j=j0;j<=j1;j++){
       var px=mn[0]+(i+0.5)*sx, pz=mn[2]+(j+0.5)*sz;
-      // XZ 투영 안에 기둥 중심이 있나(부호 있는 넓이 3개의 부호가 같으면 안쪽)
       var s1=(bx-ax)*(pz-az)-(bz-az)*(px-ax);
       var s2=(cx2-bx)*(pz-bz)-(cz2-bz)*(px-bx);
       var s3=(ax-cx2)*(pz-cz2)-(az-cz2)*(px-cx2);
-      var neg=(s1<0)||(s2<0)||(s3<0), pos=(s1>0)||(s2>0)||(s3>0);
-      if(neg&&pos) continue;
-      var c2=i*nz+j; got[c2]=1;
-      if(t0<lo[c2]) lo[c2]=t0; if(t1>hi[c2]) hi[c2]=t1;
+      if(((s1<0)||(s2<0)||(s3<0)) && ((s1>0)||(s2>0)||(s3>0))) continue;
+      var w1=((bz-cz2)*(px-cx2)+(cx2-bx)*(pz-cz2))/A, w2=((cz2-az)*(px-cx2)+(ax-cx2)*(pz-cz2))/A;
+      var c2=i*nz+j; (hit[c2]||(hit[c2]=[])).push(w1*ay+w2*by+(1-w1-w2)*cy2);
     }
   }
-  /* 병합 '키'만 0.05 유닛(약 15cm)으로 뭉갠다. 표면 요철까지 구간을 따로 세면 바닥
-     한 장이 9박스로 쪼개져 충돌 비용만 늘고 감각은 그대로다.
-     ※ 실제 박스 크기는 원래 값을 쓴다. 예전엔 hi 를 올림해서 조각이 통째로 부풀었고,
-        그 바람에 바닥 윗면이 0 대신 +0.15m 가 돼 문 상인방에 머리가 3cm 걸렸다. */
-  var QY=50;                                 // 0.02유닛(6cm) 단위로 구분 — 계단 한 칸이 살아난다
+  /* 교차점 → 구간. 4.5cm(0.015유닛)보다 좁은 틈은 붙인다 — 몸이 못 지나가는 틈을
+     따로 두면 상자만 늘고 판정은 그대로다. 아주 얇은 구간은 최소 두께를 준다. */
+  var GAP=0.015, MINT=0.02;
+  var span=new Array(nx*nz);
+  for(var c3=0;c3<nx*nz;c3++){
+    var ys=hit[c3]; if(!ys || !ys.length) continue;
+    ys.sort(function(u,v){ return u-v; });
+    var iv=[];
+    if(ys.length%2===0){ for(var q=0;q<ys.length;q+=2) iv.push([ys[q],ys[q+1]]); }
+    else iv.push([ys[0], ys[ys.length-1]]);          // 홀수 = 열린 메시 → 통째로
+    var out2=[];
+    for(var q2=0;q2<iv.length;q2++){
+      var v=iv[q2];
+      if(out2.length && v[0]-out2[out2.length-1][1] < GAP) out2[out2.length-1][1]=Math.max(out2[out2.length-1][1], v[1]);
+      else out2.push([v[0], v[1]]);
+    }
+    for(var q3=0;q3<out2.length;q3++) if(out2[q3][1]-out2[q3][0] < MINT) out2[q3][1]=out2[q3][0]+MINT;
+    span[c3]=out2;
+  }
+  /* 같은 구간 묶음을 가진 이웃 기둥을 직사각형으로 합친다. 서명은 2cm 단위로 뭉갠다 —
+     표면 요철까지 따로 세면 상자만 몇 배로 늘고 감각은 그대로다. */
+  var QY=50;
+  function key(c){ var v=span[c]; if(!v) return null;
+    var s2=''; for(var i=0;i<v.length;i++) s2+=Math.round(v[i][0]*QY)+':'+Math.round(v[i][1]*QY)+'|';
+    return s2; }
   var used=new Uint8Array(nx*nz), out=[];
-  var key=function(c){ return got[c] ? (Math.round(lo[c]*QY)+':'+Math.round(hi[c]*QY)) : null; };
-  for(i=0;i<nx;i++) for(j=0;j<nz;j++){
-    var c0=i*nz+j; if(used[c0]||!got[c0]) continue;
+  for(var i2=0;i2<nx;i2++) for(var j2=0;j2<nz;j2++){
+    var c0=i2*nz+j2; if(used[c0]||!span[c0]) continue;
     var kk=key(c0), w=1, h=1;
-    while(j+w<nz && !used[i*nz+j+w] && key(i*nz+j+w)===kk) w++;
+    while(j2+w<nz && !used[i2*nz+j2+w] && key(i2*nz+j2+w)===kk) w++;
     var grow=true;
-    while(grow && i+h<nx){
-      for(var q=0;q<w;q++){ var cc=(i+h)*nz+j+q; if(used[cc]||key(cc)!==kk){ grow=false; break; } }
+    while(grow && i2+h<nx){
+      for(var q4=0;q4<w;q4++){ var cc=(i2+h)*nz+j2+q4; if(used[cc]||key(cc)!==kk){ grow=false; break; } }
       if(grow) h++;
     }
-    var y0=1e9, y1=-1e9;
+    var lows=[], highs=[], nIv=span[c0].length, t;
+    for(t=0;t<nIv;t++){ lows.push(1e9); highs.push(-1e9); }
     for(var a2=0;a2<h;a2++) for(var b2=0;b2<w;b2++){
-      var cc2=(i+a2)*nz+j+b2; used[cc2]=1;
-      if(lo[cc2]<y0) y0=lo[cc2]; if(hi[cc2]>y1) y1=hi[cc2];   // 합친 칸들의 실제 범위
+      var cc2=(i2+a2)*nz+j2+b2; used[cc2]=1;
+      var v2=span[cc2];
+      for(t=0;t<nIv && t<v2.length;t++){
+        if(v2[t][0]<lows[t]) lows[t]=v2[t][0];
+        if(v2[t][1]>highs[t]) highs[t]=v2[t][1];
+      }
     }
-    if(y1-y0<0.02) y1=y0+0.02;                 // 완전 평면은 두께를 조금 준다
-    out.push({ cx:mn[0]+(i+h/2)*sx, cy:(y0+y1)/2, cz:mn[2]+(j+w/2)*sz,
-               hx:h*sx/2, hy:(y1-y0)/2, hz:w*sz/2 });
+    for(t=0;t<nIv;t++){
+      if(highs[t]-lows[t]<MINT) highs[t]=lows[t]+MINT;
+      out.push({ cx:mn[0]+(i2+h/2)*sx, cy:(lows[t]+highs[t])/2, cz:mn[2]+(j2+w/2)*sz,
+                 hx:h*sx/2, hy:(highs[t]-lows[t])/2, hz:w*sz/2 });
+    }
   }
   m._boxes=out;
   return out;
