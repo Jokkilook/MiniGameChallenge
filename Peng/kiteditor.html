@@ -75,16 +75,15 @@
 
     <h2>기즈모</h2>
     <div class="grid3">
-      <button id="mT" class="on">이동 W</button>
-      <button id="mR">회전 R</button>
-      <button id="mS">크기 E</button>
+      <button id="mT" class="on">이동 E</button>
+      <button id="mR">회전 T</button>
+      <button id="mS">크기 R</button>
     </div>
     <div class="row" style="margin-top:6px">
       <button id="btnSnap" style="flex:1">격자 스냅: 끔</button>
     </div>
-    <p class="hint"><b>우클릭 드래그</b>로 둘러보고, 그동안 <b>WASD</b>로 날아다닙니다.
-    누르지 않을 때 <b>W/E/R</b>은 기즈모 전환입니다(언리얼과 같은 규칙).
-    <b>휠</b>로 비행 속도를 조절하세요.<br>
+    <p class="hint"><b>우클릭 드래그</b>로 둘러보고 <b>WASD</b>로 날아다닙니다.
+    기즈모는 <b>E</b> 이동 · <b>R</b> 크기 · <b>T</b> 회전. <b>휠</b>로 비행 속도를 조절하세요.<br>
     축 <b>막대</b>는 그 축만, 모서리의 <b>작은 네모</b>는 그 면(두 축)만,
     가운데 <b>큐브</b>는 세 축 전부에 걸립니다. 회전 모드에서는 막대가 고리가 되고,
     면 네모는 그 면의 <b>법선 축</b>을 중심으로 돌립니다.</p>
@@ -775,12 +774,12 @@ window.addEventListener('keydown',function(e){
   var K=e.key.toLowerCase();
   keys[K]=true;
   if(e.key===' ') e.preventDefault();                 // 위로 이동(페이지 스크롤 방지)
-  /* 기즈모 전환 — W 이동 / E 크기 / R 회전.
-     우클릭으로 둘러보는 중에는 같은 키가 비행이라 전환하지 않는다(언리얼과 같다). */
-  if(!e.ctrlKey && !e.metaKey && !LOOKING){
-    if(K==='w'){ setMode('T'); e.preventDefault(); }
-    if(K==='e'){ setMode('S'); e.preventDefault(); }
-    if(K==='r'){ setMode('R'); e.preventDefault(); }
+  /* 기즈모 전환 — E 이동 / R 크기 / T 회전.
+     WASD 와 안 겹치므로 둘러보는 중에도 그냥 먹는다. */
+  if(!e.ctrlKey && !e.metaKey){
+    if(K==='e'){ setMode('T'); e.preventDefault(); }
+    if(K==='r'){ setMode('S'); e.preventDefault(); }
+    if(K==='t'){ setMode('R'); e.preventDefault(); }
   }
   if(e.key==='1'){ setMode('T'); e.preventDefault(); }
   if(e.key==='2'){ setMode('R'); e.preventDefault(); }
@@ -828,7 +827,7 @@ window.addEventListener('mousemove',function(e){
 window.addEventListener('mouseup',function(e){
   if(!drag) return;
   var was=drag; drag=null; GRAB=null;
-  if(was.kind==='look'){ LOOKING=false; keys={}; cv.classList.remove('looking'); }
+  if(was.kind==='look'){ LOOKING=false; cv.classList.remove('looking'); }
   if(was.kind==='pick' && !moved){
     var r=cv.getBoundingClientRect(), mx=e.clientX-r.left, my=e.clientY-r.top;
     if(ARM_DUMMY){ ARM_DUMMY=false;
@@ -1211,9 +1210,9 @@ function hud(){
     '조각 '+OBJ.filter(function(o){return !isMark(o);}).length+
       '개 · 리스폰 '+OBJ.filter(function(o){return o.t==='@spawn';}).length+
       ' · 패드 '+OBJ.filter(function(o){return o.t==='@pad';}).length+'\n'+
-    '기즈모 '+(MODE==='T'?'이동 W':MODE==='R'?'회전 R':'크기 E')+'  (막대=축 · 네모=면 · 큐브=전체)\n'+
+    '기즈모 '+(MODE==='T'?'이동 E':MODE==='R'?'회전 T':'크기 R')+'  (막대=축 · 네모=면 · 큐브=전체)\n'+
     '더미 '+(DUMMY.on?('켬 · 서 있는 높이 '+r2(DUMMY.y)+'m'):'끔')+' (사람 키 1.8m)\n'+
-    '우클릭 드래그 시점 + WASD 비행 '+FLY.toFixed(1)+'m/s (휠 조절 · Shift 3.5배)\n'+
+    'WASD 비행 '+FLY.toFixed(1)+'m/s (휠 조절 · Shift 3.5배) · 우클릭 드래그 시점\n'+
     'Space 위 · Ctrl 아래 · 좌클릭 선택 · Del 삭제';
 }
 var toastT=0;
@@ -1226,10 +1225,11 @@ var last=0;
 function loop(now){
   var dt=Math.min(0.05,(now-last)/1000); last=now;
   var B=camBasis(), sp=FLY*(keys['shift']?3.5:1)*dt;
-  // WASD 는 우클릭으로 둘러보는 중에만 — 안 그러면 W/E/R 기즈모 전환과 부딪힌다
-  var f=LOOKING?((keys['w']?1:0)-(keys['s']?1:0)):0;
-  var r=LOOKING?((keys['d']?1:0)-(keys['a']?1:0)):0;
-  var u=(keys[' ']?1:0)-(keys['control']?1:0);        // 위아래는 언제나
+  /* WASD 는 언제나 먹는다. 예전엔 W 가 이동 기즈모 키라 우클릭 중에만 열어 뒀는데,
+     기즈모가 E/R/T 로 옮겨가면서 겹칠 이유가 없어졌다. */
+  var f=(keys['w']?1:0)-(keys['s']?1:0);
+  var r=(keys['d']?1:0)-(keys['a']?1:0);
+  var u=(keys[' ']?1:0)-(keys['control']?1:0);
   if(f||r||u){
     cam.x+=(B.f.x*f+B.r.x*r)*sp; cam.y+=(B.f.y*f)*sp+u*sp; cam.z+=(B.f.z*f+B.r.z*r)*sp;
   }
