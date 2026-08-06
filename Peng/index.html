@@ -488,7 +488,9 @@ function buildStaticPieces(){
   LEVEL.pieces.forEach(function(pc){
     if(pc.deco) return;
     var m=PP[pc.t]; if(!m) return;
-    pieceColliders(pc, m, U, {col:'#6b7280', _hide:true}).forEach(function(b){ LEVEL.boxes.push(b); });
+    var useTri = (PIECE_FLAT[pc.t]==null);
+    pieceColliders(pc, m, U, {col:'#6b7280', _hide:true})
+      .forEach(function(b){ b._tri=useTri; LEVEL.boxes.push(b); });
   });
   buildStation(LEVEL.pieces);
 }
@@ -502,6 +504,7 @@ function setLevel(id){
   STATION.count=0; STATION.pending=null;
   buildCollapseFloor();                                    // 아레나 바닥은 여기서 깔린다
   buildStaticPieces();                                     // 에디터로 놓은 조각
+  buildTriSoup();                                          // 조각의 삼각형 = 실제 이동 판정
   buildPads();                                             // 아이템 패드 위치
   MARKS = PENG.coopMarkers(d);
   // HUD 표시를 즉시 갱신 — 프레임을 기다리지 않아야 "지금 어느 맵인지"가 항상 맞다.
@@ -550,7 +553,9 @@ function buildCollapseFloor(){
         LEVEL.boxes.push({ cx:(pc.i+x)*U, cy:(pc.y+b.cy*ps)*U, cz:(pc.j+z)*U,
           hx:hx*U, hy:b.hy*ps*U, hz:hz*U,
           col:C.col, _tile:true, _ring:pc.order, _col0:C.col,
-          _hide:true });        // 보이는 건 킷 조각 쪽이다 — 이건 충돌 전용
+          /* 보이는 건 킷 조각 쪽이다 — 이건 광선(조준·폭발 가림)용.
+             몸의 이동 판정은 _tri 표시를 보고 삼각형 쪽으로 넘긴다. */
+          _hide:true, _tri:(PIECE_FLAT[pc.t]==null) });
       }
       if(pc.order>maxR) maxR=pc.order;
     });
@@ -571,8 +576,9 @@ function buildCollapseFloor(){
       if(pc.order>maxR) maxR=pc.order;
       if(pc.deco) return;                       // 산체·풀 — 보이기만 하고 통과
       var m=PP2[pc.t]; if(!m) return;
-      pieceColliders(pc, m, U2, {col:C.col, _tile:true, _ring:pc.order, _col0:C.col, _hide:true})
-        .forEach(function(b){ LEVEL.boxes.push(b); });
+      pieceColliders(pc, m, U2, {col:C.col, _tile:true, _ring:pc.order, _col0:C.col,
+                                 _hide:true})
+        .forEach(function(b){ b._tri=(PIECE_FLAT[pc.t]==null); LEVEL.boxes.push(b); });
     });
     if(PK.maxRing>maxR) maxR=PK.maxRing;
     LEVEL._pieces = PK.pieces;
@@ -630,7 +636,7 @@ function dropRing(r){
       var pp=LEVEL._pieces[q];
       if(pp.order===r && !pp._gone){ pp._gone=true; any=true; }
     }
-    if(any) buildStation(LEVEL._pieces);
+    if(any){ buildStation(LEVEL._pieces); buildTriSoup(); }
   }
   for(var i=0;i<LEVEL.boxes.length;i++){ var b=LEVEL.boxes[i];
     if(b.deco || b._ring!==r || b._fall) continue;
@@ -799,11 +805,167 @@ function updateLinks(s){
    박스를 훑는 곳(충돌 2 · 광선 2 · 렌더 1)이 전부 이 판정을 공유한다. */
 function boxSolid(b){ return !b.deco && (!b.link || !!LINK_ON[b.link]); }
 
+/* ---------- 폴리곤 충돌 ----------
+   조각을 상자로 근사하는 건 한계가 있다 — 아무리 촘촘히 잘라도 경사면은 계단이 되고
+   얇은 껍질은 속이 찬다. 그래서 '몸이 움직일 때'만은 조각의 삼각형을 그대로 쓴다.
+   광선(조준선·투사체·폭발 가림·봇 시야)은 기존 상자를 계속 쓴다 — 거긴 넉넉해도
+   문제가 없고, 삼각형으로 바꾸면 비용만 늘어난다.
+
+   전수 검사는 안 된다(피크가 43,020 삼각형 · 축 3개 × 120Hz = 초당 1,550만 번).
+   균일 격자에 넣어 두고 몸 상자가 닿는 칸만 훑는다. */
+var TSOUP=null, TCELL=1.5;
+function buildTriSoup(){
+  TSOUP=null;
+  var list=LEVEL && (LEVEL.pieces || LEVEL._pieces);
+  if(!list || !list.length) return;
+  var P=stationParts(), U=STATION.unit, total=0, q, pc, m;
+  /* '평평한 한 장'으로 치기로 한 조각(바닥·바위 슬래브)은 삼각형에 안 넣는다.
+     원본 윗면이 살짝 볼록해서 삼각형 그대로 밟으면 데크가 도로 울퉁불퉁해진다 —
+     빠르게 밀고 밀리는 판에서 9~18cm 턱이 흩어져 있으면 그냥 사고다.
+     그 조각은 예전처럼 납작한 상자가 맡는다(_tri 를 안 붙인다). */
+  for(q=0;q<list.length;q++){ pc=list[q];
+    if(pc.deco||pc._gone||PIECE_FLAT[pc.t]!=null) continue;
+    m=P[pc.t]; if(m) total+=m.idx.length; }
+  if(!total) return;
+  // 미리 크기를 재고 한 번에 채운다 — Array.push 로 40만 개를 쌓으면 로딩이 눈에 띈다
+  var arr=new Float32Array(total*3), w=0;
+  for(q=0;q<list.length;q++){
+    pc=list[q]; if(pc.deco || pc._gone || PIECE_FLAT[pc.t]!=null) continue;
+    m=P[pc.t]; if(!m) continue;
+    var M=pieceBasis(pc), off=PIECE_OFF[pc.t], ox=off?off[0]:0, oz=off?off[1]:0;
+    var I=m.idx, Q=m.pos, bx=pc.i*U, by=pc.y*U, bz=pc.j*U;
+    var m0=M[0],m1=M[1],m2=M[2],m3=M[3],m4=M[4],m5=M[5],m6=M[6],m7=M[7],m8=M[8];
+    for(var k=0;k<I.length;k++){
+      var v=I[k]*3, px=Q[v]+ox, py=Q[v+1], pz=Q[v+2]+oz;
+      arr[w++]=bx+(m0*px+m3*py+m6*pz)*U;
+      arr[w++]=by+(m1*px+m4*py+m7*pz)*U;
+      arr[w++]=bz+(m2*px+m5*py+m8*pz)*U;
+    }
+  }
+  var n=arr.length/9;
+  /* 삼각형마다 AABB 를 미리 재 둔다 — 격자에서 꺼낸 뒤 분리축 13개를 다 돌리기 전에
+     이걸로 대부분을 걸러 낸다(실측: 분리축까지 가는 게 1/10 로 줄었다). */
+  var bb=new Float32Array(n*6);
+  var grid={};
+  for(var t=0;t<n;t++){
+    var o=t*9;
+    var x0=Math.min(arr[o],arr[o+3],arr[o+6]), x1=Math.max(arr[o],arr[o+3],arr[o+6]);
+    var y0=Math.min(arr[o+1],arr[o+4],arr[o+7]), y1=Math.max(arr[o+1],arr[o+4],arr[o+7]);
+    var z0=Math.min(arr[o+2],arr[o+5],arr[o+8]), z1=Math.max(arr[o+2],arr[o+5],arr[o+8]);
+    bb[t*6]=x0; bb[t*6+1]=y0; bb[t*6+2]=z0; bb[t*6+3]=x1; bb[t*6+4]=y1; bb[t*6+5]=z1;
+    for(var i=Math.floor(x0/TCELL);i<=Math.floor(x1/TCELL);i++)
+      for(var j=Math.floor(y0/TCELL);j<=Math.floor(y1/TCELL);j++)
+        for(var k2=Math.floor(z0/TCELL);k2<=Math.floor(z1/TCELL);k2++){
+          var key=((i+512)*1024+(j+512))*1024+(k2+512);   // 숫자 키 — 문자열 연결이 비싸다
+          var L=grid[key]; if(L) L.push(t); else grid[key]=[t];
+        }
+  }
+  TSOUP={ v:arr, n:n, bb:bb, grid:grid };
+}
+/* 몸 상자에 닿는 삼각형 번호를 공용 버퍼에 모은다(콜백·배열 할당 없이).
+   반환값은 개수, 결과는 TCAND[0..cnt) 에 들어간다. */
+var TCAND=[], _tseen=[], _tmark=0;
+function triGather(x0,y0,z0,x1,y1,z1){
+  if(!TSOUP) return 0;
+  _tmark++;
+  var g=TSOUP.grid, bb=TSOUP.bb, cnt=0;
+  var i0=Math.floor(x0/TCELL), i1=Math.floor(x1/TCELL);
+  var j0=Math.floor(y0/TCELL), j1=Math.floor(y1/TCELL);
+  var k0=Math.floor(z0/TCELL), k1=Math.floor(z1/TCELL);
+  for(var i=i0;i<=i1;i++) for(var j=j0;j<=j1;j++) for(var k=k0;k<=k1;k++){
+    var L=g[((i+512)*1024+(j+512))*1024+(k+512)]; if(!L) continue;
+    for(var q=0;q<L.length;q++){
+      var t=L[q]; if(_tseen[t]===_tmark) continue; _tseen[t]=_tmark;
+      var o6=t*6;
+      if(bb[o6]>x1||bb[o6+3]<x0||bb[o6+1]>y1||bb[o6+4]<y0||bb[o6+2]>z1||bb[o6+5]<z0) continue;
+      TCAND[cnt++]=t*9;
+    }
+  }
+  return cnt;
+}
+/* 상자 vs 삼각형(분리축 13개). 겹치면 true. */
+function boxTri(cx,cy,cz,hx,hy,hz, V,o){
+  var ax=V[o]-cx, ay=V[o+1]-cy, az=V[o+2]-cz;
+  var bx=V[o+3]-cx, by=V[o+4]-cy, bz=V[o+5]-cz;
+  var gx=V[o+6]-cx, gy=V[o+7]-cy, gz=V[o+8]-cz;
+  if(Math.min(ax,bx,gx)>hx || Math.max(ax,bx,gx)<-hx) return false;
+  if(Math.min(ay,by,gy)>hy || Math.max(ay,by,gy)<-hy) return false;
+  if(Math.min(az,bz,gz)>hz || Math.max(az,bz,gz)<-hz) return false;
+  var ex=[bx-ax,by-ay,bz-az], fx=[gx-bx,gy-by,gz-bz], gx2=[ax-gx,ay-gy,az-gz];
+  var E=[ex,fx,gx2];
+  for(var i=0;i<3;i++){
+    var e=E[i];
+    // 축 = e × (1,0,0) / (0,1,0) / (0,0,1)
+    var axes=[[0,-e[2],e[1]],[e[2],0,-e[0]],[-e[1],e[0],0]];
+    for(var j=0;j<3;j++){
+      var A=axes[j];
+      var p0=A[0]*ax+A[1]*ay+A[2]*az, p1=A[0]*bx+A[1]*by+A[2]*bz, p2=A[0]*gx+A[1]*gy+A[2]*gz;
+      var r=hx*Math.abs(A[0])+hy*Math.abs(A[1])+hz*Math.abs(A[2]);
+      if(Math.min(p0,p1,p2)>r || Math.max(p0,p1,p2)<-r) return false;
+    }
+  }
+  var nx=ex[1]*fx[2]-ex[2]*fx[1], ny=ex[2]*fx[0]-ex[0]*fx[2], nz=ex[0]*fx[1]-ex[1]*fx[0];
+  var d=nx*ax+ny*ay+nz*az, rr=hx*Math.abs(nx)+hy*Math.abs(ny)+hz*Math.abs(nz);
+  return Math.abs(d)<=rr;
+}
+/* 삼각형 면이 사각형(XZ) 위에서 갖는 y 의 극값. 볼록×볼록 교집합이라 극값은
+   꼭짓점에서 나온다 — 사각형 안의 삼각형 꼭짓점 / 삼각형 안의 사각형 꼭짓점 /
+   변끼리의 교점만 보면 된다. 이게 있어야 경사면 위에 정확히 설 수 있다. */
+function surfY(V,o, x0,x1,z0,z1, wantMax){
+  var ax=V[o],ay=V[o+1],az=V[o+2], bx=V[o+3],by=V[o+4],bz=V[o+5], cx=V[o+6],cy=V[o+7],cz=V[o+8];
+  var A=(bz-cz)*(ax-cx)+(cx-bx)*(az-cz);
+  if(A<1e-9 && A>-1e-9) return null;                // XZ 로 눕히면 선이 되는 면(수직벽)
+  var best=null, iA=1/A;
+  // 아래 셋은 매 프레임 수십 번 불린다 — 배열·클로저를 안 만든다
+  function planeY(px,pz){
+    var w1=((bz-cz)*(px-cx)+(cx-bx)*(pz-cz))*iA, w2=((cz-az)*(px-cx)+(ax-cx)*(pz-cz))*iA;
+    return w1*ay+w2*by+(1-w1-w2)*cy; }
+  function upd(y){ if(best===null) best=y;
+    else if(wantMax){ if(y>best) best=y; } else if(y<best) best=y; }
+  function inTri(px,pz){
+    var s1=(bx-ax)*(pz-az)-(bz-az)*(px-ax), s2=(cx-bx)*(pz-bz)-(cz-bz)*(px-bx),
+        s3=(ax-cx)*(pz-cz)-(az-cz)*(px-cx);
+    return !(((s1<0)||(s2<0)||(s3<0)) && ((s1>0)||(s2>0)||(s3>0))); }
+  // 1) 사각형 안의 삼각형 꼭짓점
+  if(ax>=x0&&ax<=x1&&az>=z0&&az<=z1) upd(ay);
+  if(bx>=x0&&bx<=x1&&bz>=z0&&bz<=z1) upd(by);
+  if(cx>=x0&&cx<=x1&&cz>=z0&&cz<=z1) upd(cy);
+  // 2) 삼각형 안의 사각형 꼭짓점
+  if(inTri(x0,z0)) upd(planeY(x0,z0));
+  if(inTri(x1,z0)) upd(planeY(x1,z0));
+  if(inTri(x1,z1)) upd(planeY(x1,z1));
+  if(inTri(x0,z1)) upd(planeY(x0,z1));
+  // 3) 삼각형 변 × 사각형 변(축정렬이라 t 하나면 된다)
+  for(var e=0;e<3;e++){
+    var px1,pz1,px2,pz2;
+    if(e===0){ px1=ax; pz1=az; px2=bx; pz2=bz; }
+    else if(e===1){ px1=bx; pz1=bz; px2=cx; pz2=cz; }
+    else { px1=cx; pz1=cz; px2=ax; pz2=az; }
+    var dx=px2-px1, dz=pz2-pz1, t, Z, X;
+    if(dx>1e-9||dx<-1e-9){
+      t=(x0-px1)/dx; if(t>=0&&t<=1){ Z=pz1+dz*t; if(Z>=z0&&Z<=z1) upd(planeY(x0,Z)); }
+      t=(x1-px1)/dx; if(t>=0&&t<=1){ Z=pz1+dz*t; if(Z>=z0&&Z<=z1) upd(planeY(x1,Z)); }
+    }
+    if(dz>1e-9||dz<-1e-9){
+      t=(z0-pz1)/dz; if(t>=0&&t<=1){ X=px1+dx*t; if(X>=x0&&X<=x1) upd(planeY(X,z0)); }
+      t=(z1-pz1)/dz; if(t>=0&&t<=1){ X=px1+dx*t; if(X>=x0&&X<=x1) upd(planeY(X,z1)); }
+    }
+  }
+  return best;
+}
+function triBlocked(px,py,pz){
+  if(!TSOUP) return false;
+  var cy=py+PH_HY;
+  var cnt=triGather(px-PH_HX,py,pz-PH_HZ, px+PH_HX,py+2*PH_HY,pz+PH_HZ);
+  for(var q=0;q<cnt;q++)
+    if(boxTri(px,cy,pz, PH_HX,PH_HY,PH_HZ, TSOUP.v,TCAND[q])) return true;
+  return false;
+}
 function boxBlocked(px,py,pz){
   for(var i=0;i<LEVEL.boxes.length;i++){ var b=LEVEL.boxes[i];
-    if(!boxSolid(b)) continue;          // 장식·꺼진 연동 발판은 통과(보이지 않는 벽 방지)
+    if(!boxSolid(b) || b._tri) continue;   // 장식·꺼진 발판은 통과 / _tri 는 삼각형이 맡는다
     if(aabbHit(px,py,pz,b)) return true; }
-  return false;
+  return triBlocked(px,py,pz);
 }
 function resolvePeers(s){
   if(GAMEMODE!=='versus') return;
@@ -1416,7 +1578,7 @@ function moveAxis(s, axis, delta){
   var hit=false, best=null;
   var canStep=true, riseTo=-Infinity;         // 수평 이동이 막혔을 때 "걸어 오를 수 있는가"
   for(var i=0;i<LEVEL.boxes.length;i++){ var b=LEVEL.boxes[i];
-    if(!boxSolid(b)) continue;                 // 장식·꺼진 연동 발판은 통과(보이지 않는 벽 방지)
+    if(!boxSolid(b) || b._tri) continue;       // 장식·꺼진 발판은 통과 / _tri 는 삼각형이 맡는다
     if(!aabbHit(s.p.x,s.p.y,s.p.z,b)) continue;
     hit=true;
     if(axis==='y'){
@@ -1429,6 +1591,35 @@ function moveAxis(s, axis, delta){
       var topB=b.cy+b.hy;
       if(topB-s.p.y > STEP_H) canStep=false;
       else if(topB>riseTo) riseTo=topB;
+    }
+  }
+  /* 조각은 삼각형으로 푼다. y 는 '몸 발밑 사각형 위에서 그 면이 갖는 높이'를 쓰므로
+     경사면 위에 정확히 서고, 수평은 그 높이를 턱으로 봐서 램프를 걸어 오르게 된다. */
+  if(TSOUP){
+    var qx0=s.p.x-PH_HX, qx1=s.p.x+PH_HX, qz0=s.p.z-PH_HZ, qz1=s.p.z+PH_HZ;
+    var cyB=s.p.y+PH_HY;
+    var cnt=triGather(qx0, s.p.y, qz0, qx1, s.p.y+2*PH_HY, qz1);
+    for(var q=0;q<cnt;q++){
+      var o=TCAND[q];
+      if(!boxTri(s.p.x,cyB,s.p.z, PH_HX,PH_HY,PH_HZ, TSOUP.v,o)) continue;
+      if(axis==='y'){
+        var y2=surfY(TSOUP.v,o, qx0,qx1,qz0,qz1, delta<0);
+        if(y2==null) continue;                     // 수직면 — y 로는 밀 곳이 없다
+        hit=true;
+        var cand=(delta<0) ? y2 : (y2-2*PH_HY);
+        if(best===null) best=cand;
+        else best=(delta<0)?Math.max(best,cand):Math.min(best,cand);
+      } else {
+        var top=surfY(TSOUP.v,o, qx0,qx1,qz0,qz1, true);
+        if(top==null){ hit=true; canStep=false; continue; }   // 수직벽
+        /* 발에서 턱 높이(STEP_H) 안쪽이면 아예 막지 않는다. 상자였을 때는 되돌린 뒤
+           riseTo 로 올려 세웠는데, 경사면에서는 그 방법이 안 통한다 — 올려 세운 자리도
+           경사면 안이라 '머리 공간 확인'이 계속 실패해서 램프 앞에 벽이 섰다.
+           그냥 통과시키면 바로 뒤따르는 y 패스(x→z→y 순서)가 그 면 위로 올려 준다.
+           그보다 높으면 벽이다. */
+        if(top - s.p.y <= STEP_H) continue;
+        hit=true; canStep=false;
+      }
     }
   }
   if(!hit) return;
