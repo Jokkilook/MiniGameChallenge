@@ -185,40 +185,22 @@
      여기 있는 건 스프라이트가 없을 때의 모습이다 — 진짜 프레임은 아래 에셋 주입부가
      같은 선택자로 덮어쓴다(명시도가 같고 뒤에 붙으므로 그쪽이 이긴다). */
   .panel9{background:rgba(10,14,22,.93);border:1px solid var(--line2)}
-  /* 가운데 놓는 상자. .setBox 는 목록을 스크롤시키는 왼쪽 정렬판이고 이쪽은 가운데 정렬이다. */
-  .card{width:min(460px,92vw);max-height:100vh;padding:22px 20px 20px;
+  /* 가운데 놓는 상자. .setBox 는 목록을 스크롤시키는 왼쪽 정렬판이고 이쪽은 가운데 정렬이다.
+     대기방에서는 여기에 방 설정이 통째로 들어가 길어지므로 안쪽만 스크롤시킨다. */
+  .card{width:min(460px,92vw);max-height:calc(100vh - 44px);overflow-y:auto;padding:22px 20px 20px;
     display:flex;flex-direction:column;align-items:center;text-align:center}
-  /* 대기방(연습장): 전체를 가리지 않는 각진 패널. 화면 모서리에 딱 붙이면 프레임의
-     세 변이 잘려 보이므로 살짝 띄운다. */
-  /* 창이 낮으면 아래쪽 버튼(시작·나가기)이 화면 밖으로 잘려 대기방이 막힌다 —
-     높이를 창에 묶고 안쪽만 스크롤시킨다(프레임은 제자리에 남는다). */
-  .screen.asPanel{inset:auto;top:10px;right:10px;width:min(304px,86vw);
-    height:auto;max-height:calc(100vh - 20px);overflow-y:auto;padding:12px 12px 14px;
-    align-items:stretch;text-align:left}
-  .screen.asPanel h1{font-size:25px;letter-spacing:-1px;margin:0}
-  .screen.asPanel .kr{margin-top:4px;font-size:11.5px}
-  .lobbyKeys{display:flex;align-items:center;gap:4px;margin-top:9px;flex-wrap:wrap}
-  .lobbyKeys div{display:flex;align-items:center;gap:5px;margin-right:10px}
-  .lobbyKeys span{font-size:10.5px;font-weight:800;color:#8492ad}
-  /* 일시정지 중의 대기방 패널 — 딤(#pause, 20) 위로 올라와 계속 눌린다.
-     설정 시트(.asSheet, 22)보다는 아래여야 시트를 열었을 때 제대로 가려진다. */
-  .screen.asPanel.overPause{z-index:21}
-  /* 패널이 딤 위에 살아 있으므로 일시정지 메뉴를 그만큼 왼쪽으로 민다 —
-     가운데 정렬 그대로 두면 좁은 창에서 패널이 메뉴의 오른쪽 절반을 덮는다
-     (실제로 '방 나가기'와 조작표 오른쪽 열이 가려졌다).
-     기준 830px = 카드 460 + .screen 여백 56 + 패널 314. */
-  @media (min-width:830px){ #pause.besidePanel{padding-right:330px} }
-  /* 둘이 나란히 못 서는 폭에서는 패널을 딤 아래로 되돌린다. 대기방 버튼은 잠시
-     못 누르지만, 겹쳐서 둘 다 못 읽는 것보다는 낫다(예전 동작과 같다). */
-  @media (max-width:829px){ .screen.asPanel.overPause{z-index:auto} }
-  .screen.asPanel .sub{font-size:10px;margin-bottom:4px;letter-spacing:3px}
-  .screen.asPanel p{font-size:12px;font-weight:600;line-height:1.5;margin:2px 0}
-  .screen.asPanel #codeBig{font-size:29px;letter-spacing:9px;margin-top:2px;padding-left:9px}
-  .screen.asPanel #playerList{width:100%;margin-top:10px}
-  .screen.asPanel #playerList li{padding:8px 11px;font-size:12.5px}
-  .screen.asPanel .menu{width:100%;margin-top:12px}
-  .screen.asPanel .menu.row button{padding:10px 6px;font-size:12px}
-  .screen.asPanel .hint{font-size:11px;margin-top:8px}
+  /* 대기방 블록 — 일시정지 카드 안에 들어가는 방 설정판. 게임 중에는 통째로 숨는다. */
+  #lobbyBlock{width:min(330px,88vw);display:flex;flex-direction:column;align-items:center}
+  #lobbyBlock.off{display:none}
+  #lobbyBlock .pick{align-self:stretch}
+  #lobbyBlock .menu{margin-top:10px}
+  #lobbyBlock .hint{margin-top:10px}
+  #lobbyBlock #codeBig{font-size:31px;letter-spacing:11px;margin-top:2px;padding-left:11px}
+  #lobbyBlock #playerList{width:100%;margin-top:12px}
+  #lobbyBlock #playerList li{padding:8px 11px;font-size:12.5px}
+  #lobbyBlock .menu{width:100%}
+  #lobbyBlock .menu.row button{padding:10px 6px;font-size:12.5px}
+  #lobbyBlock .hint{font-size:11.5px}
   .optSmall{cursor:pointer;font:inherit;font-size:9.5px;font-weight:800;letter-spacing:1.4px;color:#9dabc4;
     background:transparent;border:1px solid var(--line2);padding:3px 7px;border-radius:0;text-transform:uppercase}
   .optSmall:hover{color:var(--acc);border-color:var(--acc)}
@@ -255,7 +237,7 @@
   .setBox h1{font-size:30px;letter-spacing:-1px;margin:0;text-align:left;flex:none}
   .setBox .sub{text-align:left;flex:none}
   .setBox .kr{text-align:left;flex:none;margin:4px 0 12px}
-  .setBox .netline,.screen.asPanel .netline{justify-content:flex-start}
+  .setBox .netline{justify-content:flex-start}
   .setBox #setRows{flex:1 1 auto;min-height:0;overflow-y:auto;padding-right:4px}
   .setBox .hint{flex:none;margin-top:10px}
   .setBox .menu{width:100%;flex:none;margin-top:14px}
@@ -303,6 +285,9 @@
     transition:opacity .45s linear;word-break:break-word}
   .cmsg.me{border-left-color:#ff8a3a}
   .cmsg.sys{border-left-color:var(--line2);color:#9dabc4;font-style:normal;font-weight:600}
+  /* 줄 앞 아이템 그림 — 크기를 못 박아야 줄 높이가 안 흔들린다(이모지 폴백도 같은 칸). */
+  .cmsg .cic{display:inline-block;width:16px;height:16px;margin-right:6px;vertical-align:-3px;
+    object-fit:contain;font-size:14px;line-height:16px;text-align:center}
   .cmsg b{color:var(--acc2);font-weight:900}
   .cmsg.me b{color:#ff9d55}
   #chatInput{display:none;width:100%;pointer-events:auto;font:inherit;font-size:13.5px;font-weight:600;color:#fff;
@@ -334,7 +319,7 @@
      그 이상은 3D 위에 얹힌 UI 를 산만하게 만든다. */
   @keyframes scrIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
   .screen:not(.off){animation:scrIn .14s ease-out}
-  .screen.asPanel:not(.off),.screen.asSheet{animation:none}
+  .screen.asSheet{animation:none}
   @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
 </style>
 </head>
@@ -406,31 +391,6 @@
   </div>
 </div>
 
-<!-- 대기방 -->
-<div class="screen off asPanel panel9 tight" id="lobbyScr">
-  <h1>LOBBY</h1>
-  <p class="kr">대기방 <em id="lobbyCount">1/6</em></p>
-  <div class="fieldLabel">세션 코드 <a href="#" id="copyCode">복사</a></div>
-  <div id="codeBig">------</div>
-  <ul id="playerList"></ul>
-  <div class="pick"><span id="mapPickLabel">맵</span>
-    <button type="button" id="lobbyMapBtn" class="mapBtn">
-      <canvas width="88" height="56"></canvas><span class="lmName">—</span>
-    </button></div>
-  <label class="pick">내 색 <input type="color" id="colSel" /></label>
-  <p class="hint" id="lobbyHint"></p>
-  <!-- 연습장 조작 — 문장 대신 키 타일. 채워 넣는 건 buildLobbyKeys(). -->
-  <div class="lobbyKeys" id="lobbyKeys"></div>
-  <div class="menu row">
-    <button class="go alt" id="botAddBtn">+ AI</button>
-    <button class="go alt" id="botDelBtn">− AI</button>
-  </div>
-  <div class="menu row">
-    <button class="go" id="lobbyStartBtn" disabled>시작</button>
-    <button class="go alt" id="lobbyLeaveBtn">나가기</button>
-  </div>
-</div>
-
 <!-- 맵 브라우저. 타이틀 흐름에서는 화면으로, 대기방에서는 오버레이로 열린다
      (후자는 mode 가 'lobbyScr' 로 남아야 뒤의 연습 물리가 산다). -->
 <div class="screen off" id="mapScr">
@@ -494,9 +454,29 @@
      'play'(또는 'lobbyScr') 여야 HUD 와 물리 상태가 유지되고, 계속하기로 그대로 돌아간다. -->
 <div class="screen off" id="pause">
   <div class="card panel9">
-    <h1>PAUSED</h1>
+    <h1 id="pauseTitle">PAUSED</h1>
     <p class="kr" id="pauseWhere"></p>
     <p class="netline" id="pauseNote"></p>
+    <!-- 대기방 블록 — 방 설정 전부가 이 안에 있다. 게임 중에는 통째로 숨는다.
+         예전엔 오른쪽 위에 따로 뜨는 패널이었는데, 그건 마우스가 풀려 있어야 누를 수
+         있고 마우스가 풀리는 순간이 곧 이 메뉴가 뜨는 순간이라 늘 둘이 같이 떠 있었다.
+         한 패널이면 겹칠 일도, 어느 쪽을 눌러야 하나 고를 일도 없다. -->
+    <div id="lobbyBlock" class="off">
+      <div class="fieldLabel">세션 코드 <a href="#" id="copyCode">복사</a></div>
+      <div id="codeBig">------</div>
+      <ul id="playerList"></ul>
+      <div class="pick"><span id="mapPickLabel">맵</span>
+        <button type="button" id="lobbyMapBtn" class="mapBtn">
+          <canvas width="88" height="56"></canvas><span class="lmName">—</span>
+        </button></div>
+      <label class="pick">내 색 <input type="color" id="colSel" /></label>
+      <p class="hint" id="lobbyHint"></p>
+      <div class="menu row">
+        <button class="go alt" id="botAddBtn">+ AI</button>
+        <button class="go alt" id="botDelBtn">− AI</button>
+      </div>
+      <div class="menu"><button class="go" id="lobbyStartBtn" disabled>시작</button></div>
+    </div>
     <div class="menu row">
       <button class="go" id="pauseResume">계속하기</button>
       <button class="go alt" id="pauseSettings">설정</button>
@@ -1614,7 +1594,7 @@ function grantItem(who, padI, item){
       if(item==='feather') sim.glideLeft=1; }   // 깃털 1개당 글라이딩 1회
     tone(880,0.09,'triangle',0.10,1320);
   }
-  pushChat('', def.icon+' '+(mine?'나':nameOf(who))+' · '+def.name, false, true);
+  pushChat('', (mine?'나':nameOf(who))+' · '+def.name, false, true, item);
 }
 /* 아이템 HUD — 두 종류를 구분해서 보여준다.
    · 작동 중  : 시간이 흐르는 버프. 남은 초 + 아래 진행 바.
@@ -1623,12 +1603,23 @@ function grantItem(who, padI, item){
    다시 만들고, 평소엔 숫자와 바 길이만 갱신한다. */
 /* HUD 아이콘 한 칸. 구운 그림이 있으면 그걸 쓰고, 없으면 이모지로 떨어진다 —
    itemicons.js 를 못 불러와도(굽기 전이거나 파일이 빠졌거나) HUD 는 그대로 돌아간다.
-   활공처럼 패드에 없는 가짜 항목은 애초에 그림이 없어서 자연히 이모지가 된다.
-   채팅 줄(pushChat)은 텍스트 흐름이라 이모지 그대로 둔다 — 그림을 끼우면 줄 높이가 흔들린다. */
+   활공처럼 패드에 없는 가짜 항목은 애초에 그림이 없어서 자연히 이모지가 된다. */
 function iconHTML(key, def){
   var src=window.ITEM_ICONS && window.ITEM_ICONS[key];
   return src ? '<img class="ic" src="'+src+'" alt="">'
              : '<span class="ic">'+def.icon+'</span>';
+}
+/* 채팅 줄 앞의 아이콘. HUD·패드 표식과 같은 그림을 쓴다 — 세 곳이 같아야 패드에서 본
+   물건을 줄에서도 알아본다. 이모지는 그림이 없을 때의 폴백이지 기본이 아니다.
+   예전엔 여기만 이모지를 직접 박아 뒀는데, 이유가 '그림을 끼우면 줄 높이가 흔들린다'
+   였다. 그건 그림 탓이 아니라 크기를 안 정해줘서다 — 16px 상자에 넣으면 안 흔들린다.
+   renderChat 은 사용자 문자열을 textContent 로만 넣으므로 여기서도 노드를 만들어 준다. */
+function chatIconNode(key){
+  var def=ITEMS[key]; if(!def) return null;
+  var src=window.ITEM_ICONS && window.ITEM_ICONS[key], el;
+  if(src){ el=document.createElement('img'); el.src=src; el.alt=''; }
+  else { el=document.createElement('span'); el.textContent=def.icon; }
+  el.className='cic'; return el;
 }
 var itemsSig='';
 function renderItems(s){
@@ -3209,8 +3200,10 @@ function mpHandle(m){
 /* ---------- 채팅 ---------- */
 var CHAT=[], chatting=false;
 // 주의: 상대가 보낸 문자열은 신뢰할 수 없으므로 반드시 textContent 로만 넣는다(XSS 방지).
-function pushChat(name, text, self, sys){
-  CHAT.push({name:String(name||'?'), text:String(text||''), self:!!self, sys:!!sys, t:performance.now()});
+// icon: 아이템 키(선택). 있으면 줄 앞에 그 아이템 그림이 붙는다.
+function pushChat(name, text, self, sys, icon){
+  CHAT.push({name:String(name||'?'), text:String(text||''), self:!!self, sys:!!sys,
+             icon:icon||null, t:performance.now()});
   if(CHAT.length>8) CHAT.shift();
   renderChat();
 }
@@ -3220,6 +3213,7 @@ function renderChat(){
   for(var i=0;i<CHAT.length;i++){ var c=CHAT[i];
     var d=document.createElement('div');
     d.className='cmsg'+(c.self?' me':'')+(c.sys?' sys':'');
+    if(c.icon){ var ic=chatIconNode(c.icon); if(ic) d.appendChild(ic); }
     if(!c.sys){ var b=document.createElement('b'); b.textContent=c.name+': '; d.appendChild(b); }
     var sp=document.createElement('span'); sp.textContent=c.text; d.appendChild(sp);
     c.el=d; log.appendChild(d);
@@ -3284,7 +3278,9 @@ function closeChat(doSend){
    ※ SCREENS 의 id 는 절대 'play'/'lobbyScr' 와 겹치면 안 된다. 게임 로직 18곳이
      그 두 값으로 "물리를 돌릴지"를 판단한다(padTick·발사·채팅·조준선·메인 루프 …).
      메뉴 화면을 아무리 추가해도 그 판정에는 걸리지 않는다. */
-var SCREENS=['title','mapScr','setScr','joinScr','lobbyScr','win','vsWin'];
+/* lobbyScr 은 목록에 없다 — 'play' 처럼 "전부 숨김"으로 취급되는 mode 값일 뿐이다.
+   대기방 UI 는 일시정지 카드 안의 #lobbyBlock 이 맡는다. */
+var SCREENS=['title','mapScr','setScr','joinScr','win','vsWin'];
 /* 화면 진입 훅 — 열릴 때 목록·값을 다시 그린다. 각 단계에서 자기 렌더러를 등록한다
    (여기서 직접 참조하면 아직 없는 함수를 가리키게 된다). */
 var SCREEN_ENTER={};
@@ -3577,10 +3573,12 @@ function renderLobby(){
   var ab=document.getElementById('botAddBtn'), db=document.getElementById('botDelBtn');
   if(ab){ ab.disabled=!mpIsHost()||nbot>=6; ab.textContent='+ AI'; }
   if(db){ db.disabled=!mpIsHost()||nbot<=0; db.textContent='− AI'+(nbot?' ('+nbot+')':''); }
-  var cnt=document.getElementById('lobbyCount');
-  if(cnt) cnt.textContent=Math.max(1,MP.players.length)+'/6';
+  /* 인원은 카드의 부제 자리에 쓴다 — 대기방일 때 그 줄의 주인은 renderLobby 다
+     (openPause 는 게임 중일 때만 거기에 맵 이름·경과 시간을 쓴다). */
+  var w=document.getElementById('pauseWhere');
+  if(w && mode==='lobbyScr') w.innerHTML='대기방 <em>'+Math.max(1,MP.players.length)+'/6</em>';
   /* 안내문은 '지금 왜 시작을 못 하나' 한 마디로 끝낸다. 예전엔 여기에 세 줄이 있었고
-     그중 두 줄은 조작 설명이었다 — 조작은 아래 키 타일과 일시정지 화면이 맡는다. */
+     그중 두 줄은 조작 설명이었다 — 조작은 아래 조작표가 맡는다. */
   if(mpIsHost()){ btn.disabled=!enough; btn.textContent='시작';
     hint.innerHTML = enough ? '준비 완료' : '2명부터 · 혼자면 <b>AI</b>'; }
   else { btn.disabled=true; btn.textContent='대기'; hint.innerHTML='호스트 대기 중'; }
@@ -3649,7 +3647,6 @@ document.getElementById('lobbyStartBtn').addEventListener('click',function(){
   MATCH_SEED=newSeed();                       // 경기 시드 — 전원이 같은 지형을 만든다
   mpSend({t:'start', level:CURLEVEL, pads:(LEVEL.pads||[]).length, seed:MATCH_SEED});
   startGame(CURLEVEL); });
-document.getElementById('lobbyLeaveBtn').addEventListener('click',function(){ mpDisconnect(); showScreen('title'); });
 document.getElementById('botAddBtn').addEventListener('click',function(){
   if(mpIsHost()) mpSend({t:'bot', add:1}); });
 document.getElementById('botDelBtn').addEventListener('click',function(){
@@ -3811,7 +3808,10 @@ function enterLobby(levelId){
   // 방마다 다른 연습장 — 예전엔 로드 시 시드(1) 그대로라 어느 방을 만들어도 똑같았다
   FLOOR_SEED=lobbySeed(); rebuildFloor();
   if(!sim || !sim.practice){ sim=makeSim(); sim.practice=true; }
-  acc=0; last=0; showScreen('lobbyScr'); renderLobby();
+  /* 대기방에 들어오면 설정판(= 일시정지 카드)이 먼저 떠 있다. 방을 막 만든 사람이
+     제일 먼저 할 일이 코드를 알려주고 AI 를 넣는 것이라, 그게 첫 화면이어야 한다.
+     연습은 '연습으로'(또는 ESC)로 들어간다. */
+  acc=0; last=0; showScreen('lobbyScr'); openPause();
 }
 function startGame(levelId){
   // 내게 없는 맵이면 setLevel 이 기본 맵으로 떨군다. 그걸 조용히 넘기면
@@ -3902,8 +3902,10 @@ function requestLock(){ try{ cv.requestPointerLock(); }catch(e){} }
      화면에는 아무 일도 안 일어났고, 그걸 안내문 한 줄("Esc 로 마우스를 풀면 버튼을
      누를 수 있어요")로 메우고 있었다 — 문구로 메우는 동작은 대개 빠진 동작이다.
 
-     대신 대기방에서는 오른쪽 패널을 딤 위로 올려 계속 눌리게 둔다. 방을 나가고
-     AI 를 넣고 맵을 고르는 게 그 화면의 용건인데, 메뉴가 덮으면 통째로 막힌다. */
+     그리고 대기방에서는 이 카드가 곧 방 설정판이다(#lobbyBlock). 방 설정은 마우스가
+     풀려 있어야 누를 수 있고, 마우스가 풀리는 순간이 곧 이 메뉴가 뜨는 순간이라,
+     따로 띄우면 언제나 둘이 같이 떠 있게 된다. 한 판이면 겹칠 일도, 어느 쪽을
+     눌러야 하나 고를 일도 없다. 그래서 대기방에 들어가면 이 메뉴가 먼저 떠 있다. */
 var PAUSED=false;
 function inWorld(){ return mode==='play' || mode==='lobbyScr'; }
 function openPause(){
@@ -3913,13 +3915,13 @@ function openPause(){
   var lobby=(mode==='lobbyScr');
   PAUSED=true; keys={}; jumpEdge=false; jumpBuf=0;
   buildKeyHelp(); uiSnd('swap',0.3);
-  document.getElementById('lobbyScr').classList.toggle('overPause', lobby);
-  document.getElementById('pause').classList.toggle('besidePanel', lobby);
+  // 대기방에서는 같은 카드가 방 설정판이 된다 — 제목부터 바뀐다
+  document.getElementById('pauseTitle').textContent = lobby ? 'LOBBY' : 'PAUSED';
+  document.getElementById('lobbyBlock').classList.toggle('off', !lobby);
   // 어디서 멈췄는지 — 맥락 없이 메뉴만 뜨면 방금까지 뭘 하고 있었는지 흐려진다
   var w=document.getElementById('pauseWhere');
-  if(w) w.innerHTML = lobby
-    ? '대기방 <em>'+(MP.room||'—')+'</em>'
-    : (LEVEL.name||CURLEVEL) + (sim && !sim.practice ? ' <em>'+sim.t.toFixed(1)+'초</em>' : '');
+  if(w && !lobby) w.innerHTML = (LEVEL.name||CURLEVEL)
+    + (sim && !sim.practice ? ' <em>'+sim.t.toFixed(1)+'초</em>' : '');
   var note=document.getElementById('pauseNote');
   note.className = 'netline' + (MP.connected ? ' ok' : '');
   /* LIVE 냐 PAUSED 냐, 낱말 하나. 멀티에서 일시정지가 나를 지켜주지 않는다는 건
@@ -3928,14 +3930,13 @@ function openPause(){
   // 버튼은 맥락에 맞게. 대기방에서 '나가기'는 게임이 아니라 방을 나가는 것이다
   document.getElementById('pauseResume').textContent = lobby ? '연습으로' : '계속하기';
   document.getElementById('pauseLeave').textContent  = lobby ? '방 나가기' : '나가기';
+  if(lobby) renderLobby();          // 명단·코드·맵을 이 카드 안에 채운다
   document.getElementById('pause').classList.remove('off');
 }
 function closePause(relock){
   if(!PAUSED) return;
   PAUSED=false;
   document.getElementById('pause').classList.add('off');
-  document.getElementById('lobbyScr').classList.remove('overPause');
-  document.getElementById('pause').classList.remove('besidePanel');
   // 오래 멈춰 있었으면 그동안 쌓인 시간을 버린다 — 안 그러면 재개 순간 한꺼번에 돈다
   keys={}; jumpEdge=false; jumpBuf=0; acc=0; last=0;
   if(relock) requestLock();
@@ -4207,13 +4208,6 @@ function buildKeyHelp(){
     return '<div>'+e[0].map(keyHTML).join('')+'<span>'+e[1]+'</span></div>';
   }).join('');
 }
-/* 대기방 연습장 안내 — 딱 두 가지만. 마우스를 어떻게 잡고 어떻게 놓는가.
-   나머지 조작은 잡은 다음 ESC 로 열리는 일시정지 화면이 전부 보여준다. */
-function buildLobbyKeys(){
-  var h=document.getElementById('lobbyKeys'); if(!h) return;
-  h.innerHTML = '<div>'+keyHTML('lmb')+'<span>연습</span></div>'
-              + '<div>'+keyHTML('esc')+'<span>메뉴</span></div>';
-}
 
 /* ---------- 결과 화면 ---------- */
 function renderVsWin(bestId){
@@ -4255,19 +4249,30 @@ function renderWin(s){
   el.textContent=txt;
 }
 
-var lastHint='';
-// 힌트는 코스마다 다르므로 레벨 데이터(LEVEL.hints)에 들어 있다. 체크포인트 번호로 고르고,
-// 마지막 힌트는 그 뒤 구간까지 유지한다. 힌트가 없는 맵은 아무것도 띄우지 않는다.
+/* 힌트는 코스마다 다르므로 레벨 데이터(LEVEL.hints)에 들어 있다. 체크포인트 번호로 고르고,
+   마지막 힌트는 그 뒤 구간까지 유지한다. 힌트가 없는 맵은 아무것도 띄우지 않는다.
+
+   ※ 읽고 나면 사라진다. 예전엔 한 번 뜬 힌트가 그 구간 내내 화면 하단에 붙어 있었는데,
+     아레나는 힌트가 하나뿐이라(hints[0]) 경기가 끝날 때까지 안 없어졌다. 규칙을 아는
+     사람에게 그건 정보가 아니라 시야를 가리는 띠다.
+     머무는 시간은 글 길이에 맞춘다 — 한 줄짜리는 6초, 협동 관문의 긴 설명은 12초쯤.
+     태그를 뺀 글자 수로 재야 <b> 가 시간을 부풀리지 않는다. */
+var lastHint='', hintAt=0, hintHold=0;
 function showHint(s){ var m=document.getElementById('msg');
   if(!s){ if(lastHint!==''){ lastHint=''; m.innerHTML=''; m.classList.remove('on'); } return; }  // 대기방=힌트 없음
   var hs=LEVEL.hints||[], h = hs.length ? (hs[Math.min(s.cpIdx, hs.length-1)]||'') : '';
-  if(h!==lastHint){ lastHint=h; m.innerHTML=h; m.classList.toggle('on', !!h); }
+  if(h!==lastHint){
+    lastHint=h; m.innerHTML=h; m.classList.toggle('on', !!h);
+    hintAt=performance.now();
+    hintHold=Math.min(13000, 3500 + h.replace(/<[^>]*>/g,'').length*95);
+  } else if(h && m.classList.contains('on') && performance.now()-hintAt > hintHold){
+    m.classList.remove('on');
+  }
 }
 settingsLoad();      // 상수 선언이 모두 끝난 뒤 — 먼저 부르면 var 선언이 도로 덮어쓴다
 ensureArenaLevel();  // 경쟁 전용 — 협동 코스가 걸려 있으면 아레나로 바꾼다
 showScreen('title');
 fillMapPickers();
-buildLobbyKeys();   // 키 타일은 안 바뀐다 — 한 번만 짓는다
 (function initLobbyControls(){
   var col=document.getElementById('colSel');
   if(col){ col.value=PLAYER_COL;
