@@ -5,7 +5,10 @@ PENG.defineLevel('hangar', {
   unit: 2.95,
   boxes: [
     // 저 아래 배경 바닥(deco = 밟히지 않는다). 발판은 전부 pieces 다
-    {cx:0, cy:-72, cz:0, hx:220, hy:1, hz:220, col:'#161f33', deco:true}
+    /* 우주 맵이라 '저 아래 바닥'이 없다 — 검은 우주에 네모 판이 떠 있으면 그게 더
+       이상하다. 그래도 boxes 가 비면 레벨 검증에 걸리므로, 그리기 거리(FAR=400m)
+       바깥으로 내려 눈에 안 띄게 둔다. */
+    {cx:0, cy:-900, cz:0, hx:4, hy:1, hz:4, col:'#0a0d16', deco:true}
   ],
   pieces: [
     {t:'station/floor-panel', i:-4.5, j:-2.5, y:-0.3},

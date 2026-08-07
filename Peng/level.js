@@ -14,7 +14,7 @@ PENG.order  = PENG.order  || [];   // 로드된 순서(선택 목록용). 첫 �
 
 /* ---------- 물리 상수 (게임·에디터 단일 출처) ---------- */
 PENG.PHYS = {
-  RUN:6.2, JUMPV:8.6, GRAV:22, EYE:1.6,
+  RUN:5.3, JUMPV:8.6, GRAV:22, EYE:1.6,
   PH_HX:0.35, PH_HY:0.9, PH_HZ:0.35,
   BLAST_R:4.2, BLAST_F:13.5, BLAST_RANGE:40,
   AMMO_MAX:3, AMMO_REGEN:1.1, PROJ_SPD:62, KB_TIME:0.45,
