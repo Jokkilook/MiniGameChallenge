@@ -684,8 +684,12 @@ PENG.genArenaOnce = function(C, seed){
 
    층 구성(첨부 스케치대로) — 정상 소봉(+1.35m) · 본 데크(0) · 네 귀퉁이 아래 선반
      (-2.55m, 밀려나도 한 번은 살아남는 자리) · 그 아래는 킬존.
-   산체는 큰 바위를 고리로 쌓아 만들고 전부 deco 다. 실체로 두면 떨어진 사람이 산
-   중턱에 올라서서 안 죽는다.
+   산체(절벽 기둥)는 실체다. 예전엔 '떨어진 사람이 산 중턱에 올라서서 안 죽는다'고
+   보고 전부 deco 로 뒀는데, 폴리곤 충돌 + 걸을 수 있는 최대 경사(SLOPE_MAX) 가 생긴
+   뒤로는 그 걱정이 사라졌다 — 비탈이 가팔라 설 수가 없다. 실측으로 16방향 낙하에서
+   생존이 4/16 로 deco 일 때와 똑같았다(그 4번은 의도한 아래 선반이다).
+   보이는 절벽을 통과하는 게 훨씬 이상하므로 실체로 둔다. 안쪽 심(core)만 deco 다 —
+   기둥 뒤에 가려 안 보이는데 넣으면 삼각형만 는다.
 
    배율: 1킷유닛 = 3m(collapse.size). 나무 4.2~5.1m · 천막 1.7m · 울타리 1.56m 로
    실측 크기가 맞고, 울타리가 점프 정점(1.68m)보다 낮아 넘어 다닐 수 있는 엄폐물이 된다.
@@ -754,7 +758,13 @@ PENG.genPeak = function(seed){
   put4('rock-a', 1.15, 0.42, 0, 0.60, 0, 1, false);
 
   /* --- 2) 데크 밑 테두리 --- 두 겹. 위 겹은 데크 밑에 붙여 처마를 없애고,
-     아래 겹은 조금 더 넓게 빼서 산체로 자연스럽게 이어 준다. 전부 deco. */
+     아래 겹은 조금 더 넓게 빼서 산체로 자연스럽게 이어 준다.
+     전부 실체다. 원래는 '여기 걸리면 밀려나도 안 죽는다'고 deco 로 뒀는데,
+     데크 끝에서 뻔히 보이는 바위를 그대로 통과해 떨어지는 쪽이 훨씬 이상하다.
+     걱정했던 일도 안 일어난다 — 시드 3개 × 16방향 낙하에서 생존이 4/16 로
+     deco 일 때와 같았고(그 4번은 의도한 아래 선반, 착지 y=-2.7 로 확인),
+     강한 넉백(13m/s)에서도 4/16 로 같았다. 바위 윗면이 가팔라(SLOPE_MAX)
+     설 수가 없어서다. 아래에서 기어오르는 것도 16방향 모두 막혔다. */
   /* 반지름은 '바위 바깥 끝'이 데크 끝과 나란해지도록 역산한다(바위 반폭 ≈ 0.415*배율).
      밖으로 튀어나오면 보이는 바위를 뚫고 떨어지게 되어 더 이상하다. */
   /* 위 겹의 윗면 높이는 두 조건 사이에서 골라야 한다.
@@ -772,11 +782,11 @@ PENG.genPeak = function(seed){
   var RIM_GREY = ['rock-a','rock-b','rock-c'];
   ringOf(0, 5, function(th){
     var sc = 2.4 + rnd()*0.5, rr = DECK_OUT - 0.12 - 0.415*sc;
-    putTop(pick(RIM_GREY), Math.cos(th)*rr, Math.sin(th)*rr, ri(0,3), sc, -0.20, 0, true);
+    putTop(pick(RIM_GREY), Math.cos(th)*rr, Math.sin(th)*rr, ri(0,3), sc, -0.20, 0, false);
   });
   ringOf(0, 4, function(th){
     var sc2 = 3.2 + rnd()*0.7, rr2 = DECK_OUT - 0.05 - 0.415*sc2;
-    putTop(pick(RIM), Math.cos(th)*rr2, Math.sin(th)*rr2, ri(0,3), sc2, -0.95, 0, true);
+    putTop(pick(RIM), Math.cos(th)*rr2, Math.sin(th)*rr2, ri(0,3), sc2, -0.95, 0, false);
   });
 
   /* --- 3) 아래 선반 --- 네 귀퉁이. 데크 끝에 걸치게 놓아야 밀려난 사람이 떨어져
@@ -808,12 +818,15 @@ PENG.genPeak = function(seed){
     var ti = TIERS[T], sy = ti.span/TOP['rock-c'], R = ti.out - 0.39*ti.w;
     ringOf(0, ti.n, (function(cfg, syy, rr, idx){ return function(th, q){
       putTop(RIB[(idx+q)%RIB.length], Math.cos(th)*rr, Math.sin(th)*rr, (idx+q)&3,
-             cfg.w, cfg.top, 0, true, [cfg.w, syy, cfg.w]);
+             cfg.w, cfg.top, 0, false, [cfg.w, syy, cfg.w]);
     }; })(ti, sy, R, T));
-    // 심 — 기둥 사이로 하늘이 비치지 않게 뒤를 채운다. 안쪽이라 실루엣에는 안 나온다.
+    /* 심 — 기둥 사이로 하늘이 비치지 않게 뒤를 채운다. 이것도 실체다: 심의 바깥
+       반지름(1.2+0.39*core)이 기둥 바깥(out)보다 안쪽이라 "안 보이니 deco 로 둬도
+       된다"고 적어 뒀었는데, 애초에 기둥 틈으로 보이라고 놓은 것이라 틀린 말이었다.
+       틈으로 보이는 면을 그대로 통과하는 게 이 맵에서 가장 눈에 띄는 어긋남이었다. */
     ringOf(0, 1, (function(cfg, syy, idx){ return function(th){
       putTop('rock-c', Math.cos(th)*1.2, Math.sin(th)*1.2, idx&3, cfg.core,
-             cfg.top-0.1, 0, true, [cfg.core, syy, cfg.core]);
+             cfg.top-0.1, 0, false, [cfg.core, syy, cfg.core]);
     }; })(ti, sy, T));
   }
 
