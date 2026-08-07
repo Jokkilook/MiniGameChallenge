@@ -812,13 +812,20 @@ function buildCollapseFloor(){
    새 봉우리가, 몸에는 지난 봉우리가 걸렸다. 나무·통나무처럼 라운드마다 자리가 바뀌는
    소품에서 "메시와 콜리전이 다른 자리에 있다"로 드러났다. 하나로 묶어 못 빠지게 한다. */
 function rebuildFloor(){ buildCollapseFloor(); buildTriSoup(); buildPads(); }
+/* 조각 목록의 단일 출처. 에디터로 만든 맵은 LEVEL.pieces, 생성기 맵(정거장·피크)은
+   LEVEL._pieces 에 둔다. 이 둘 중 하나를 고르는 식을 호출부마다 적어 두는 바람에
+   한 군데(GL 준비 전에 미뤄 둔 첫 프레임 재빌드)가 _pieces 만 봤고, 에디터 맵에서는
+   그게 undefined 라 빈 배열로 다시 그려 조각이 통째로 화면에서 사라졌다 —
+   충돌은 그대로 남아 "메시 없는 콜리전"이 됐다(실측: 그려짐 708 → 0, 충돌 236 유지). */
+function levelPieces(){ return (LEVEL && (LEVEL.pieces || LEVEL._pieces)) || []; }
 function dropRing(r){
   if(!LEVEL) return;
   // 정거장: 그 순서의 조각을 통째로 목록에서 빼고 VBO 를 다시 만든다(분리 = 떨어져 나감)
-  if(LEVEL._pieces){
+  var PS=levelPieces();
+  if(PS.length){
     var any=false;
-    for(var q=0;q<LEVEL._pieces.length;q++){
-      var pp=LEVEL._pieces[q];
+    for(var q=0;q<PS.length;q++){
+      var pp=PS[q];
       if(pp.order===r && !pp._gone){ pp._gone=true; any=true; }
     }
     if(any){
@@ -829,7 +836,7 @@ function dropRing(r){
         var cnt=0;
         for(var e=0;e<STATION.ends.length;e++) if(STATION.ends[e].order<r) cnt=STATION.ends[e].count;
         STATION.count=cnt;
-      } else buildStation(LEVEL._pieces);
+      } else buildStation(PS);
       buildTriSoup();
     }
   }
@@ -1012,8 +1019,8 @@ function boxSolid(b){ return !b.deco && (!b.link || !!LINK_ON[b.link]); }
 var TSOUP=null, TCELL=1.5;
 function buildTriSoup(){
   TSOUP=null;
-  var list=LEVEL && (LEVEL.pieces || LEVEL._pieces);
-  if(!list || !list.length) return;
+  var list=levelPieces();
+  if(!list.length) return;
   var P=stationParts(), U=STATION.unit, total=0, q, pc, m;
   /* '평평한 한 장'으로 치기로 한 조각(바닥·바위 슬래브)은 삼각형에 안 넣는다.
      원본 윗면이 살짝 볼록해서 삼각형 그대로 밟으면 데크가 도로 울퉁불퉁해진다 —
@@ -2470,6 +2477,10 @@ function buildStation(pieces){
       ends.push({order:(pc.order||0), count:arr.length/6});
   }
   STATION.ends=ends;
+  /* 화면에 올라간 것이 '무엇으로부터' 만들어졌는지 남긴다. 조각 배열 자체를 들고
+     있으면(피크에서 정점 18만 개) 몇 MB 를 계속 붙들게 되므로 서명만 남긴다.
+     충돌 그물이 이것과 다른 목록·칸크기로 짜였는지를 밖에서 확인할 수 있다. */
+  STATION.built={ unit:S, pieces:live.length, verts:arr.length/6 };
   if(!GLREADY){ STATION.pending=arr; return; }
   if(!STATION.buf) STATION.buf=gl.createBuffer();
   gl.bindBuffer(gl.ARRAY_BUFFER, STATION.buf);
@@ -2687,7 +2698,7 @@ function render(dt){
   gl.enable(gl.POLYGON_OFFSET_FILL); gl.polygonOffset(1.0,1.0);  // 외곽선이 면에 묻히지 않게
   drawArr(BUF.tri, TRI, PROG.main, gl.TRIANGLES);
   // 정거장 조각 — 정적 VBO 라 매 프레임 옮기지 않는다(드로우콜 1)
-  if(STATION.pending) buildStation(LEVEL._pieces||[]);
+  if(STATION.pending) buildStation(levelPieces());
   if(STATION.buf && STATION.count){
     gl.bindBuffer(gl.ARRAY_BUFFER, STATION.buf);
     gl.enableVertexAttribArray(PROG.main.aPos);
