@@ -3,15 +3,22 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>PENG! · 공기폭발 협동 질주 (프로토타입)</title>
+<title>PENG! · 밀고 날리는 파티 액션</title>
 <style>
   /* ============================================================
      모던·샤프: 직각 · 얇은 1px 선 · 플랫 컬러 · 타이트한 대문자 라벨.
      그라디언트/글로우/둥근 모서리/블러 없음.
      ============================================================ */
   :root{
-    --ink:#e8eef8; --dim:#8492ad; --line:#243044; --line2:#33425e;
-    --bg:#080b11; --panel:#0d1219; --acc:#4db3ff; --acc2:#2ee6b6; --warn:#ff6b5a;
+    --ink:#eef2f8; --dim:#8a97ae; --line:#243044; --line2:#33425e;
+    /* 배경과 패널이 명도 1.5% 차이라 1px 선이 구조를 혼자 떠받치고 있었다 — 둘 다 올린다 */
+    --bg:#0a0e15; --panel:#111823; --panel2:#161f2d;
+    --acc:#4db3ff; --acc2:#2ee6b6; --warn:#ff6b5a;
+    /* --you = '나' 색. PLAYER_COL 기본값과 같다 — 명단·채팅에서 이미 나를 뜻해 왔다.
+       크롬(버튼)에도 이 색을 쓴다: 게임에 이미 있는 따뜻한 색이라 근거가 있고,
+       차가운 --acc 만 쓰면 UI 가 파티게임이 아니라 계측 장비처럼 읽힌다. */
+    --you:#ff8a3a; --you-line:#e8752a; --you-deep:#a84d18;
+    --r:3px; --r2:6px;
     --mono:ui-monospace,"Cascadia Mono","Consolas","Roboto Mono",monospace;
   }
   *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
@@ -25,22 +32,40 @@
   canvas.locked{cursor:none}
   #hud{position:fixed;inset:0;pointer-events:none;z-index:5}
   #crosshair{position:absolute;left:50%;top:50%;width:18px;height:18px;transform:translate(-50%,-50%);opacity:.9}
+  #crosshair.dry rect{fill:var(--warn)}      /* 탄 없음 — 가운데 점이 붉어진다 */
   /* 라운드 배너 — 중앙 상단. 조준선을 가리지 않게 위쪽에 둔다 */
   #roundMsg{position:absolute;left:50%;top:22%;transform:translate(-50%,-50%);
     background:rgba(8,11,17,.86);border:1px solid var(--acc2);padding:12px 26px;
     font-size:20px;font-weight:800;letter-spacing:.5px;color:#fff;white-space:nowrap;
     opacity:0;transition:opacity .18s linear}
   #roundMsg.on{opacity:1}
-  /* HUD: 각진 칩, 수치는 고정폭 */
-  #topbar{position:absolute;top:0;left:0;right:0;padding:12px;display:flex;gap:1px;justify-content:center}
-  #topbar .pill{background:rgba(8,11,17,.75);border:1px solid var(--line);padding:7px 14px;
-    font-size:12px;font-weight:800;letter-spacing:1.2px;text-transform:uppercase;color:#9dabc4}
-  #topbar .pill b{color:#fff;font-family:var(--mono);font-weight:700;letter-spacing:0}
-  #topbar .pill.off{display:none}
+  /* HUD — 컨텍스트(안 변함)와 상태(매 순간 변함)를 분리한다.
+     예전엔 칩 네 개가 한 줄에 같은 크기로 있어서, 맵 이름이 점수와 같은 무게로 읽혔다. */
+  #ctxbar{position:absolute;top:11px;left:14px;display:flex;gap:12px;opacity:.55;
+    font-size:11.5px;font-weight:700;color:#9dabc4}
+  #statbar{position:absolute;top:0;left:50%;transform:translateX(-50%);
+    display:flex;flex-direction:column;align-items:center;gap:5px;padding-top:10px;min-width:190px}
+  /* 붕괴 예고 — 숫자를 읽는 게 아니라 차오르는 걸 곁눈으로 본다 */
+  #collapseBar{width:170px;height:3px;background:rgba(8,11,17,.8);border:1px solid var(--line);
+    display:none}
+  #collapseBar.on{display:block}
+  #collapseBar i{display:block;height:100%;width:0;background:var(--acc2);transition:width .1s linear}
+  #collapseBar.warn i{background:var(--warn)}
+  #statMain{display:flex;align-items:baseline;gap:3px;background:rgba(8,11,17,.75);
+    border:1px solid var(--line);border-radius:var(--r);padding:4px 13px}
+  #statMain b{font-family:var(--mono);font-size:20px;font-weight:700;color:#fff;letter-spacing:0}
+  #statMain em{font-style:normal;font-size:10.5px;font-weight:800;color:#8492ad}
+  /* 점수 — 사람마다 칩 하나. 색은 그 사람 몸 색이라 화면 속 캐릭터와 바로 이어진다 */
+  #scoreRow{display:flex;gap:1px;flex-wrap:wrap;justify-content:center;max-width:60vw}
+  #scoreRow .sc{display:flex;align-items:center;gap:6px;background:rgba(8,11,17,.8);
+    border:1px solid var(--line);padding:3px 9px;font-size:11.5px;font-weight:800;color:#c7d2e4}
+  #scoreRow .sc.me{border-color:var(--you);color:#fff}
+  #scoreRow .sc s{width:7px;height:7px;background:var(--c);flex:none}
+  #scoreRow .sc b{font-family:var(--mono);font-weight:700;color:#fff}
   /* 아이템 상태 — 탄창 위. 작동 중은 실선 + 남은 시간 바, 보유 중은 점선 + 사용 키 */
   #items{position:absolute;right:18px;bottom:56px;display:flex;flex-direction:column;
     align-items:flex-end;gap:4px}
-  #items .it{position:relative;overflow:hidden;background:rgba(8,11,17,.82);border:1px solid var(--c);
+  #items .it{position:relative;overflow:hidden;border-radius:var(--r);background:rgba(8,11,17,.82);border:1px solid var(--c);
     padding:6px 11px;display:flex;align-items:center;gap:8px;min-width:176px;
     font-size:12.5px;font-weight:800;letter-spacing:.4px;color:#fff}
   #items .it.use{border-style:dashed}
@@ -57,7 +82,9 @@
   /* 재충전 중인 칸: 아래에서 위로 차오르는 막대 */
   #ammo .p i{position:absolute;left:0;right:0;bottom:0;height:0;background:var(--acc);opacity:.55;display:block}
   #ammo .p.charging{border-color:#3f5a7d}
-  #msg{position:absolute;left:50%;top:22%;transform:translateX(-50%);font-weight:800;font-size:clamp(17px,2.7vw,24px);
+  /* 힌트는 조준 영역 '아래'에 둔다. 예전엔 라운드 배너와 똑같이 top:22% 라
+     경쟁에서 둘이 같은 픽셀에 겹쳐 찍혔다(아레나 맵도 hints 를 갖고 있다). */
+  #msg{position:absolute;left:50%;bottom:17%;transform:translateX(-50%);font-weight:800;font-size:clamp(17px,2.7vw,24px);
     letter-spacing:-.1px;color:#fff;background:rgba(8,11,17,.78);border-left:3px solid var(--acc);
     padding:9px 18px;opacity:0;transition:opacity .18s;text-align:left}
   #msg.on{opacity:1}
@@ -66,32 +93,50 @@
   .screen{position:fixed;inset:0;z-index:20;display:flex;flex-direction:column;align-items:center;justify-content:center;
     text-align:center;padding:28px;background:var(--bg)}
   .screen.off{display:none}
-  .screen h1{margin:0;font-size:clamp(38px,9vw,68px);font-weight:900;letter-spacing:-2px;color:#fff;line-height:.95}
-  .screen .sub{color:var(--acc);letter-spacing:4px;font-size:11px;margin-bottom:10px;font-weight:900;text-transform:uppercase}
+  /* 영문 라벨에만 Kenney Future 를 건다(@font-face 의 unicode-range 가 ASCII 한정).
+     한글은 매칭이 안 되어 Pretendard 로 떨어지므로 한 줄에 섞여도 안전하다. */
+  .screen h1{margin:0;font-family:"KenneyFuture","Pretendard","Inter","Segoe UI","Malgun Gothic",sans-serif;
+    font-size:clamp(38px,9vw,64px);font-weight:900;letter-spacing:-3px;color:#fff;line-height:1}
+  /* 한글 제목은 자간을 조일 필요가 없다(라틴 워드마크의 -3px 은 글자를 붙이려는 것) */
+  .screen h1:lang(ko){letter-spacing:-1px}
+  .screen .sub{color:var(--acc);letter-spacing:3px;font-size:11px;margin-bottom:10px;font-weight:900;
+    text-transform:uppercase;font-family:"KenneyFuture","Pretendard","Inter",sans-serif}
   .screen p{color:#9dabc4;font-size:14.5px;font-weight:500;line-height:1.7;max-width:520px;margin:6px 0}
   .screen p b{color:#fff;font-weight:800}
   .screen kbd{font-family:var(--mono);font-size:11.5px;font-weight:700;background:transparent;border:1px solid var(--line2);
     padding:2px 7px;margin:0 1px;color:#fff}
-  /* 버튼: 플랫 + 1px 선. 기본은 아웃라인, 주버튼만 단색 채움 */
-  button.go{margin-top:0;cursor:pointer;font:inherit;font-weight:900;font-size:14.5px;letter-spacing:1.6px;
-    text-transform:uppercase;color:#03080f;background:var(--acc);border:1px solid var(--acc);
-    padding:14px 26px;border-radius:0;transition:background .12s,color .12s,border-color .12s}
-  button.go:hover{background:#7cc8ff;border-color:#7cc8ff}
-  button.go:active{transform:none;background:#2f9de8}
-  button.go.alt{background:transparent;color:var(--ink);border-color:var(--line2)}
+  /* 버튼 — 아래에 '입술'(box-shadow)이 있는 두툼한 버튼. 누르면 실제로 내려간다.
+     Kenney UI 팩의 depth 버튼과 같은 모양인데 스프라이트가 아니라 CSS 다:
+     색이 토큰으로 자유롭고, 어떤 크기에서도 안 깨지고, 9-slice 삽질이 없다.
+     한글엔 대소문자가 없어 uppercase 는 무효이고 자간만 음절을 벌린다 — 둘 다 뺐다. */
+  button.go{margin-top:0;cursor:pointer;font:inherit;font-weight:900;font-size:15px;letter-spacing:.4px;
+    color:#2a1002;background:var(--you);border:1px solid var(--you-line);
+    padding:13px 26px;border-radius:var(--r2);box-shadow:0 3px 0 var(--you-deep);
+    transition:background .12s,color .12s,border-color .12s,box-shadow .08s,transform .08s}
+  button.go:hover{background:#ffa45f;border-color:#ffa45f}
+  button.go:active{transform:translateY(3px);box-shadow:0 0 0 var(--you-deep)}
+  button.go.alt{background:transparent;color:var(--ink);border-color:var(--line2);
+    box-shadow:0 3px 0 #131b27}
   button.go.alt:hover{background:rgba(255,255,255,.05);border-color:var(--acc);color:var(--acc)}
-  button.go:disabled{opacity:1;cursor:not-allowed;background:transparent;color:#3d4a60;border-color:var(--line)}
+  button.go:disabled{opacity:1;cursor:not-allowed;background:transparent;color:#3d4a60;
+    border-color:var(--line);box-shadow:none;transform:none}
   button.go:disabled:hover{background:transparent;color:#3d4a60;border-color:var(--line)}
   /* 일시정지는 다른 화면과 달리 뒤가 비쳐야 한다 — 어디서 멈췄는지 보이는 게
      "잠깐 멈춤"의 핵심이고, 불투명하면 게임을 나간 것처럼 느껴진다. */
   #pause{background:rgba(4,7,12,.72);backdrop-filter:blur(2px)}
-  #pause .keyhelp{font-size:12.5px;margin-top:20px;color:#8494ad}
+  /* 시트 = 오버레이로 열린 화면. 같은 이유로 뒤가 비쳐야 한다(대기방 연습·게임이
+     계속 돌고 있다는 걸 보여줘야 한다). .screen 의 불투명 배경을 덮어쓴다. */
+  .screen.asSheet{background:rgba(4,7,12,.82);backdrop-filter:blur(3px);z-index:22;pointer-events:auto}
+  /* 조작법 — 한 줄로 이어 붙이면 · 로 구분된 긴 문장이 된다. 2열 격자로 나눈다. */
+  #pause .keyhelp{margin-top:22px;display:grid;grid-template-columns:repeat(2,auto);
+    gap:7px 26px;font-size:12.5px;font-weight:600;color:#9dabc4}
+  #pause .keyhelp div{display:flex;align-items:center;gap:7px;text-align:left}
   .menu{display:flex;flex-direction:column;gap:8px;margin-top:22px;width:min(320px,86vw)}
   .menu.row{flex-direction:row}
   .menu.row button{flex:1;padding:12px 8px;font-size:13px;letter-spacing:1.2px}
   .menu button{width:100%}
   /* 코드 입력/표시: 고정폭, 각진 테두리 */
-  #codeInput{margin-top:18px;width:min(320px,80vw);text-align:center;font:800 29px/1.3 var(--mono);letter-spacing:12px;
+  #codeInput{border-radius:var(--r);margin-top:18px;width:min(320px,80vw);text-align:center;font:800 29px/1.3 var(--mono);letter-spacing:12px;
     text-transform:uppercase;color:#fff;background:transparent;border:1px solid var(--line2);
     border-radius:0;padding:12px 8px 12px 20px;outline:none;transition:border-color .12s}
   #codeInput:focus{border-color:var(--acc)}
@@ -105,6 +150,15 @@
   #playerList li .dot{display:none}
   #playerList li .tag{margin-left:auto;font-size:10px;font-weight:900;letter-spacing:1.4px;color:#9dabc4;
     border:1px solid var(--line2);padding:2px 6px}
+  /* 순위표 — 대기방 명단(#playerList)과 같은 행 스타일에 등수·점수만 얹는다 */
+  ul.rank{list-style:none;margin:18px 0 0;padding:0;width:min(340px,86vw);display:flex;flex-direction:column;gap:1px}
+  ul.rank li{background:rgba(255,255,255,.04);border-left:3px solid var(--line2);padding:10px 13px;
+    font-size:13.5px;font-weight:700;color:#fff;display:flex;align-items:center;gap:9px;text-align:left}
+  ul.rank li.me{background:rgba(255,138,58,.10)}
+  ul.rank .rk{font-family:var(--mono);font-size:11px;color:#8492ad;flex:0 0 12px}
+  ul.rank .tag{font-size:10px;font-weight:900;letter-spacing:1.4px;color:#9dabc4;
+    border:1px solid var(--line2);padding:2px 6px}
+  ul.rank .pts{margin-left:auto;font-family:var(--mono);font-size:16px;font-weight:700;color:#fff}
   /* 대기방(연습장): 전체를 가리지 않는 각진 패널 */
   .screen.asPanel{inset:auto;top:0;right:0;width:min(300px,84vw);height:auto;padding:16px 18px;
     background:rgba(8,11,17,.88);border:0;border-left:1px solid var(--line);border-bottom:1px solid var(--line);
@@ -118,34 +172,82 @@
   .screen.asPanel .menu{width:100%;margin-top:12px}
   .screen.asPanel .menu.row button{padding:10px 6px;font-size:12px}
   .screen.asPanel .hint{font-size:11px;margin-top:8px}
-  /* 디버그 패널 */
-  #dbgBtn{position:fixed;top:10px;right:10px;z-index:41;cursor:pointer;font:inherit;
-    font-size:10.5px;font-weight:900;letter-spacing:2px;color:#9dabc4;background:rgba(8,11,17,.8);
-    border:1px solid var(--line2);padding:6px 11px;border-radius:0;transition:color .12s,border-color .12s}
-  #dbgBtn:hover,#dbgBtn.on{color:var(--acc);border-color:var(--acc)}
-  #dbgPanel{position:fixed;top:40px;right:10px;z-index:40;width:min(330px,92vw);max-height:82vh;overflow-y:auto;
-    background:rgba(8,11,17,.94);border:1px solid var(--line);padding:10px 12px 12px}
-  #dbgPanel.off{display:none}
-  .dbgHead{display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;
-    font-size:9.5px;font-weight:900;letter-spacing:2.4px;color:var(--acc);text-transform:uppercase}
-  .dbgSmall{cursor:pointer;font:inherit;font-size:9.5px;font-weight:800;letter-spacing:1.4px;color:#9dabc4;
+  .optSmall{cursor:pointer;font:inherit;font-size:9.5px;font-weight:800;letter-spacing:1.4px;color:#9dabc4;
     background:transparent;border:1px solid var(--line2);padding:3px 7px;border-radius:0;text-transform:uppercase}
-  .dbgSmall:hover{color:var(--acc);border-color:var(--acc)}
-  .dbgSec{margin-top:9px;padding-top:6px;border-top:1px solid var(--line);
+  .optSmall:hover{color:var(--acc);border-color:var(--acc)}
+  .optSec{margin-top:9px;padding-top:6px;border-top:1px solid var(--line);
     font-size:9px;font-weight:900;letter-spacing:2px;color:#6f7d96;text-transform:uppercase}
-  .dbgRow{display:flex;align-items:center;gap:7px;margin:4px 0}
-  .dbgRow label{flex:0 0 96px;font-size:10.5px;font-weight:700;color:#9dabc4}
-  .dbgRow input[type=range]{flex:1;-webkit-appearance:none;appearance:none;height:2px;background:var(--line2);outline:none;margin:0}
-  .dbgRow input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:11px;height:15px;background:var(--acc);cursor:pointer;border:0}
-  .dbgRow input[type=number]{flex:0 0 58px;font:inherit;font-family:var(--mono);font-size:11px;font-weight:700;
+  .optRow{display:flex;align-items:center;gap:7px;margin:4px 0}
+  .optRow label{flex:0 0 96px;font-size:10.5px;font-weight:700;color:#9dabc4}
+  .optRow input[type=range]{flex:1;-webkit-appearance:none;appearance:none;height:2px;background:var(--line2);outline:none;margin:0}
+  .optRow input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:11px;height:15px;background:var(--acc);cursor:pointer;border:0}
+  /* flex 자식은 기본이 min-width:auto 라 input 의 내재 폭(size=20 → 약 167px)이
+     flex-basis 를 이겨 행이 통째로 삐져나간다. 0 으로 눌러야 basis 가 먹는다. */
+  .optRow input{min-width:0}
+  .optRow input[type=number]{flex:0 0 58px;font:inherit;font-family:var(--mono);font-size:11px;font-weight:700;
     color:#fff;background:transparent;border:1px solid var(--line2);border-radius:0;padding:3px 5px;outline:none;
     -moz-appearance:textfield}
-  .dbgRow input[type=number]::-webkit-outer-spin-button,
-  .dbgRow input[type=number]::-webkit-inner-spin-button{-webkit-appearance:none;margin:0}
-  .dbgRow input[type=number]:focus{border-color:var(--acc)}
-  .dbgNote{margin-top:10px;font-size:10px;color:#6f7d96;line-height:1.5}
+  .optRow input[type=number]::-webkit-outer-spin-button,
+  .optRow input[type=number]::-webkit-inner-spin-button{-webkit-appearance:none;margin:0}
+  .optRow input[type=number]:focus{border-color:var(--acc)}
+  /* 설정 화면이 같은 행 빌더를 쓰므로 나머지 행 종류도 여기 둔다 */
+  .optSmall.on{color:var(--acc);border-color:var(--acc)}
+  .optSeg{display:flex;gap:1px;flex:1}
+  .optSeg .optSmall{flex:1}
+  .optRow .optSmall.tog{flex:0 0 58px}
+  .optTxt{flex:1;min-width:0;font:inherit;font-size:11.5px;font-weight:700;color:#fff;
+    background:transparent;border:1px solid var(--line2);border-radius:0;padding:3px 6px;outline:none}
+  .optTxt:focus{border-color:var(--acc)}
+  .optCol{flex:0 0 58px;height:22px;padding:0;border:1px solid var(--line2);background:transparent;
+    cursor:pointer;border-radius:0}
+  /* 설정 화면 — 항목 목록만 스크롤시키고 제목과 '돌아가기'는 항상 보이게 한다.
+     박스 전체를 스크롤시키면 화면이 낮을 때 나가는 버튼이 아래로 사라진다. */
+  #setScr{padding:0}
+  .setBox{width:min(440px,92vw);max-height:100vh;padding:30px 24px 24px;
+    display:flex;flex-direction:column;align-items:stretch;text-align:left}
+  .setBox h1{font-size:30px;letter-spacing:-1px;margin:0 0 12px;text-align:left;flex:none}
+  .setBox .sub{text-align:left;flex:none}
+  .setBox #setRows{flex:1 1 auto;min-height:0;overflow-y:auto;padding-right:4px}
+  .setBox .hint{flex:none;margin-top:10px}
+  .setBox .menu{width:100%;flex:none;margin-top:14px}
+  .setBox .optRow label{flex:0 0 116px}
+  .setBox .optRow{margin:7px 0}
+  /* 타이틀 태그라인 — 예전엔 인라인 style 로 자간 5px 대문자였다.
+     한글엔 대소문자가 없어 uppercase 는 무효였고, 자간만 음절을 벌려 놨다. */
+  .tagline{color:#b7c3d8;font-size:14px;font-weight:800;letter-spacing:.6px;margin:10px 0 4px}
+  /* 맵 카드 — 썸네일은 캔버스에 그 자리에서 그린다(그림 파일이 없다) */
+  #mapScr .setBox{width:min(660px,94vw)}
+  #mapGrid{flex:1 1 auto;min-height:0;overflow-y:auto;display:flex;flex-wrap:wrap;gap:8px;
+    align-content:flex-start;padding:2px}
+  #mapGrid.locked{pointer-events:none;opacity:.45}
+  .mapCard{cursor:pointer;font:inherit;text-align:left;color:var(--ink);
+    background:var(--panel);border:1px solid var(--line);border-radius:var(--r);overflow:hidden;
+    padding:0 0 7px;width:178px;transition:border-color .12s}
+  .mapCard:hover{border-color:var(--line2)}
+  .mapCard.on{border-color:var(--acc)}
+  .mapCard canvas{display:block;width:176px;height:112px;background:#070a10;border-bottom:1px solid var(--line)}
+  .mapCard .mcName{font-size:13px;font-weight:800;color:#fff;margin:7px 9px 2px}
+  .mapCard.on .mcName{color:var(--acc)}
+  .mapCard .mcMeta{font-size:10.5px;font-weight:600;color:#8492ad;margin:0 9px;line-height:1.4}
+  /* 세그먼트 선택(모드) — 예전 <select> 자리 */
+  .segPick{display:flex;gap:1px}
+  .segPick button{cursor:pointer;font:inherit;font-size:12px;font-weight:800;letter-spacing:.2px;
+    color:#9dabc4;background:transparent;border:1px solid var(--line2);border-radius:0;padding:6px 12px}
+  .segPick button.on{color:#03080f;background:var(--acc);border-color:var(--acc)}
+  .segPick.locked{pointer-events:none;opacity:.45}
+  /* 대기방 맵 버튼 — 이름 + 작은 썸네일 */
+  .mapBtn{cursor:pointer;font:inherit;display:flex;align-items:center;gap:8px;text-align:left;
+    color:#fff;background:transparent;border:1px solid var(--line2);border-radius:0;padding:4px 8px 4px 4px}
+  .mapBtn:hover:not(:disabled){border-color:var(--acc)}
+  .mapBtn:disabled{opacity:.45;cursor:not-allowed}
+  .mapBtn canvas{display:block;width:44px;height:28px;background:#070a10}
+  .mapBtn .lmName{font-size:12px;font-weight:700;letter-spacing:0}
   /* 채팅: 각진 좌측 액센트 */
+  /* 채팅은 화면 오버레이(z-index 20)보다 위에 있어야 게임 중에 보인다. 그래서
+     전체를 덮는 메뉴·결과 화면에서는 아예 숨겨야 한다 — 안 그러면 말풍선이
+     버튼 위에 겹쳐 찍힌다(결과 화면의 '다시' 가 실제로 그렇게 가려졌다). */
   #chat{position:fixed;left:0;bottom:0;z-index:30;width:min(400px,62vw);padding:0 0 12px 12px;pointer-events:none}
+  #chat.off{display:none}
   #chatLog{display:flex;flex-direction:column;gap:1px;margin-bottom:5px}
   .cmsg{background:rgba(8,11,17,.78);border-left:3px solid var(--acc2);border-radius:0;
     padding:5px 11px;font-size:13px;font-weight:600;line-height:1.4;color:#fff;
@@ -162,7 +264,7 @@
   .screen p.hint b, .hint b{color:#cfd9e8;font-weight:800}
   /* 맵 선택(병합분) — 샤프 톤에 맞춤 */
   .pick{margin-top:16px;display:flex;align-items:center;gap:9px;color:#9dabc4;
-    font-size:10.5px;font-weight:900;letter-spacing:2px;text-transform:uppercase}
+    font-size:11px;font-weight:900;letter-spacing:.2px}
   /* select 는 브라우저 기본 외형이 배경을 덮으므로 appearance 를 꺼야 어두운 톤이 먹는다 */
   .pick select{font:inherit;font-size:13px;font-weight:700;letter-spacing:0;color:#fff;cursor:pointer;
     -webkit-appearance:none;appearance:none;background-color:#0d1219;
@@ -176,6 +278,12 @@
   .pick select option{background:#0d1219;color:#fff}
   .pick input[type=color]{flex:0 0 46px;height:24px;padding:0;border:1px solid var(--line2);
     background:transparent;cursor:pointer;border-radius:0}
+  /* 모션은 딱 두 개다: 화면이 뜰 때 살짝 올라오는 것과 버튼이 눌리는 것(위 :active).
+     그 이상은 3D 위에 얹힌 UI 를 산만하게 만든다. */
+  @keyframes scrIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+  .screen:not(.off){animation:scrIn .14s ease-out}
+  .screen.asPanel:not(.off),.screen.asSheet{animation:none}
+  @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
 </style>
 </head>
 <body>
@@ -187,15 +295,6 @@
   <input id="chatInput" maxlength="120" autocomplete="off" placeholder="메시지 입력 후 Enter · Esc 취소" />
 </div>
 
-<!-- 디버그: 실시간 파라미터 조절 -->
-<button id="dbgBtn" title="디버그 패널">DEBUG</button>
-<div id="dbgPanel" class="off">
-  <div class="dbgHead">
-    <span>파라미터</span>
-    <button id="dbgReset" class="dbgSmall">기본값</button>
-  </div>
-  <div id="dbgRows"></div>
-  <div class="dbgNote">값은 이 세션에만 적용됩니다. 새로고침하면 원래대로 돌아갑니다.</div>
 </div>
 
 <div id="hud">
@@ -209,11 +308,14 @@
   </svg>
   <!-- 라운드 정산 배너 — 떨어뜨린 직후 잠깐 뜨고, 다음 라운드가 시작되면 사라진다 -->
   <div id="roundMsg"></div>
-  <div id="topbar">
-    <span class="pill">⏱ <b id="timeV">0.0</b>s</span>
-    <span class="pill" id="cpV">체크포인트 0</span>
-    <span class="pill" id="mapV">맵</span>
-    <span class="pill" id="mpV">🎮 솔로</span>
+  <!-- 컨텍스트: 경기 내내 안 변하는 것들. 흐리게, 구석에.
+       예전엔 맵 이름과 접속 상태가 상태 정보와 같은 줄에 같은 크기로 있었다. -->
+  <div id="ctxbar"><span id="mapV">맵</span><span id="mpV">🎮 솔로</span></div>
+  <!-- 상태: 매 순간 변하는 것들. 화면 위 가운데. -->
+  <div id="statbar">
+    <div id="collapseBar"><i></i></div>
+    <div id="statMain"><b id="timeV">0.0</b><em id="timeU">초</em></div>
+    <div id="scoreRow"></div>
   </div>
   <!-- 아이템 상태: 작동 중(시간제) / 보유 중(쓸 수 있는 것) -->
   <div id="items"></div>
@@ -221,21 +323,22 @@
   <div id="msg"></div>
 </div>
 
+<!-- 타이틀은 이름과 시작 버튼만 남긴다. 예전엔 설명 문단 둘 + 키 안내 두 줄이 깔려
+     있어 낮은 창에서는 버튼이 화면 밖으로 밀려났다. 조작법은 일시정지 화면에 있고,
+     무슨 게임인지는 모드 선택 화면이 한 줄씩 설명한다. -->
 <div class="screen" id="title">
-  <div class="sub">PROTOTYPE · P0</div>
   <h1>PENG!</h1>
-  <p style="color:#b7c3d8;letter-spacing:5px;font-size:12.5px;font-weight:800;text-transform:uppercase;margin:8px 0 16px">공기폭발 협동 질주</p>
-  <p><b>PoofGun</b>은 닿는 곳에서 공기를 <b>뻥</b> 터뜨려 사람을 날린다.<br>
-     발밑을 쏴 <b>로켓점프</b>로 못 넘는 협곡을 넘어 <b>결승선(초록)</b>까지!</p>
-  <p class="hint"><kbd>WASD</kbd> 이동 · <kbd>마우스</kbd> 시점 · <kbd>좌클릭</kbd> 펑! · <kbd>Space</kbd> 점프 · <kbd>우클릭 홀드</kbd> 조준(캐릭터가 옆으로 비켜 조준점이 드러남)<br><kbd>R</kbd> 리스폰 · <kbd>V</kbd> 시점 전환(1·3인칭) · <kbd>Enter</kbd> 채팅 · 화면 클릭 시 마우스 잠금, <kbd>ESC</kbd> 해제.</p>
-  <label class="pick">맵 <span style="opacity:.6">(혼자 플레이)</span> <select id="mapSel"></select></label>
+  <p class="tagline">밀고 날리는 파티 액션</p>
   <div class="menu">
-    <button class="go" id="soloBtn">혼자 플레이</button>
-    <button class="go alt" id="hostBtn">방 만들기 (호스트)</button>
+    <button class="go" id="soloBtn">플레이</button>
     <button class="go alt" id="joinBtn">방 참가하기</button>
+    <button class="go alt" id="setBtn">설정</button>
   </div>
-  <p class="hint" id="mpWarn" style="margin-top:16px"></p>
+  <p class="hint mpwarn" id="mpWarn" style="margin-top:16px"></p>
 </div>
+
+<!-- 협동 모드는 지금 출입구가 없다(경쟁만 출시). 규칙·코스·결승선 코드는 그대로
+     살아 있으므로 나중에 이 자리에 모드 선택 화면을 다시 넣으면 된다. -->
 
 <!-- 참가: 세션 코드 입력 -->
 <div class="screen off" id="joinScr">
@@ -258,11 +361,10 @@
   <div id="codeBig">------</div>
   <a href="#" id="copyCode" style="color:#4db3ff;font-size:10.5px;letter-spacing:1.6px;text-transform:uppercase;text-decoration:none;border-bottom:1px solid #243044;padding-bottom:1px">코드 복사</a>
   <ul id="playerList"></ul>
-  <label class="pick"><span id="modePickLabel">모드</span> <select id="modeSel">
-    <option value="coop">협동 — 함께 결승까지</option>
-    <option value="versus">경쟁 — 밖으로 떨어뜨리기</option>
-  </select></label>
-  <label class="pick"><span id="mapPickLabel">맵</span> <select id="mapSelLobby"></select></label>
+  <div class="pick"><span id="mapPickLabel">맵</span>
+    <button type="button" id="lobbyMapBtn" class="mapBtn">
+      <canvas width="88" height="56"></canvas><span class="lmName">—</span>
+    </button></div>
   <label class="pick">내 색 <input type="color" id="colSel" /></label>
   <p class="hint" id="lobbyHint">친구가 들어오면 시작할 수 있어요.</p>
   <div class="menu row">
@@ -272,6 +374,49 @@
   <div class="menu row">
     <button class="go" id="lobbyStartBtn" disabled>게임 시작</button>
     <button class="go alt" id="lobbyLeaveBtn">나가기</button>
+  </div>
+</div>
+
+<!-- 아래 넷은 단계별로 채운다(모드 선택 · 맵 브라우저 · 설정 · 경쟁 결과).
+     지금은 빈 껍데기 — showScreen 이 관리하는 목록에만 올라가 있다. -->
+<!-- 맵 브라우저. 타이틀 흐름에서는 화면으로, 대기방에서는 오버레이로 열린다
+     (후자는 mode 가 'lobbyScr' 로 남아야 뒤의 연습 물리가 산다). -->
+<div class="screen off" id="mapScr">
+  <div class="setBox">
+    <div class="sub">MAP</div>
+    <h1>맵 고르기</h1>
+    <div id="mapGrid"></div>
+    <p class="hint" id="mapScrNote"></p>
+    <p class="hint mpwarn"></p>
+    <div class="menu row">
+      <button class="go" id="mapHostBtn">방 만들기</button>
+      <button class="go alt" id="mapSoloBtn">혼자 둘러보기</button>
+      <button class="go alt" id="mapBack">뒤로</button>
+    </div>
+  </div>
+</div>
+<!-- 설정. 타이틀에서는 화면으로, 일시정지에서는 오버레이(.asSheet)로 열린다 —
+     후자는 mode 가 'play' 로 남아야 뒤의 물리와 HUD 가 살아 있다. -->
+<div class="screen off" id="setScr">
+  <div class="setBox">
+    <div class="sub">SETTINGS</div>
+    <h1>설정</h1>
+    <div id="setRows"></div>
+    <p class="hint" id="setNote"></p>
+    <div class="menu"><button class="go" id="setBack">돌아가기</button></div>
+  </div>
+</div>
+<!-- 경쟁 결과. 명단은 대기방(#playerList)과 같은 마크업·CSS 를 쓴다 —
+     색 스와치, '(나)' 강조, AI 배지가 새 CSS 없이 그대로 나온다. -->
+<div class="screen off" id="vsWin">
+  <div class="sub">MATCH</div>
+  <h1 id="vsWinTitle">경기 종료</h1>
+  <ul id="vsList" class="rank"></ul>
+  <p class="hint" id="vsWinNote"></p>
+  <div class="menu row">
+    <button class="go" id="vsAgainBtn">다시</button>
+    <button class="go alt" id="vsLobbyBtn">대기방으로</button>
+    <button class="go alt" id="vsMenuBtn">메인 메뉴</button>
   </div>
 </div>
 
@@ -289,15 +434,16 @@
      showScreen 이 관리하는 화면들과 달리 mode 를 바꾸지 않는다: 게임은 계속
      'play' 여야 HUD 와 물리 상태가 유지되고, 계속하기로 그대로 돌아갈 수 있다. -->
 <div class="screen off" id="pause">
-  <div class="sub">일시정지</div>
+  <div class="sub">PAUSED</div>
   <h1>PENG!</h1>
+  <p id="pauseWhere"></p>
   <p id="pauseNote"></p>
   <div class="menu row">
     <button class="go" id="pauseResume">계속하기</button>
+    <button class="go alt" id="pauseSettings">설정</button>
     <button class="go alt" id="pauseLeave">나가기</button>
   </div>
-  <p class="keyhelp"><kbd>WASD</kbd> 이동 · <kbd>좌클릭</kbd> 펑! · <kbd>우클릭</kbd> 조준
-    · <kbd>Space</kbd> 점프 · <kbd>R</kbd> 리스폰 · <kbd>V</kbd> 시점 · <kbd>Enter</kbd> 채팅</p>
+  <div class="keyhelp" id="keyhelp"></div>
 </div>
 
 <!-- 공용 모듈 + 코스 데이터. 고전 <script src> 라 file:// 더블클릭에서도 로드된다.
@@ -319,6 +465,9 @@
 <!-- 아이템 6종의 표식 메시와 HUD 아이콘(Kenney Food Kit, CC0).
      itembaked.js/itemicons.js 는 tools/bakefood.js 가 미리 구워둔 데이터다 —
      둘 중 뭐가 빠져도 그것만 예전 모습(큐브 표식·이모지)으로 떨어진다. -->
+<!-- UI 표시용 폰트 + 키 아이콘 타일맵(Kenney, CC0)을 구운 것.
+     없으면 각각 기본 폰트 / 글자 키캡으로 떨어진다. -->
+<script src="uiassets.js"></script>
 <script src="meshlib.js"></script>
 <script src="itemmesh.js"></script>
 <script src="itembaked.js"></script>
@@ -352,9 +501,27 @@ function layout(){
 }
 window.addEventListener('resize',layout);
 
+/* ---------- 설정 저장 ----------
+   키는 전부 'peng.' 접두 — 기존 peng.color / peng.solomap 과 같은 규칙이다.
+   localStorage 가 막힌 환경(file:// 시크릿 창 등)에서도 게임이 멈추면 안 되므로 전부 try. */
+function stGet(k, d){ try{ var v=localStorage.getItem('peng.'+k); return v==null?d:v; }catch(e){ return d; } }
+function stNum(k, d){ var v=parseFloat(stGet(k,'')); return isFinite(v)?v:d; }
+function stPut(k, v){ try{ localStorage.setItem('peng.'+k, String(v)); }catch(e){} }
+
+/* 설정으로 조절되는 값들. 예전엔 셋 다 변수조차 아니었다 —
+   감도는 mousemove 핸들러 안 지역변수, 볼륨은 ensureAudio 안 상수,
+   기본 시점은 makeSim 안 리터럴이라 바깥에서 건드릴 방법이 없었다. */
+var MOUSE_SENS=0.0022;   // 마우스 1픽셀당 라디안
+var VOLUME=0.5, MUTED=false;
+var TP_DEFAULT=true;     // 새 판을 3인칭으로 시작할지 (V 로 언제든 전환)
+
 /* ---------- 오디오 ---------- */
 var AC=null,master=null;
-function ensureAudio(){ if(!AC){try{AC=new(window.AudioContext||window.webkitAudioContext)();master=AC.createGain();master.gain.value=0.5;master.connect(AC.destination);}catch(e){}} if(AC&&AC.state==='suspended')AC.resume(); }
+function ensureAudio(){ if(!AC){try{AC=new(window.AudioContext||window.webkitAudioContext)();master=AC.createGain();master.gain.value=MUTED?0:VOLUME;master.connect(AC.destination);}catch(e){}} if(AC&&AC.state==='suspended')AC.resume(); }
+// 볼륨은 살아 있는 gain 에 즉시 반영한다 — 설정에서 슬라이더를 움직이면 바로 들려야 한다
+function applyVolume(){ if(master) master.gain.value = MUTED?0:VOLUME; }
+function setVolume(v){ VOLUME=Math.max(0,Math.min(1,v)); stPut('vol', VOLUME); applyVolume(); }
+function setMuted(m){ MUTED=!!m; stPut('mute', MUTED?1:0); applyVolume(); }
 function tone(f,dur,type,vol,to){ ensureAudio(); if(!AC)return; var t=AC.currentTime,o=AC.createOscillator(),g=AC.createGain();
   o.type=type||'sine';o.frequency.setValueAtTime(f,t); if(to)o.frequency.exponentialRampToValueAtTime(Math.max(30,to),t+dur);
   g.gain.setValueAtTime(0.0001,t);g.gain.exponentialRampToValueAtTime(vol||0.15,t+0.008);g.gain.exponentialRampToValueAtTime(0.0001,t+dur);
@@ -697,9 +864,10 @@ try{
       try{ setLevel(alt[i]); break; }catch(e2){} }
   }
 })();
-// 혼자 플레이 맵은 따로 기억한다(지난번에 고른 게 남아 있으면 그대로)
+// 지난번에 고른 맵이 남아 있으면 그대로 켠다
 SOLO_LEVEL=CURLEVEL;
-try{ var _sm=localStorage.getItem('peng.solomap'); if(_sm && PENG.getLevel(_sm)) SOLO_LEVEL=_sm; }catch(e){}
+try{ var _sm=localStorage.getItem('peng.solomap');
+  if(_sm && PENG.getLevel(_sm)){ SOLO_LEVEL=_sm; setLevel(_sm); } }catch(e){}
 
 /* ---------- 물리 상수 ---------- */
 // 상수의 단일 출처는 level.js 의 PENG.PHYS 다. 에디터가 도달 거리를 게임과 똑같은
@@ -723,7 +891,7 @@ function makeSim(){  // practice 를 켜면 기록/승리 없이 자유 연습
   return { p:{x:s.x,y:s.y,z:s.z}, v:{x:0,y:0,z:0}, yaw:0, pitch:0, onGround:false,
     items:{}, charges:{},   // 아이템: id -> 남은 초 / id -> 남은 횟수
     glide:0, glideLeft:0,   // 깃털 글라이딩: 남은 시간 / 남은 사용 횟수
-    ammo:AMMO_MAX, ammoT:0, t:0, cpIdx:0, win:false, blasts:[], particles:[], projectiles:[], shake:0, _fireCd:0, tp:true, recoil:0, kb:0, aim:0, aimHold:false,   // tp:true = 기본 3인칭 (V 로 전환)
+    ammo:AMMO_MAX, ammoT:0, t:0, cpIdx:0, win:false, blasts:[], particles:[], projectiles:[], shake:0, _fireCd:0, tp:TP_DEFAULT, recoil:0, kb:0, aim:0, aimHold:false,   // 기본 시점은 설정에서 (V 로 전환)
     coyote:0, jumped:false, bjGrace:0 };
 }
 /* 접촉 여유(m). 착지는 s.p.y 에 발판 윗면 값을 그대로 대입한다(moveAxis 참조). 그래서
@@ -2573,7 +2741,9 @@ function setMyColor(c){ if(!/^#[0-9a-fA-F]{6}$/.test(c)) return;
   PLAYER_COL=c; try{ localStorage.setItem('peng.color',c); }catch(e){}
   if(MP.connected) mpSend({t:'col', c:c}); }
 /* 게임 모드 — coop(협동, 결승까지) / versus(경쟁, 밖으로 떨어뜨리기) */
-var GAMEMODE='coop', VS_WIN=5, SCORES={};
+/* 지금 출시 대상은 경쟁뿐이다. 협동(coop) 코드는 그대로 살아 있고 GAMEMODE 만
+   바꾸면 다시 돌아가지만, 화면에서 그리로 가는 길은 없다. */
+var GAMEMODE='versus', VS_WIN=5, SCORES={};
 function nameOf(id){ for(var i=0;i<MP.players.length;i++) if(MP.players[i].id===id) return MP.players[i].name;
   return (id===MP.id)?MP.name:('P'+id); }
 /* 누군가 아레나 밖으로 떨어지면 나머지 전원이 1점.
@@ -2593,9 +2763,10 @@ function scoreFall(fallerId, byId){
   var best=null;
   ids.forEach(function(id){ if((SCORES[id]||0)>=VS_WIN && (best===null||SCORES[id]>SCORES[best])) best=id; });
   if(best!==null && mode==='play'){
-    document.getElementById('winMsg').textContent =
-      (best===MP.id ? '내가 승리! ' : (nameOf(best)+' 승리! ')) + '('+(SCORES[best])+'점)';
-    showScreen('win'); sndWin(); if(locked)document.exitPointerLock();
+    // 예전엔 협동 클리어 화면(#win)을 그대로 썼다 — 상대를 절벽으로 밀어 이겨 놓고
+    // "CLEAR / 도착! 🎉" 가 떴다. 경쟁에는 경쟁의 결과 화면이 있어야 한다.
+    renderVsWin(best);
+    showScreen('vsWin'); sndWin(); if(locked)document.exitPointerLock();
     return;                                    // 경기가 끝났으면 다음 라운드는 없다
   }
 }
@@ -2872,8 +3043,23 @@ function closeChat(doSend){
 function mpStatus(){ var el=document.getElementById('mpV'); if(!el)return;
   el.textContent = (MP.connected&&MP.room) ? ('🟢 '+Math.max(1,MP.players.length)+'명 · '+MP.room) : '🎮 솔로'; }
 
-/* ---------- 메뉴 / 대기방 ---------- */
-// which: 'title' | 'joinScr' | 'lobbyScr' | 'win' | 'play'('play'는 전부 숨김)
+/* ---------- 메뉴 / 대기방 ----------
+   화면에는 두 종류가 있다.
+
+   · 스크린(showScreen) — 배타적이고 mode 를 바꾼다. 뒤에서 아무것도 안 돌아도 될 때.
+   · 오버레이(openOverlay) — mode 를 '바꾸지 않고' 위에 얹는다. 뒤의 sim 이 살아
+     있어야 할 때. 일시정지(#pause)가 원래 이 방식이었고(아래 openPause 주석 참고),
+     그걸 일반화한 것이다.
+
+   ※ SCREENS 의 id 는 절대 'play'/'lobbyScr' 와 겹치면 안 된다. 게임 로직 18곳이
+     그 두 값으로 "물리를 돌릴지"를 판단한다(padTick·발사·채팅·조준선·메인 루프 …).
+     메뉴 화면을 아무리 추가해도 그 판정에는 걸리지 않는다. */
+var SCREENS=['title','mapScr','setScr','joinScr','lobbyScr','win','vsWin'];
+/* 화면 진입 훅 — 열릴 때 목록·값을 다시 그린다. 각 단계에서 자기 렌더러를 등록한다
+   (여기서 직접 참조하면 아직 없는 함수를 가리키게 된다). */
+var SCREEN_ENTER={};
+
+// which: SCREENS 중 하나 | 'play'('play'는 전부 숨김 = 게임 중)
 function showScreen(which){
   // 채팅이 열린 채로 화면이 바뀌면 chatting 이 true 로 남아 이후 모든 키 입력이 막힌다.
   // (대기방에서 Enter 로 채팅을 열고 마우스로 '게임 시작' 을 누르면 조작 불능이 됐다)
@@ -2881,58 +3067,256 @@ function showScreen(which){
     var _ci=document.getElementById('chatInput');
     if(_ci){ _ci.classList.remove('on'); _ci.blur(); _ci.value=''; } }
   if(PAUSED) closePause(false);       // 화면이 바뀌면 일시정지 메뉴는 남아 있으면 안 된다
+  if(OVERLAY) closeOverlay(false);    // 오버레이도 마찬가지 — 이전 화면에 얹힌 것이다
   keys={}; jumpEdge=false;
   mode=which;
-  ['title','joinScr','lobbyScr','win'].forEach(function(idn){
-    document.getElementById(idn).classList.toggle('off', idn!==which); });
+  for(var i=0;i<SCREENS.length;i++){
+    var el=document.getElementById(SCREENS[i]); if(!el) continue;
+    el.classList.toggle('off', SCREENS[i]!==which);
+  }
+  // 채팅은 게임 중과 대기방(옆 패널)에서만 쓴다 — 위 #chat 주석 참고
+  var ch=document.getElementById('chat');
+  if(ch) ch.classList.toggle('off', !(which==='play' || which==='lobbyScr'));
+  var fn=SCREEN_ENTER[which]; if(fn) fn();
 }
-function setWarn(t){ document.getElementById('mpWarn').innerHTML=t||''; }
-/* 맵 선택 — 목록은 levels/*.js 가 등록한 순서 그대로 나온다.
-   멀티에서 실제로 적용되는 건 호스트가 고른 맵뿐이므로 게스트 쪽 선택은 잠근다. */
-function fillMapPickers(){
-  ['mapSel','mapSelLobby'].forEach(function(idn){
-    var sel=document.getElementById(idn); if(!sel)return;
-    sel.innerHTML='';
-    PENG.order.forEach(function(id){
-      var o=document.createElement('option'); o.value=id;
-      o.textContent=PENG.getLevel(id).name||id;
-      sel.appendChild(o);
-    });
+
+/* 메뉴 뒤로가기. 게임 상태(play·lobbyScr)는 스택에 넣지 않는다 —
+   넣으면 '뒤로'가 게임 안으로 되돌아가 버린다. */
+var MENU_STACK=[], MENU_SCREENS={title:1, mapScr:1, setScr:1, joinScr:1};
+function goScreen(which){
+  if(MENU_SCREENS[mode] && MENU_SCREENS[which]) MENU_STACK.push(mode);
+  else MENU_STACK.length=0;
+  showScreen(which);
+}
+function backScreen(){
+  var prev=MENU_STACK.pop();
+  showScreen(MENU_SCREENS[prev] ? prev : 'title');
+}
+
+/* 오버레이 — mode 를 안 바꾼다. 대기방에서 맵을 고를 때(mode 가 'lobbyScr' 여야
+   applyLevelToPractice 와 연습 물리가 산다)와 일시정지에서 설정을 열 때
+   (mode 가 'play' 여야 HUD·물리가 산다) 쓴다. */
+var OVERLAY=null, OVERLAY_FROM=null;
+// from='pause' 를 주면 닫을 때 일시정지 메뉴로 되돌아간다 — 일시정지에서 설정에
+// 들어갔다 나왔는데 곧바로 게임으로 튀면, 멈춰 두고 싶었던 사람이 당황한다.
+function openOverlay(id, from){
+  var el=document.getElementById(id); if(!el) return;
+  if(OVERLAY) closeOverlay(false);
+  OVERLAY=id; OVERLAY_FROM=from||null;
+  el.classList.remove('off'); el.classList.add('asSheet');
+  if(locked) document.exitPointerLock();     // 시트를 눌러야 하니 커서를 돌려준다
+  var fn=SCREEN_ENTER[id]; if(fn) fn();
+}
+function closeOverlay(relock){
+  if(!OVERLAY) return;
+  var el=document.getElementById(OVERLAY);
+  if(el){ el.classList.add('off'); el.classList.remove('asSheet'); }
+  OVERLAY=null;
+  var from=OVERLAY_FROM; OVERLAY_FROM=null;
+  if(from==='pause' && mode==='play'){ openPause(); return; }
+  if(relock && mode==='play' && !PAUSED) requestLock();
+}
+/* 서버 상태 안내 — 타이틀에만 두면 맵 화면에서 '방 만들기'를 눌렀을 때 왜 안 되는지
+   보이지 않는다. 클래스로 모아 어느 화면에 있든 같은 내용이 뜨게 한다. */
+function setWarn(t){
+  var ns=document.querySelectorAll('.mpwarn');
+  for(var i=0;i<ns.length;i++) ns[i].innerHTML=t||'';
+}
+/* ---------- 맵 브라우저 ----------
+   맵마다 그림 파일이 없으므로 썸네일을 그 자리에서 그린다 — 위에서 내려다본 XZ 발자국.
+   "어떻게 생긴 코스인가"는 <select> 의 이름 한 줄로는 절대 안 보인다.
+
+   ※ 재보려고 setLevel() 을 부르면 안 된다. 그건 세계를 통째로 다시 짓고(충돌체·조각
+     VBO·패드·표식) CURLEVEL 을 마지막으로 그린 맵에 남긴다. 여기서는 레지스트리
+     원본(PENG.getLevel)만 읽는다. */
+var THUMBS={}, THUMB_SEED=1;      // 시드 고정 — 카드가 볼 때마다 달라지면 안 된다
+
+/* 맵 → 위에서 본 사각형 목록. 출처가 셋이라 하나로 모은다.
+     · 정적 맵 : boxes 중 deco 가 아닌 것
+     · 조각 맵 : pieces (킷 유닛 → 미터)
+     · 절차 맵 : 생성기를 한 번 굴린다. genStation/genPeak/genArena 는 전부 순수
+                함수라 LEVEL·STATION 을 건드리지 않는다(level.js 참고). */
+function mapFootprint(id){
+  var d=PENG.getLevel(id); if(!d) return null;
+  var R=[], C=d.collapse;
+
+  function push(x,z,w,h,y,ring,deco){
+    if(!isFinite(x)||!isFinite(z)||!(w>0)||!(h>0)) return;
+    R.push({x:x, z:z, w:w, h:h, y:isFinite(y)?y:0, ring:ring||0, deco:!!deco});
+  }
+
+  if(C && C.gen){
+    var U=C.size||STATION.unit, G=null;
+    try{
+      if(C.gen==='station')   G=PENG.genStation(THUMB_SEED);
+      else if(C.gen==='peak') G=PENG.genPeak(THUMB_SEED);
+      else                    G=PENG.genArena(C, THUMB_SEED);
+    }catch(e){ G=null; }
+    if(G && G.pieces){                       // station · peak
+      G.pieces.forEach(function(p){ push(p.i*U, p.j*U, U, U, (p.y||0)*U, p.order, p.deco); });
+    } else if(G && G.slabs){                 // 일반 절차 아레나 — 이미 월드 좌표다
+      G.slabs.forEach(function(s){ push(s.cx, s.cz, s.hx*2, s.hz*2, (C.y||0)+(s.h||0), s.ring, false); });
+    }
+  }
+
+  /* 장식 바닥은 반드시 걸러야 한다. 협곡의 첫 상자는 120x280m 배경인데 실제 코스는
+     7x85m 다 — 같이 넣으면 코스가 두 픽셀로 뭉개진다. 아레나(180m)·피크(440m)도 같다. */
+  (d.boxes||[]).forEach(function(b){
+    if(b.deco) return;
+    push(b.cx, b.cz, b.hx*2, b.hz*2, b.cy, b._ring, false);
   });
-  /* 메인 메뉴의 맵 선택은 혼자 플레이 전용이다. 예전엔 이게 CURLEVEL 을 바꿔서
-     방을 만들면 그 맵이 그대로 방 맵이 됐는데, 대기방에도 맵 선택이 따로 있어
-     "어느 쪽이 진짜인지" 헷갈렸다. 이제 메인 메뉴는 SOLO_LEVEL 만 건드리고,
-     방 맵은 오직 대기방 선택(호스트)만 정한다. */
-  var msel=document.getElementById('mapSel');
-  if(msel){ msel.value=SOLO_LEVEL;
-    msel.addEventListener('change',function(){ setSoloLevel(msel.value); }); }
-  var lsel=document.getElementById('mapSelLobby');
-  if(lsel){ lsel.value=CURLEVEL;
-    lsel.addEventListener('change',function(){
-      if(!setLevel(lsel.value)) return;
-      syncMapPickers();
-      applyLevelToPractice();                    // 대기방 연습장을 새 맵으로 교체
-      if(mpIsHost()) mpSend({t:'lvl', level:CURLEVEL});   // 팀원도 같은 코스를 보게
-    }); }
-  syncMapPickers(); syncModePicker();
+  var PU=d.unit||3;
+  (d.pieces||[]).forEach(function(p){
+    if(p.deco) return;
+    var w=Math.max(0.35,(p.sx!=null?p.sx:(p.s||1)))*PU*0.9;
+    var h=Math.max(0.35,(p.sz!=null?p.sz:(p.s||1)))*PU*0.9;
+    push(p.i*PU, p.j*PU, w, h, (p.y||0)*PU, 0, false);
+  });
+
+  if(!R.length) return null;
+  var x0=Infinity,x1=-Infinity,z0=Infinity,z1=-Infinity,y0=Infinity,y1=-Infinity,rmax=0;
+  R.forEach(function(r){
+    x0=Math.min(x0,r.x-r.w/2); x1=Math.max(x1,r.x+r.w/2);
+    z0=Math.min(z0,r.z-r.h/2); z1=Math.max(z1,r.z+r.h/2);
+    y0=Math.min(y0,r.y);       y1=Math.max(y1,r.y);
+    if(r.ring>rmax) rmax=r.ring;
+  });
+  return { rects:R, x0:x0, x1:x1, z0:z0, z1:z1, y0:y0, y1:y1, rmax:rmax,
+           goal:(d.goal && d.goal.cy>-900)?d.goal:null, start:d.start||null };
 }
-/* 모드 선택 — 맵과 마찬가지로 호스트만 정하고 게스트는 잠긴다 */
-function syncModePicker(){
-  var sel=document.getElementById('modeSel'), lb=document.getElementById('modePickLabel');
-  if(sel && sel.value!==GAMEMODE) sel.value=GAMEMODE;
-  var guest=MP.connected && !mpIsHost();
-  if(sel) sel.disabled=guest;
-  if(lb) lb.textContent=guest?'모드 (호스트가 결정)':'모드';
+
+function lerpCol(a,b,t){
+  t=Math.max(0,Math.min(1,t));
+  return 'rgb('+Math.round(a[0]+(b[0]-a[0])*t)+','+Math.round(a[1]+(b[1]-a[1])*t)+','+Math.round(a[2]+(b[2]-a[2])*t)+')';
 }
+/* 색이 정보를 나른다.
+     · 코스 맵 : 낮은 곳(회청) → 높은 곳(하늘색). 수직 상승이 그림으로 읽힌다.
+     · 아레나 : 바깥 고리일수록 어둡게. "바깥부터 무너진다"가 그대로 보인다. */
+function drawThumb(cv, id){
+  var F=THUMBS[id]; if(F===undefined){ F=THUMBS[id]=mapFootprint(id); }
+  var g=cv.getContext('2d'), W=cv.width, H=cv.height;
+  g.clearRect(0,0,W,H);
+  if(!F){ g.fillStyle='#33425e'; g.font='11px sans-serif'; g.textAlign='center';
+          g.fillText('미리보기 없음', W/2, H/2); return; }
+  var pad=6, ew=F.x1-F.x0, eh=F.z1-F.z0;
+  var s=Math.min((W-pad*2)/Math.max(ew,0.001), (H-pad*2)/Math.max(eh,0.001));
+  var ox=(W-ew*s)/2-F.x0*s, oz=(H-eh*s)/2-F.z0*s;
+  var LO=[0x33,0x42,0x5e], HI=[0x4d,0xb3,0xff], dy=Math.max(0.001,F.y1-F.y0);
+  F.rects.forEach(function(r){
+    var col;
+    if(F.rmax>0) col=lerpCol([0x1d,0x27,0x38], HI, 1-(r.ring/F.rmax)*0.85);
+    else         col=lerpCol(LO, HI, (r.y-F.y0)/dy);
+    g.globalAlpha = r.deco?0.25:1;
+    g.fillStyle=col;
+    g.fillRect(ox+(r.x-r.w/2)*s, oz+(r.z-r.h/2)*s, Math.max(1,r.w*s), Math.max(1,r.h*s));
+  });
+  g.globalAlpha=1;
+  if(F.start){ g.fillStyle='#ff8a3a'; g.beginPath();
+    g.arc(ox+F.start.x*s, oz+F.start.z*s, 2.5, 0, 6.284); g.fill(); }
+  if(F.goal){ g.fillStyle='#2ee6b6'; g.beginPath();
+    g.arc(ox+F.goal.cx*s, oz+F.goal.cz*s, 3, 0, 6.284); g.fill(); }
+}
+
+/* 카드에 찍을 숫자. 없는 값을 지어내지 않는다 — 난이도 별점 같은 건 근거가 없다.
+   높이차와 체크포인트 수가 "얼마나 빡센 코스인가"를 공짜로 알려준다. */
+function mapMeta(id){
+  var d=PENG.getLevel(id); if(!d) return '';
+  if(d.arena){
+    var C=d.collapse, out=[];
+    if(C) out.push('붕괴 '+C.first+'초 · 간격 '+C.every+'초');
+    out.push('스폰 '+((d.spawns||[]).length));
+    return out.join(' · ');
+  }
+  var F=THUMBS[id]; if(F===undefined) F=THUMBS[id]=mapFootprint(id);
+  var out2=['체크포인트 '+((d.checkpoints||[]).length)];
+  if(F) out2.push('높이 Δ'+Math.round(F.y1-F.y0)+'m');
+  var best=stNum('best.'+id, 0);
+  if(best>0) out2.push('최고 '+best.toFixed(1)+'초');
+  return out2.join(' · ');
+}
+
+/* 모드에 맞는 맵만 — 협동 맵엔 떨어뜨릴 가장자리가 없고, 아레나엔 결승선이 없다 */
+function mapListFor(gm){
+  return PENG.order.filter(function(id){
+    var d=PENG.getLevel(id); return d && (!!d.arena === (gm==='versus'));
+  });
+}
+function firstMapFor(gm){ var l=mapListFor(gm); return l.length?l[0]:null; }
+
+/* 어느 자리에서 열었는가 —
+     'room'  : 타이틀 흐름. 아직 방이 없으니 CURLEVEL 만 정해 두고 화면에 머문다.
+     'lobby' : 대기방 오버레이. 고르는 즉시 적용하고 팀원에게 알린 뒤 닫는다.
+   협동을 빼면서 '혼자 플레이 맵(SOLO_LEVEL)' 과 '방 맵' 의 구분이 없어졌다 —
+   경쟁은 방에서만 하므로 의미 있는 맵은 CURLEVEL 하나뿐이다. */
+var MAPBROWSE={ target:'room' };
+function browseTarget(){ return CURLEVEL; }
+function pickMap(id){
+  if(MP.connected && !mpIsHost()) return;              // 방 맵은 호스트만 정한다
+  if(!setLevel(id)) return;
+  setSoloLevel(id);                                    // 다음에 켤 때 그대로 (peng.solomap)
+  syncMapPickers();
+  if(MAPBROWSE.target==='lobby'){
+    applyLevelToPractice();                            // 대기방 연습장을 새 맵으로 교체
+    if(mpIsHost()) mpSend({t:'lvl', level:CURLEVEL});  // 팀원도 같은 판을 보게
+    closeOverlay(false);
+  } else {
+    renderMapCards();                                  // 선택 표시만 — 시작은 하단 버튼
+  }
+}
+
+function renderMapCards(){
+  var grid=document.getElementById('mapGrid'); if(!grid) return;
+  var guest=MP.connected && !mpIsHost() && MAPBROWSE.target==='lobby';
+  var cur=browseTarget(), list=mapListFor(GAMEMODE);
+  grid.innerHTML=''; grid.classList.toggle('locked', guest);
+  list.forEach(function(id){
+    var d=PENG.getLevel(id);
+    var card=document.createElement('button'); card.type='button';
+    card.className='mapCard'+(id===cur?' on':'');
+    var cvv=document.createElement('canvas'); cvv.width=176; cvv.height=112;
+    card.appendChild(cvv);
+    var nm=document.createElement('div'); nm.className='mcName'; nm.textContent=d.name||id;
+    card.appendChild(nm);
+    var mt=document.createElement('div'); mt.className='mcMeta'; mt.textContent=mapMeta(id);
+    card.appendChild(mt);
+    card.addEventListener('click',function(){ ensureAudio(); pickMap(id); });
+    grid.appendChild(card);
+    drawThumb(cvv, id);
+  });
+  if(!list.length){
+    var e=document.createElement('p'); e.className='hint';
+    e.textContent = (GAMEMODE==='versus') ? '경쟁용 아레나 맵이 없습니다.' : '협동용 코스 맵이 없습니다.';
+    grid.appendChild(e);
+  }
+  var lb=document.getElementById('mapScrNote');
+  if(lb) lb.textContent = guest ? '맵은 호스트가 정합니다.'
+    : '경기는 방에서 합니다 — 방을 만들고 친구를 부르거나 AI를 추가하세요.';
+  // 대기방 오버레이일 땐 시작 버튼이 필요 없다(이미 방 안이다)
+  var inLobby=(MAPBROWSE.target==='lobby');
+  var hb=document.getElementById('mapHostBtn'), sb=document.getElementById('mapSoloBtn');
+  if(hb) hb.style.display=inLobby?'none':'';
+  if(sb) sb.style.display=inLobby?'none':'';
+}
+SCREEN_ENTER.mapScr=renderMapCards;
+
+/* 아래 셋은 이름을 유지한다 — 멀티 메시지 핸들러를 포함해 호출부가 여기저기 있다.
+   예전엔 <select> 를 채웠고 지금은 카드 격자를 다시 그린다. */
+function fillMapPickers(){ syncMapPickers(); syncModePicker(); }
+/* 경쟁 전용이라 고를 게 없다. 멀티의 'gm' 메시지 핸들러가 계속 부르므로 자리는 남긴다 —
+   협동을 다시 열 때 여기에 선택 UI 를 붙이면 된다. */
+function syncModePicker(){}
 function syncMapPickers(){
-  // 메인 메뉴 선택은 혼자 플레이용이라 방 맵(CURLEVEL)에 맞추지 않는다
-  var ms=document.getElementById('mapSel'); if(ms && ms.value!==SOLO_LEVEL) ms.value=SOLO_LEVEL;
-  var mls=document.getElementById('mapSelLobby');
-  if(mls && mls.value!==CURLEVEL) mls.value=CURLEVEL;
-  var ls=document.getElementById('mapSelLobby'), lb=document.getElementById('mapPickLabel');
-  var guest=MP.connected && !mpIsHost();
-  if(ls) ls.disabled=guest;
-  if(lb) lb.textContent=guest?'맵 (호스트가 결정)':'맵';
+  // 대기방의 맵 버튼 — 이름 + 작은 썸네일. 카드 격자는 폭 300px 패널에 안 들어간다
+  var btn=document.getElementById('lobbyMapBtn');
+  if(btn){
+    var d=PENG.getLevel(CURLEVEL);
+    var t=btn.querySelector('.lmName'); if(t) t.textContent=(d&&d.name)||CURLEVEL||'—';
+    var c=btn.querySelector('canvas'); if(c && CURLEVEL) drawThumb(c, CURLEVEL);
+    btn.disabled = MP.connected && !mpIsHost();
+  }
+  var lb=document.getElementById('mapPickLabel');
+  if(lb) lb.textContent=(MP.connected && !mpIsHost())?'맵 (호스트가 결정)':'맵';
+  if(!document.getElementById('mapScr').classList.contains('off')) renderMapCards();
 }
 function renderLobby(){
   var codeEl=document.getElementById('codeBig'); if(codeEl&&MP.room)codeEl.textContent=MP.room;
@@ -2962,13 +3346,11 @@ function renderLobby(){
     '<b>Esc</b> 로 마우스를 풀면 버튼을 누를 수 있어요 · <b>Enter</b> 채팅 · <b>R</b> 리스폰';
   syncMapPickers();
 }
+/* 타이틀의 '혼자 플레이' 는 맵 브라우저로 들어간다 — 실제 시작은 거기서 한다.
+   협동으로 맞춰 두는 게 중요하다: 경쟁은 상대가 필요해 혼자서는 시작할 수 없는데,
+   방금 경쟁 방에서 나왔다면 목록이 아레나로 남아 시작 버튼이 죽은 채 막다른 길이 된다. */
 document.getElementById('soloBtn').addEventListener('click',function(){
-  ensureAudio(); mpDisconnect();
-  MATCH_SEED=newSeed();            // 혼자 플레이도 시작할 때마다 새 지형
-  startGame(SOLO_LEVEL); });
-document.getElementById('hostBtn').addEventListener('click',function(){ ensureAudio(); setWarn('서버에 연결 중…');
-  mpConnect(mpCode(), function(){ setWarn(''); enterLobby(); mpSend({t:'lvl', level:CURLEVEL}); },
-    function(){ setWarn(noServerMsg()); }); });
+  ensureAudio(); MAPBROWSE.target='room'; goScreen('mapScr'); });
 // 왜 연결이 안 되는지 현재 주소를 보고 구체적으로 안내
 function noServerMsg(){
   var where = (location.protocol==='file:')
@@ -2980,8 +3362,34 @@ function noServerMsg(){
 }
 document.getElementById('joinBtn').addEventListener('click',function(){ ensureAudio(); setWarn('');
   document.getElementById('joinErr').textContent=''; document.getElementById('codeInput').value='';
-  showScreen('joinScr'); setTimeout(function(){ document.getElementById('codeInput').focus(); },50); });
-document.getElementById('joinBackBtn').addEventListener('click',function(){ showScreen('title'); });
+  goScreen('joinScr'); setTimeout(function(){ document.getElementById('codeInput').focus(); },50); });
+document.getElementById('joinBackBtn').addEventListener('click',function(){ backScreen(); });
+document.getElementById('setBtn').addEventListener('click',function(){ ensureAudio(); goScreen('setScr'); });
+/* 맵 브라우저 진입/이탈. 대기방에서는 오버레이라 뒤로 버튼이 화면 스택이 아니라
+   오버레이를 닫아야 한다 — 그래서 둘을 구분한다. */
+document.getElementById('mapBack').addEventListener('click',function(){
+  if(OVERLAY) closeOverlay(false); else backScreen(); });
+/* 혼자 둘러보기 — 상대 없이 아레나를 걸어 본다. 점수는 안 나지만 맵을 만들면서
+   "실제로 어떻게 생겼나"를 확인할 때 필요하고, 서버 없이(file://) 열었을 때
+   유일하게 되는 경로이기도 하다. */
+document.getElementById('mapSoloBtn').addEventListener('click',function(){
+  ensureAudio(); mpDisconnect(); ensureArenaLevel();
+  MATCH_SEED=newSeed();                       // 켤 때마다 새 지형
+  startGame(CURLEVEL); });
+document.getElementById('mapHostBtn').addEventListener('click',function(){
+  ensureAudio(); ensureArenaLevel(); setWarn('서버에 연결 중…');
+  mpConnect(mpCode(), function(){ setWarn(''); enterLobby(); mpSend({t:'lvl', level:CURLEVEL}); },
+    function(){ setWarn(noServerMsg()); }); });
+// 대기방의 맵 버튼 — 카드 격자를 오버레이로 띄운다(패널이 좁아 격자가 안 들어간다)
+document.getElementById('lobbyMapBtn').addEventListener('click',function(){
+  if(MP.connected && !mpIsHost()) return;
+  MAPBROWSE.target='lobby'; openOverlay('mapScr'); });
+/* 켤 때 맵이 아레나가 아니면(옛 저장값·에디터 시험맵) 아레나로 바꿔 준다 —
+   경쟁 전용인데 협동 코스가 걸려 있으면 떨어질 가장자리가 없다. */
+function ensureArenaLevel(){
+  if(LEVEL && LEVEL.arena) return;
+  var m=firstMapFor('versus'); if(m) setLevel(m);
+}
 document.getElementById('joinGoBtn').addEventListener('click', doJoin);
 document.getElementById('codeInput').addEventListener('keydown',function(e){ if(e.key==='Enter')doJoin(); });
 function doJoin(){ ensureAudio();
@@ -3010,116 +3418,141 @@ document.getElementById('copyCode').addEventListener('click',function(e){ e.prev
   else prompt('세션 코드:',c); });
 
 
-/* ---------- 디버그 파라미터 패널 ----------
-   게임이 실제로 읽는 변수를 get/set 으로 직접 건드린다(복사본이 아니라).
-   슬라이더와 숫자 입력이 양방향으로 묶여 있고, 숫자칸에는 슬라이더 범위 밖 값도 넣을 수 있다. */
-var DBG_SPEC=[
-  ['sec','이동'],
-  ['달리기 속도',   1,   15,  0.1,  function(){return RUN;},        function(v){RUN=v;}],
-  ['점프력',        3,   20,  0.1,  function(){return JUMPV;},      function(v){JUMPV=v;}],
-  ['중력',          5,   45,  0.5,  function(){return GRAV;},       function(v){GRAV=v;}],
-  ['코요테 시간',   0,   0.4, 0.01, function(){return COYOTE;},     function(v){COYOTE=v;}],
-  ['점프 선입력',   0,   0.4, 0.01, function(){return JUMP_BUF;},   function(v){JUMP_BUF=v;}],
-  ['폭발 후 점프',  0,   0.5, 0.01, function(){return BJ_GRACE;},   function(v){BJ_GRACE=v;}],
-  ['오를 턱 높이',  0,   1.2, 0.02, function(){return STEP_H;},     function(v){STEP_H=v;}],
-  ['최대 경사(cos)',0.2, 1,   0.01, function(){return SLOPE_MAX;},  function(v){SLOPE_MAX=v;}],
-  ['sec','펑건'],
-  ['폭발 세기',     0,   40,  0.5,  function(){return BLAST_F;},    function(v){BLAST_F=v;}],
-  ['폭발 반경',     0.5, 12,  0.1,  function(){return BLAST_R;},    function(v){BLAST_R=v;}],
-  ['사거리',        5,   80,  1,    function(){return BLAST_RANGE;},function(v){BLAST_RANGE=v;}],
-  ['투사체 속도',   5,   200, 1,    function(){return PROJ_SPD;},   function(v){PROJ_SPD=v;}],
-  ['넉백 지속(초)', 0,   1.5, 0.05, function(){return KB_TIME;},    function(v){KB_TIME=v;}],
-  ['팀원 명중 반경',0,   2,   0.05, function(){return FUSE_R;},     function(v){FUSE_R=v;}],
-  ['리프트 상승',   0,   20,  0.5,  function(){return LIFT_V;},     function(v){LIFT_V=v;}],
-  ['sec','탄창'],
-  ['최대 탄',       1,   9,   1,    function(){return AMMO_MAX;},   function(v){AMMO_MAX=Math.round(v);}],
-  ['재충전(초)',    0.1, 4,   0.05, function(){return AMMO_REGEN;}, function(v){AMMO_REGEN=v;}],
-  ['sec','카메라 · 조준(우클릭)'],
-  ['3인칭 거리',    1,   10,  0.1,  function(){return CAM_DIST;},   function(v){CAM_DIST=v;}],
-  ['조준 옆이동',   0,   3,   0.05, function(){return AIM_SIDE;},   function(v){AIM_SIDE=v;}],
-  ['조준 당김',     0,   3,   0.05, function(){return AIM_PULL;},   function(v){AIM_PULL=v;}],
-  ['조준 높이',     -1,  1,   0.02, function(){return AIM_RISE;},   function(v){AIM_RISE=v;}],
-  ['시야각(도)',    50,  110, 1,    function(){return FOV*180/Math.PI;}, function(v){FOV=v*Math.PI/180;}],
-  ['카메라 충돌 반경', 0,  1,   0.05, function(){return CAM_RAD;},  function(v){CAM_RAD=v;}],
-  ['카메라 최소 거리', 0.1,3,   0.05, function(){return CAM_MIN;},  function(v){CAM_MIN=v;}],
-  ['카메라 복귀 속도', 0.5,20,  0.5,  function(){return CAM_BACK;}, function(v){CAM_BACK=v;}],
-  ['sec','눈'],
-  ['눈 굴림',       0,   2,   0.05, function(){return EYE_ROLL;},   function(v){EYE_ROLL=v;}],
-  ['눈 크기',       0.03,0.3, 0.005,function(){return EYE_R;},      function(v){EYE_R=v;}],
-  ['눈동자 크기',   0.01,0.2, 0.005,function(){return EYE_PUPIL_R;},function(v){EYE_PUPIL_R=v;}],
-  ['눈동자 깊이',   0,   1.6, 0.02, function(){return EYE_PUPIL_SINK;},function(v){EYE_PUPIL_SINK=v;}],
-  ['sec','윤곽선'],
-  ['몸통 굵기',     0,   0.1, 0.002,function(){return OUTLINE_BODY;},  function(v){OUTLINE_BODY=v;}],
-  ['눈 굵기',       0,   0.06,0.002,function(){return OUTLINE_EYE;},   function(v){OUTLINE_EYE=v;}],
-  ['눈 간격',       0,   0.4, 0.005,function(){return EYE_X;},      function(v){EYE_X=v;}],
-  ['눈 높이',       0.8, 2.2, 0.01, function(){return EYE_Y;},      function(v){EYE_Y=v;}],
-  ['sec','총 메시(.glb)'],
-  ['메시 쓰기(0/1)',0, 1,   1,    function(){return GUNMESH_ON;},  function(v){GUNMESH_ON=v?1:0;}],
-  ['크기',          0.05,1.2,0.01, function(){return GM().scale;},   function(v){GM().scale=v;}],
-  ['좌우',          -1,  1,  0.01, function(){return GM().ox;},      function(v){GM().ox=v;}],
-  ['높이',          -1,  1,  0.01, function(){return GM().oy;},      function(v){GM().oy=v;}],
-  ['앞뒤',          -1,  2,  0.01, function(){return GM().oz;},      function(v){GM().oz=v;}],
-  ['윤곽선 두께',   0,   0.05,0.001,function(){return GM().outlineW;},function(v){GM().outlineW=v;}],
-  ['sec','중력 렌즈(폭발 왜곡)'],
-  ['켜기(0/1)',     0,   1,   1,    function(){return LENS_ON;},       function(v){LENS_ON=v?1:0;}],
-  ['세기(반경 대비)',0,  1.5, 0.01, function(){return LENS_STRENGTH;}, function(v){LENS_STRENGTH=v;}],
-  ['왜곡 반경(m)',  0.2, 12,  0.1,  function(){return LENS_WORLD_R;},  function(v){LENS_WORLD_R=v;}],
-  ['화면 반경 상한',0.05,1.5, 0.05, function(){return LENS_MAXSCR;},   function(v){LENS_MAXSCR=v;}],
-  ['변위 상한',     0,   0.6, 0.01, function(){return LENS_KMAX;},     function(v){LENS_KMAX=v;}],
-  ['탄환 크기',     0.5, 12,  0.1,  function(){return BULLET_SCALE;}, function(v){BULLET_SCALE=v;}],
-  ['sec','아이템 표식 메시(.glb)'],
-  ['메시 쓰기(0/1)', 0,   1,   1,    function(){return ITEMMESH_ON;},function(v){ITEMMESH_ON=v?1:0;}],
-  ['표식 크기(m)',   0.1, 1.2, 0.01, function(){return IM().SIZE;},  function(v){IM().SIZE=v;}],
-  ['윤곽선 두께',    0,   0.03,0.001,function(){return IM().outlineW;},function(v){IM().outlineW=v;}],
-  ['sec','아이템'],
-  ['패드 판정 반경',  0.2, 3,   0.05, function(){return PAD_R;},      function(v){PAD_R=v;}],
-  ['패드 원판 반경',  0.1, 2,   0.05, function(){return PAD_VIS_R;},  function(v){PAD_VIS_R=v;}],
-  ['글라이딩 시간',   0,   4,   0.1,  function(){return GLIDE_T;},    function(v){GLIDE_T=v;}],
-  ['글라이딩 낙하속도',0,  6,   0.1,  function(){return GLIDE_FALL;}, function(v){GLIDE_FALL=v;}],
-  ['패드 쿨다운(초)',1,   60,  1,    function(){return PAD_CD;},       function(v){PAD_CD=v;}],
-  ['과충전 위력배',  1,   4,   0.05, function(){return IT_POWER_F;},   function(v){IT_POWER_F=v;}],
-  ['과충전 반경배',  1,   3,   0.05, function(){return IT_POWER_R;},   function(v){IT_POWER_R=v;}],
-  ['드럼 재장전배',  1,   8,   0.5,  function(){return IT_DRUM;},      function(v){IT_DRUM=v;}],
-  ['깃털 반동배',    1,   3,   0.05, function(){return IT_FEATHER_KB;},function(v){IT_FEATHER_KB=v;}],
-  ['깃털 중력배',    0.2, 1,   0.05, function(){return IT_FEATHER_G;}, function(v){IT_FEATHER_G=v;}],
-  ['닻 반동배',      0,   1,   0.05, function(){return IT_ANCHOR_KB;}, function(v){IT_ANCHOR_KB=v;}],
-  ['펄스 위력배',    1,   4,   0.05, function(){return IT_PULSE_F;},   function(v){IT_PULSE_F=v;}],
-  ['펄스 반경배',    1,   4,   0.05, function(){return IT_PULSE_R;},   function(v){IT_PULSE_R=v;}],
-  ['sec','멀티'],
-  ['보간 지연(ms)', 0,   400, 5,    function(){return INTERP_MS;},  function(v){INTERP_MS=v;}],
-  ['몸통 충돌 반경(경쟁)', 0, 1.2, 0.01, function(){return PEER_R;},  function(v){PEER_R=v;}]
-];
-var DBG_DEFAULTS=null, dbgRows=[];
-function dbgBuild(){
-  var host=document.getElementById('dbgRows'); host.innerHTML=''; dbgRows=[];
-  if(!DBG_DEFAULTS){ DBG_DEFAULTS=DBG_SPEC.map(function(r){ return r[0]==='sec' ? null : r[4](); }); }
-  DBG_SPEC.forEach(function(r, idx){
-    if(r[0]==='sec'){ var h=document.createElement('div'); h.className='dbgSec'; h.textContent=r[1]; host.appendChild(h); return; }
-    var name=r[0], lo=r[1], hi=r[2], st=r[3], get=r[4], set=r[5];
-    var row=document.createElement('div'); row.className='dbgRow';
-    var lab=document.createElement('label'); lab.textContent=name; row.appendChild(lab);
-    var sl=document.createElement('input'); sl.type='range'; sl.min=lo; sl.max=hi; sl.step=st;
-    var nm=document.createElement('input'); nm.type='number'; nm.step=st;
-    function show(v){ sl.value=v; nm.value=(Math.round(v*1000)/1000); }
+/* 설정 행 빌더 — spec 표를 읽어 화면을 만든다.
+   원칙: 게임이 실제로 읽는 변수를 get/set 으로 직접 건드린다(값을 복사해 두지 않는다).
+   그래야 패널이 보여주는 값과 게임이 쓰는 값이 어긋날 수 없다. 저장은 각 spec 의
+   set 안에서 stPut 으로 한다.
+
+   행 형식 — ['sec', 제목]                          구분 제목
+             [이름, lo, hi, step, get, set]          숫자(슬라이더 + 칸)
+             ['tog', 이름, get, set]                 켜기/끄기
+             ['seg', 이름, [[값,라벨],…], get, set]  두세 갈래 중 하나
+             ['txt', 이름, get, set, maxlen]         글자
+             ['col', 이름, get, set]                 색
+             ['btn', 이름, 라벨, onclick]            누르는 버튼 */
+function optBuild(host, spec){
+  host.innerHTML=''; var rows=[];
+  spec.forEach(function(r, idx){
+    var kind=r[0];
+    if(kind==='sec'){ var h=document.createElement('div'); h.className='optSec'; h.textContent=r[1]; host.appendChild(h); return; }
+
+    var row=document.createElement('div'); row.className='optRow';
+    var lab=document.createElement('label');
+    lab.textContent = (kind==='tog'||kind==='seg'||kind==='txt'||kind==='col'||kind==='btn') ? r[1] : r[0];
+    row.appendChild(lab);
+    var get, show;
+
+    if(kind==='tog'){
+      get=r[2]; var set=r[3];
+      var b=document.createElement('button'); b.type='button'; b.className='optSmall tog';
+      show=function(v){ b.classList.toggle('on', !!v); b.textContent = v?'켬':'끔'; };
+      b.addEventListener('click',function(){ var v=!get(); set(v); show(v); });
+      row.appendChild(b);
+
+    } else if(kind==='seg'){
+      get=r[3]; var setS=r[4], opts=r[2], btns=[];
+      var wrap=document.createElement('div'); wrap.className='optSeg';
+      opts.forEach(function(o){
+        var b=document.createElement('button'); b.type='button'; b.className='optSmall'; b.textContent=o[1];
+        b.addEventListener('click',function(){ setS(o[0]); show(get()); });
+        wrap.appendChild(b); btns.push(b);
+      });
+      show=function(v){ btns.forEach(function(b,i){ b.classList.toggle('on', opts[i][0]===v); }); };
+      row.appendChild(wrap);
+
+    } else if(kind==='txt'){
+      get=r[2]; var setT=r[3];
+      var ti=document.createElement('input'); ti.type='text'; ti.className='optTxt'; ti.maxLength=r[4]||16;
+      show=function(v){ if(document.activeElement!==ti) ti.value=v==null?'':v; };
+      ti.addEventListener('change',function(){ setT(ti.value); show(get()); });
+      row.appendChild(ti);
+
+    } else if(kind==='col'){
+      get=r[2]; var setC=r[3];
+      var ci=document.createElement('input'); ci.type='color'; ci.className='optCol';
+      show=function(v){ ci.value=v; };
+      // 색 대화상자는 브라우저마다 input 만, 또는 change 만 보낸다 → 둘 다 듣는다
+      var applyC=function(){ setC(ci.value); }; ci.addEventListener('input',applyC); ci.addEventListener('change',applyC);
+      row.appendChild(ci);
+
+    } else if(kind==='btn'){
+      var ab=document.createElement('button'); ab.type='button'; ab.className='optSmall'; ab.textContent=r[2];
+      ab.addEventListener('click', r[3]);
+      row.appendChild(ab); host.appendChild(row); return;      // 읽을 값이 없으니 rows 에 안 넣는다
+
+    } else {
+      var lo=r[1], hi=r[2], st=r[3]; get=r[4]; var setN=r[5];
+      var sl=document.createElement('input'); sl.type='range'; sl.min=lo; sl.max=hi; sl.step=st;
+      var nm=document.createElement('input'); nm.type='number'; nm.step=st;
+      show=function(v){ sl.value=v; nm.value=(Math.round(v*1000)/1000); };
+      sl.addEventListener('input',function(){ var v=parseFloat(sl.value); setN(v); nm.value=(Math.round(v*1000)/1000); });
+      // 숫자칸은 슬라이더 범위 밖 값도 허용한다
+      nm.addEventListener('change',function(){ var v=parseFloat(nm.value);
+        if(!isFinite(v)){ show(get()); return; } setN(v); sl.value=v; });
+      row.appendChild(sl); row.appendChild(nm);
+    }
+
     show(get());
-    sl.addEventListener('input',function(){ var v=parseFloat(sl.value); set(v); nm.value=(Math.round(v*1000)/1000); });
-    // 숫자칸은 슬라이더 범위를 벗어난 값도 허용(극단값 실험용)
-    nm.addEventListener('change',function(){ var v=parseFloat(nm.value);
-      if(!isFinite(v)){ show(get()); return; } set(v); sl.value=v; });
-    row.appendChild(sl); row.appendChild(nm); host.appendChild(row);
-    dbgRows.push({idx:idx, show:show, get:get});
+    host.appendChild(row);
+    rows.push({idx:idx, show:show, get:get});
   });
+  return rows;
 }
-function dbgSync(){ dbgRows.forEach(function(r){ r.show(r.get()); }); }
-document.getElementById('dbgBtn').addEventListener('click',function(){
-  var pan=document.getElementById('dbgPanel'), off=pan.classList.toggle('off');
-  this.classList.toggle('on', !off);
-  if(!off){ dbgBuild(); if(locked) document.exitPointerLock(); }   // 열면 커서를 돌려줘야 조작 가능
-});
-document.getElementById('dbgReset').addEventListener('click',function(){
-  DBG_SPEC.forEach(function(r,i){ if(r[0]!=='sec' && DBG_DEFAULTS[i]!=null) r[5](DBG_DEFAULTS[i]); });
-  dbgSync();
-});
+function optSync(rows){ rows.forEach(function(r){ r.show(r.get()); }); }
+
+/* ---------- 설정 ----------
+   디버그 패널과 달리 여기 값은 localStorage 에 남는다. 물리 파라미터를 여기 섞지
+   않는 이유: 멀티는 전원이 같은 PENG.PHYS 로 돌아야 하는데, 물리를 저장하면
+   사람마다 다른 값으로 시작해 조용히 어긋난다. 그래서 저장 정책이 다른 둘을 나눠 둔다. */
+var SET_ROWS=null;
+var SET_SPEC=[
+  ['sec','조작'],
+  // 슬라이더에 0.0022 를 보여주면 아무 의미가 없다 → 표시는 ×1000 단위로 하고 여기서 환산
+  ['마우스 감도', 0.3, 6, 0.05, function(){ return MOUSE_SENS*1000; },
+                                function(v){ MOUSE_SENS=v/1000; stPut('sens', MOUSE_SENS); }],
+  ['seg','기본 시점', [[1,'3인칭'],[0,'1인칭']],
+     function(){ return TP_DEFAULT?1:0; },
+     function(v){ TP_DEFAULT=!!v; stPut('tp', v?1:0); if(sim) sim.tp=TP_DEFAULT; }],
+  ['3인칭 거리', 1, 10, 0.1, function(){ return CAM_DIST; },
+                             function(v){ CAM_DIST=v; stPut('camdist', v); }],
+  ['sec','화면'],
+  ['시야각(도)', 50, 110, 1, function(){ return Math.round(FOV*180/Math.PI); },
+                             function(v){ FOV=v*Math.PI/180; stPut('fov', v); }],
+  ['tog','중력 렌즈(폭발 왜곡)', function(){ return LENS_ON; },
+                                 function(v){ LENS_ON=v?1:0; stPut('lens', v?1:0); }],
+  ['sec','소리'],
+  ['볼륨', 0, 100, 1, function(){ return Math.round(VOLUME*100); }, function(v){ setVolume(v/100); }],
+  ['tog','음소거', function(){ return MUTED?1:0; }, function(v){ setMuted(!!v); }],
+  ['sec','플레이어'],
+  ['txt','이름', function(){ return MP.name; }, function(v){ setMyName(v); }, 12],
+  ['col','내 색', function(){ return PLAYER_COL; }, function(v){ setMyColor(v); }]
+];
+/* 이름 — 예전엔 매번 랜덤이라 방에 들어갈 때마다 다른 사람이 됐다.
+   서버는 join 때만 이름을 받으므로(server.js) 접속 중에 바꾸면 다음 접속부터 적용된다. */
+function setMyName(v){
+  v=(v||'').trim().slice(0,12); if(!v) return;
+  MP.name=v; stPut('name', v);
+  var n=document.getElementById('setNote');
+  if(n) n.textContent = MP.connected ? '이름은 다음 접속부터 상대에게 보입니다.' : '';
+}
+function settingsBuild(){ SET_ROWS=optBuild(document.getElementById('setRows'), SET_SPEC); }
+function settingsSync(){ if(!SET_ROWS) settingsBuild(); else optSync(SET_ROWS); }
+SCREEN_ENTER.setScr=settingsSync;
+/* 저장된 값 적용 — 상수 선언(FOV·CAM_DIST·LENS_ON·MP)이 전부 끝난 뒤에 불러야 한다.
+   먼저 부르면 아래쪽 var 선언이 불러온 값을 도로 덮어쓴다. */
+function settingsLoad(){
+  MOUSE_SENS = stNum('sens', MOUSE_SENS);
+  VOLUME     = stNum('vol',  VOLUME);
+  MUTED      = stGet('mute','0')==='1';
+  TP_DEFAULT = stGet('tp','1')==='1';
+  CAM_DIST   = stNum('camdist', CAM_DIST);
+  LENS_ON    = stNum('lens', LENS_ON) ? 1 : 0;
+  var fovDeg = stNum('fov', 0); if(fovDeg>=40 && fovDeg<=130) FOV = fovDeg*Math.PI/180;
+  var nm     = stGet('name',''); if(nm) MP.name=nm;
+  applyVolume();
+}
+document.getElementById('setBack').addEventListener('click',function(){
+  if(OVERLAY) closeOverlay(true); else backScreen(); });
 
 /* ---------- 라이브 입력/루프 ---------- */
 var keys={}, locked=false, jumpEdge=false, lastFell=0;
@@ -3168,6 +3601,22 @@ document.getElementById('retryBtn').addEventListener('click',function(){ ensureA
   if(MP.connected){ sim=makeSim(); sim.practice=true; enterLobby(); }
   else { MATCH_SEED=newSeed(); startGame(); } });
 document.getElementById('menuBtn').addEventListener('click',function(){ mpDisconnect(); showScreen('title'); setWarn(''); });
+/* 경쟁 결과 화면. '다시' 는 대기방의 시작 버튼과 같은 일을 한다 — 게스트는
+   호스트의 start 메시지가 어느 화면에 있든 끌어가므로(mpHandle) 버튼이 필요 없다. */
+document.getElementById('vsAgainBtn').addEventListener('click',function(){
+  ensureAudio();
+  if(MP.connected){
+    if(!mpIsHost()) return;
+    MATCH_SEED=newSeed();
+    mpSend({t:'gm', mode:GAMEMODE});
+    mpSend({t:'start', level:CURLEVEL, pads:(LEVEL.pads||[]).length, seed:MATCH_SEED});
+  } else MATCH_SEED=newSeed();
+  startGame(CURLEVEL); });
+document.getElementById('vsLobbyBtn').addEventListener('click',function(){
+  if(MP.connected){ sim=makeSim(); sim.practice=true; enterLobby(); }
+  else showScreen('title'); });
+document.getElementById('vsMenuBtn').addEventListener('click',function(){
+  mpDisconnect(); showScreen('title'); setWarn(''); });
 var CURVP=null;
 function projectWorld(p){                 // 월드 → 논리 화면(W,H) 좌표. 카메라 뒤면 null
   var V=CURVP; if(!V) return null;
@@ -3195,6 +3644,9 @@ function updateCrosshair(s){
     var t=rayBox(o,d,LEVEL.boxes[i]); if(t<tHit)tHit=t; }
   tHit = peerFuse(o, d, tHit);
   el.style.opacity = (tHit < _ar.aimD-0.05) ? '0.3' : '0.9';
+  /* 탄이 떨어졌다는 신호. 지금까지는 오른쪽 아래 게이지에만 있었는데,
+     교전 중에는 화면 구석을 볼 여유가 없어 조준선 한가운데에도 표시한다. */
+  el.classList.toggle('dry', s.ammo<=0);
 }
 function requestLock(){ try{ cv.requestPointerLock(); }catch(e){} }
 /* ---------- 일시정지 ----------
@@ -3204,8 +3656,14 @@ function requestLock(){ try{ cv.requestPointerLock(); }catch(e){} }
    메뉴가 뜨는데, 그것도 대부분의 브라우저 FPS 가 하는 동작이라 그대로 둔다. */
 var PAUSED=false;
 function openPause(){
-  if(PAUSED || mode!=='play') return;
+  // 오버레이(설정 시트 등)가 떠 있으면 그것부터다 — 안 그러면 시트를 여느라 푼
+  // 포인터락이 곧바로 일시정지로 이어져 시트 위에 메뉴가 겹친다.
+  if(PAUSED || OVERLAY || mode!=='play') return;
   PAUSED=true; keys={}; jumpEdge=false; jumpBuf=0;
+  buildKeyHelp();
+  // 어디서 멈췄는지 — 맥락 없이 메뉴만 뜨면 방금까지 뭘 하고 있었는지 흐려진다
+  var w=document.getElementById('pauseWhere');
+  if(w) w.textContent = (LEVEL.name||CURLEVEL) + (sim && !sim.practice ? ' · '+sim.t.toFixed(1)+'초' : '');
   document.getElementById('pauseNote').textContent = MP.connected
     ? '멀티 경기는 멈추지 않습니다 — 다른 사람은 계속 뛰고 있습니다.'
     : '게임을 멈췄습니다.';
@@ -3220,10 +3678,15 @@ function closePause(relock){
   if(relock) requestLock();
 }
 document.getElementById('pauseResume').addEventListener('click',function(){ closePause(true); });
+/* 일시정지 → 설정은 오버레이로 연다. 화면(showScreen)으로 열면 mode 가 바뀌어
+   HUD 와 물리 상태가 날아가고, '계속하기'로 돌아올 자리가 사라진다. */
+document.getElementById('pauseSettings').addEventListener('click',function(){
+  closePause(false); openOverlay('setScr','pause'); });
 document.getElementById('pauseLeave').addEventListener('click',function(){
   closePause(false); mpDisconnect(); showScreen('title'); });
 // 잠기지 않은 상태에서 화면을 클릭하면 마우스를 잠근다(발사는 아래 mousedown 이 담당)
 cv.addEventListener('click',function(){ ensureAudio(); if(chatting) return;
+  if(PAUSED || OVERLAY) return;          // 시트는 화면 일부만 덮는다 — 캔버스 클릭이 새어든다
   if((mode==='play'||mode==='lobbyScr') && !locked) requestLock(); });
 /* 우클릭 홀드 = 조준 모드. contextmenu 는 document 에서 막아야 한다 —
    포인터락 중에는 이벤트가 캔버스가 아니라 document 로 가기 때문에, cv 에만 걸면
@@ -3235,9 +3698,9 @@ document.addEventListener('contextmenu',function(e){
 window.addEventListener('mousedown',function(e){
   if(chatting || !sim) return;
   // 디버그 패널·버튼을 누른 건 조작이 아니다(잠금 중이면 발사로 새어나간다)
-  if(e.target && e.target.closest && e.target.closest('#dbgPanel,#dbgBtn')) return;
+  if(e.target && e.target.closest && e.target.closest('.asSheet')) return;
   if(e.button===2){ sim.aimHold=true; return; }
-  if(e.button===0 && locked && (mode==='play'||mode==='lobbyScr')){
+  if(e.button===0 && locked && !OVERLAY && (mode==='play'||mode==='lobbyScr')){
     ensureAudio(); doFire(sim); }
 });
 window.addEventListener('mouseup',function(e){ if(e.button===2 && sim) sim.aimHold=false; });
@@ -3247,9 +3710,9 @@ document.addEventListener('pointerlockchange',function(){
   locked=(document.pointerLockElement===cv);
   cv.classList.toggle('locked', locked);        // 풀리는 즉시 커서가 보이게
   // 채팅을 열려고 푼 게 아니라면 락이 풀린 것 = ESC 를 눌렀다는 뜻
-  if(!locked && mode==='play' && !chatting) openPause();
+  if(!locked && mode==='play' && !chatting && !OVERLAY) openPause();
 });
-document.addEventListener('mousemove',function(e){ if(!locked||!sim)return; var sX=0.0022;
+document.addEventListener('mousemove',function(e){ if(!locked||!sim)return; var sX=MOUSE_SENS;
   // 시야각 하한이 -1.45rad(83.1°)이면 "발밑"을 쏴도 폭발 중심이 몸보다 7° 앞에 생겨
   // 방사형 밀어내기가 오히려 전진 속도를 2.1m/s 깎았다. 거의 수직까지 내려가게 해
   // 고전적인 로켓점프(수직 추진 + 전진 속도 유지)가 성립하도록 한다.
@@ -3262,6 +3725,13 @@ window.addEventListener('keydown',function(e){
     else if(e.key==='Escape'){ closeChat(false); }
     return;
   }
+  /* ESC 우선순위: 오버레이 → 일시정지 → 메뉴 뒤로. 위에서 걸리면 아래는 안 본다.
+     lobbyScr 은 MENU_SCREENS 에서 일부러 뺐다 — 거기서 ESC 는 '마우스 잠금 해제'라는
+     뜻이고(그래야 버튼을 누른다), renderLobby 의 안내가 플레이어에게 그렇게 알려준다. */
+  if(e.key==='Escape'){
+    if(OVERLAY){ e.preventDefault(); closeOverlay(true); return; }
+    if(MENU_SCREENS[mode] && mode!=='title'){ e.preventDefault(); backScreen(); return; }
+  }
   // 락이 이미 풀린 상태에서 누른 ESC 는 keydown 으로 들어온다 — 메뉴 토글로 쓴다
   if(e.key==='Escape' && mode==='play'){ e.preventDefault();
     if(PAUSED) closePause(true); else openPause(); return; }
@@ -3271,7 +3741,8 @@ window.addEventListener('keydown',function(e){
   if(k===' '){ jumpEdge=true; e.preventDefault(); } if(k==='r'&&sim)respawn(sim);
   if(k==='f'&&sim&&mode==='play') usePulse(sim);
   if(k==='v'&&sim)sim.tp=!sim.tp;
-  if(k==='p'){ SHOW_COL=!SHOW_COL; toastCol(); } });
+  if(k==='p'){ SHOW_COL=!SHOW_COL; toastCol(); }
+});
 window.addEventListener('keyup',function(e){ if(chatting) return; keys[e.key.toLowerCase()]=false; });
 
 /* P — 콜리전 보기. 킷 조각의 충돌체는 _hide 라 평소엔 안 그린다(보이는 건 조각 쪽).
@@ -3347,25 +3818,11 @@ function loop(now){ if(!last)last=now; var dt=Math.min(0.05,(now-last)/1000); la
       if(MP.connected) mpSend({t:'fell', by:_by});
       scoreFall(MP.id!=null?MP.id:-1, _by);
     }
-    // HUD
-    // 경쟁에서는 경과 시간보다 "다음 붕괴까지"가 훨씬 중요한 정보다
-    var timeTxt = sim.practice ? '연습' : sim.t.toFixed(1);
-    if(vsLive && LEVEL.collapse && LEVEL._maxRing-LEVEL._gone>=1){
-      var C=LEVEL.collapse, left=(C.first+LEVEL._gone*C.every)-ROUND.t;
-      timeTxt = 'R'+ROUND.n+'  붕괴 '+Math.max(0,left).toFixed(1);
-    } else if(vsLive) timeTxt='R'+ROUND.n+'  '+sim.t.toFixed(1);
-    document.getElementById('timeV').textContent = timeTxt;
-    if(sim.practice) document.getElementById('cpV').textContent='자유 연습';
-    else if(GAMEMODE==='versus'){
-      var me=SCORES[MP.id!=null?MP.id:-1]||0, top=0;
-      for(var _k in SCORES) if(_k!=String(MP.id)) top=Math.max(top,SCORES[_k]);
-      document.getElementById('cpV').textContent='🏆 '+me+' : '+top+'  (선취 '+VS_WIN+')';
-    }
-    else document.getElementById('cpV').textContent='체크포인트 '+sim.cpIdx;
-    document.getElementById('mapV').textContent = '🗺 '+(LEVEL.name||CURLEVEL);
+    // HUD — 모드·상황마다 보여야 하는 게 다르다(아래 renderHud 참고)
+    renderHud(sim, vsLive);
     renderItems(sim);
     renderAmmo(sim.ammo, sim.ammo<AMMO_MAX ? sim.ammoT/AMMO_REGEN : 0);
-    if(sim.win){ document.getElementById('winMsg').textContent='기록 '+sim.t.toFixed(1)+'초!'; showScreen('win'); sndWin(); if(locked)document.exitPointerLock(); }
+    if(sim.win){ renderWin(sim); showScreen('win'); sndWin(); if(locked)document.exitPointerLock(); }
     if(mode==='play') showHint(sim); else showHint(null);
   }
   render(dt);
@@ -3373,6 +3830,55 @@ function loop(now){ if(!last)last=now; var dt=Math.min(0.05,(now-last)/1000); la
   if((mode==='play'||mode==='lobbyScr') && sim){ try{ updateCrosshair(sim); }catch(e){} }
   requestAnimationFrame(loop);
 }
+/* ---------- HUD ----------
+   예전엔 칩 두 개에 문자열로 욱여넣어서 경쟁 화면의 시간 칩이 'R3  붕괴 4.2' 가 됐다 —
+   라운드 번호·라벨·카운트다운 셋이 한 덩어리라 읽으려면 파싱을 해야 했다.
+   지금은 자리마다 하나씩 맡는다: 큰 숫자 / 붕괴 막대 / 사람별 점수 칩.
+   매 프레임 DOM 을 건드리지 않도록 renderItems 처럼 서명을 비교한다. */
+var HUD_SIG={};
+function hudSet(el, txt){ if(el && HUD_SIG[el.id]!==txt){ HUD_SIG[el.id]=txt; el.textContent=txt; } }
+function renderHud(s, vsLive){
+  var C=LEVEL.collapse, bar=document.getElementById('collapseBar');
+
+  // 큰 숫자 — 연습이면 안내, 경쟁이면 라운드 경과, 협동이면 기록
+  if(s.practice){ hudSet(document.getElementById('timeV'),'자유 연습'); hudSet(document.getElementById('timeU'),''); }
+  else { hudSet(document.getElementById('timeV'), s.t.toFixed(1)); hudSet(document.getElementById('timeU'),'초'); }
+
+  /* 붕괴까지 남은 시간은 숫자로 읽는 게 아니라 막대가 차오르는 걸 곁눈으로 본다.
+     교전 중에 소수점 한 자리를 읽고 있을 여유가 없다. */
+  var showBar = !!(vsLive && C && LEVEL._maxRing-LEVEL._gone>=1);
+  bar.classList.toggle('on', showBar);
+  if(showBar){
+    var span=C.every || 1, left=(C.first+LEVEL._gone*C.every)-ROUND.t;
+    if(LEVEL._gone===0) span=C.first || 1;
+    var f=Math.max(0,Math.min(1, 1-left/span));
+    bar.firstChild.style.width=(f*100).toFixed(1)+'%';
+    bar.classList.toggle('warn', left<=(C.warn||1.5));
+  }
+
+  // 점수 — 사람마다 칩 하나. 색은 그 사람 몸 색이라 화면 속 캐릭터와 바로 이어진다
+  var row=document.getElementById('scoreRow');
+  if(!vsLive || s.practice){ if(HUD_SIG.scoreRow!==''){ HUD_SIG.scoreRow=''; row.innerHTML=''; } return; }
+  var ps = MP.players.length ? MP.players : [{id:MP.id, name:MP.name}];
+  var sig = 'R'+ROUND.n+'|'+ps.map(function(p){ return p.id+':'+(SCORES[p.id]||0)+':'+(p.name||''); }).join(',');
+  if(HUD_SIG.scoreRow===sig) return;
+  HUD_SIG.scoreRow=sig;
+  row.innerHTML='';
+  ps.slice().sort(function(a,b){ return (SCORES[b.id]||0)-(SCORES[a.id]||0); }).forEach(function(p){
+    var d=document.createElement('div'); d.className='sc'+(p.id===MP.id?' me':'');
+    d.style.setProperty('--c', peerCol(p.id));
+    d.innerHTML='<s></s>'+esc(p.name||nameOf(p.id))+' <b>'+(SCORES[p.id]||0)+'</b>';
+    row.appendChild(d);
+  });
+}
+// 그 사람 몸 색 — 나는 내가 고른 색, 남은 서버가 알려준 색(없으면 회색)
+function peerCol(id){
+  if(id===MP.id) return PLAYER_COL;
+  var pr=MP.peers[id]; return (pr&&pr.col) || '#8492ad';
+}
+function esc(t){ return String(t==null?'':t).replace(/[&<>"]/g,function(c){
+  return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]; }); }
+
 // 탄창 게이지. frac = 다음 한 발의 충전 진행도(0~1) → 그 칸만 아래에서 위로 차오른다.
 function renderAmmo(n, frac){
   var el=document.getElementById('ammo');
@@ -3386,6 +3892,77 @@ function renderAmmo(n, frac){
     slot.firstChild.style.height = charging ? (Math.max(0,Math.min(1,frac))*100).toFixed(1)+'%' : '0%';
   }
 }
+/* ---------- 키 아이콘 ----------
+   Kenney Input Prompts Pixel(CC0) 타일맵의 16px 칸을 스프라이트로 쓴다.
+   값은 타일 번호(34칸/줄). 두 칸짜리 넓은 키는 [번호, 2] 로 적는다.
+   구운 타일맵이 없으면 예전처럼 글자 <kbd> 로 떨어진다. */
+var KEYTILE={
+  w:86, a:120, s:121, d:122, r:88, v:158, f:123, p:94,
+  esc:17, enter:[134,2], space:[236,2], shift:[255,2], tab:[189,2], ctrl:[221,2],
+  lmb:77, rmb:78, wheel:79
+};
+var KEYTEXT={ w:'W', a:'A', s:'S', d:'D', r:'R', v:'V', f:'F', p:'P',
+  esc:'Esc', enter:'Enter', space:'Space', shift:'Shift', tab:'Tab', ctrl:'Ctrl',
+  lmb:'좌클릭', rmb:'우클릭', wheel:'휠' };
+function keyHTML(k){
+  var t=KEYTILE[k];
+  if(!window.UI_KEYS || t==null) return '<kbd>'+(KEYTEXT[k]||k)+'</kbd>';
+  var wide = (t instanceof Array); if(wide) t=t[0];
+  var col=t%34, row=Math.floor(t/34);
+  return '<i class="key'+(wide?' w2':'')+'" title="'+(KEYTEXT[k]||k)+'"'
+       + ' style="background-position:-'+(col*32)+'px -'+(row*32)+'px"></i>';
+}
+function keysHTML(){ var o=''; for(var i=0;i<arguments.length;i++) o+=keyHTML(arguments[i]); return o; }
+// 일시정지의 조작법 표. 키 아이콘이 준비된 뒤에 만들어야 해서 열 때마다 짓는다.
+var KEYHELP=[
+  [['w','a','s','d'],'이동'], [['space'],'점프'],
+  [['lmb'],'펑!'],            [['rmb'],'조준'],
+  [['r'],'리스폰'],           [['v'],'시점 전환'],
+  [['enter'],'채팅'],         [['esc'],'일시정지']
+];
+function buildKeyHelp(){
+  var h=document.getElementById('keyhelp'); if(!h) return;
+  h.innerHTML = KEYHELP.map(function(e){
+    return '<div>'+e[0].map(keyHTML).join('')+'<span>'+e[1]+'</span></div>';
+  }).join('');
+}
+
+/* ---------- 결과 화면 ---------- */
+function renderVsWin(bestId){
+  var win = (bestId===MP.id);
+  var t=document.getElementById('vsWinTitle');
+  t.textContent = win ? '승리!' : (nameOf(bestId)+' 승리');
+  t.style.color = win ? 'var(--you)' : '#fff';
+
+  var ul=document.getElementById('vsList'); ul.innerHTML='';
+  var ps = MP.players.length ? MP.players.slice() : [{id:MP.id, name:MP.name}];
+  ps.sort(function(a,b){ return (SCORES[b.id]||0)-(SCORES[a.id]||0); });
+  ps.forEach(function(p,i){
+    var li=document.createElement('li'); if(p.id===MP.id) li.className='me';
+    li.style.borderLeftColor=peerCol(p.id);
+    var rk=document.createElement('span'); rk.className='rk'; rk.textContent=(i+1); li.appendChild(rk);
+    var nm=document.createElement('span'); nm.textContent=(p.name||nameOf(p.id))+(p.id===MP.id?' (나)':'');
+    li.appendChild(nm);
+    if(p.bot){ var bt=document.createElement('span'); bt.className='tag'; bt.textContent='AI'; li.appendChild(bt); }
+    var sc=document.createElement('b'); sc.className='pts'; sc.textContent=(SCORES[p.id]||0); li.appendChild(sc);
+    ul.appendChild(li);
+  });
+  document.getElementById('vsWinNote').textContent =
+    (LEVEL.name||CURLEVEL)+' · '+ROUND.n+'라운드 · 선취 '+VS_WIN;
+  // 게스트는 다시 시작을 못 한다 — 호스트가 눌러야 방 전원이 함께 출발한다
+  var again=document.getElementById('vsAgainBtn'), host=mpIsHost()||!MP.connected;
+  again.disabled=!host; again.textContent = host ? '다시' : '호스트 대기 중…';
+}
+
+/* 협동 클리어 — 지금은 화면에서 갈 길이 없지만(경쟁만 출시) 코드는 살려 둔다 */
+function renderWin(s){
+  var el=document.getElementById('winMsg'); if(!el) return;
+  var best=stNum('best.'+CURLEVEL, 0), now=s.t, txt='기록 '+now.toFixed(1)+'초';
+  if(!s.practice && (best<=0 || now<best)){ stPut('best.'+CURLEVEL, now.toFixed(2)); txt+='  — 개인 최고!'; }
+  else if(best>0) txt+='  (최고 '+best.toFixed(1)+'초)';
+  el.textContent=txt;
+}
+
 var lastHint='';
 // 힌트는 코스마다 다르므로 레벨 데이터(LEVEL.hints)에 들어 있다. 체크포인트 번호로 고르고,
 // 마지막 힌트는 그 뒤 구간까지 유지한다. 힌트가 없는 맵은 아무것도 띄우지 않는다.
@@ -3394,6 +3971,8 @@ function showHint(s){ var m=document.getElementById('msg');
   var hs=LEVEL.hints||[], h = hs.length ? (hs[Math.min(s.cpIdx, hs.length-1)]||'') : '';
   if(h!==lastHint){ lastHint=h; m.innerHTML=h; m.classList.toggle('on', !!h); }
 }
+settingsLoad();      // 상수 선언이 모두 끝난 뒤 — 먼저 부르면 var 선언이 도로 덮어쓴다
+ensureArenaLevel();  // 경쟁 전용 — 협동 코스가 걸려 있으면 아레나로 바꾼다
 showScreen('title');
 fillMapPickers();
 (function initLobbyControls(){
@@ -3402,21 +3981,7 @@ fillMapPickers();
     // 색 선택 대화상자는 브라우저마다 input 만, 또는 change 만 보내기도 한다 → 둘 다 듣는다
     var apply=function(){ setMyColor(col.value); };
     col.addEventListener('input', apply); col.addEventListener('change', apply); }
-  var ms=document.getElementById('modeSel');
-  if(ms){ ms.value=GAMEMODE;
-    ms.addEventListener('change',function(){
-      GAMEMODE=ms.value; syncModePicker();
-      if(mpIsHost()) mpSend({t:'gm', mode:GAMEMODE});
-      /* 경쟁으로 바꾸면 아레나 맵을 자동으로 골라준다(협동 맵엔 떨어질 곳이 없다).
-         이미 아레나를 고른 상태면 건드리지 않는다 — 아레나가 둘 이상이라
-         'arena' 로 되돌리면 방금 고른 피크가 도로 정거장이 된다. */
-      if(GAMEMODE==='versus' && PENG.getLevel('arena') && !(LEVEL&&LEVEL.arena)){
-        if(setLevel('arena')){ syncMapPickers(); applyLevelToPractice();
-          if(mpIsHost()) mpSend({t:'lvl', level:'arena'}); }
-      }
-    });
-  }
-  syncModePicker();
+  syncModePicker();   // 경쟁 전용 — 지금은 빈 함수다
 })();
 // 시작 시 멀티 서버 유무를 미리 확인해 안내(버튼을 눌러보기 전에 알 수 있게)
 (function probeServer(){
@@ -3443,6 +4008,23 @@ try{
 if(window.GunMesh) GunMesh.init('Mesh/ShockWave_Gun.glb');
 // 아이템 표식 — 구운 데이터(itembaked.js)만 쓴다. 없으면 큐브 표식으로 남는다.
 if(window.ItemMesh) ItemMesh.init();
+/* 구운 UI 에셋을 CSS 로 붙인다. 없으면 조용히 건너뛰고 글자 폴백으로 남는다.
+   · 폰트 — 라틴 전용(214 글리프)이라 unicode-range 를 ASCII 로 건다.
+            한글은 매칭이 안 되어 Pretendard 로 자연히 떨어진다.
+   · 키 타일맵 — 16px 픽셀아트라 정수배(×2)로만 키우고 보간을 끈다. */
+(function(){
+  var css='';
+  if(window.UI_FONT)
+    css+='@font-face{font-family:"KenneyFuture";src:url('+UI_FONT+') format("truetype");'
+        +'font-display:swap;unicode-range:U+0020-007E}';
+  if(window.UI_KEYS)
+    css+='.key{background-image:url('+UI_KEYS+')}'
+        +'.key{display:inline-block;vertical-align:-7px;width:32px;height:32px;'
+        +'background-size:1088px 768px;image-rendering:pixelated;margin:0 1px}'
+        +'.key.w2{width:64px}';
+  if(!css) return;
+  var st=document.createElement('style'); st.textContent=css; document.head.appendChild(st);
+})();
 layout(); requestAnimationFrame(loop);
 
 /* ---------- 검증 노출 ---------- */
@@ -3466,6 +4048,26 @@ window.__peng={ makeSim:makeSim, stepSim:stepSim, doFire:doFire,
   applyBlast:applyBlast, respawn:respawn, updateLinks:updateLinks,
   get LINK_ON(){ return LINK_ON; }, boxSolid:boxSolid,
   get MARKS(){ return MARKS; },     // 협동 관문 표식(맵마다 다시 만들어지므로 게터로)
+  // 화면 전환 검증용 — 스크린은 mode 를 바꾸고, 오버레이는 안 바꾼다(그게 핵심이라 둘 다 낸다)
+  showScreen:showScreen, goScreen:goScreen, backScreen:backScreen,
+  openOverlay:openOverlay, closeOverlay:closeOverlay,
+  get mode(){ return mode; }, get overlay(){ return OVERLAY; }, get paused(){ return PAUSED; },
+  get SCORES(){ return SCORES; }, scoreFall:scoreFall,   // 경쟁 점수·결과 화면 검증용
+  /* 조작 불능 진단 — 이 자리에서 몸 상자와 실제로 겹치는 삼각형들.
+     콜리전 보기(P)는 상자만 그리는데 몸을 막는 건 삼각형이라, 눈으로는 안 보인다. */
+  probeTris:function(px,py,pz){
+    if(!TSOUP) return [];
+    var qx0=px-PH_HX,qx1=px+PH_HX,qz0=pz-PH_HZ,qz1=pz+PH_HZ, cyB=py+PH_HY;
+    var cnt=triGather(qx0,py,qz0,qx1,py+2*PH_HY,qz1), out=[];
+    for(var q=0;q<cnt;q++){ var o=TCAND[q];
+      if(!boxTri(px,cyB,pz,PH_HX,PH_HY,PH_HZ,TSOUP.v,o)) continue;
+      out.push({ ny:Math.round(triNy(TSOUP.v,o)*1000)/1000,
+                 top:surfY(TSOUP.v,o,qx0,qx1,qz0,qz1,true),
+                 bot:surfY(TSOUP.v,o,qx0,qx1,qz0,qz1,false) });
+    }
+    return out;
+  },
+  get SLOPE_MAX(){ return SLOPE_MAX; }, get STEP_H(){ return STEP_H; },
   hasNaN:function(s){ return !isFinite(s.p.x)||!isFinite(s.p.y)||!isFinite(s.p.z); },
   // 시나리오 실행: inputs=배열 of {dt,steps,inp,yaw,pitch,fire}
   run:function(script){ var s=makeSim();
