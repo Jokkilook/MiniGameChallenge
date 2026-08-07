@@ -112,10 +112,10 @@ PENG.defineLevel('hangar', {
     {t:'station/floor-panel', i:3, j:-3, y:0, rot:1},
     {t:'station/floor-panel', i:-3, j:-3, y:0, rot:2},
     {t:'station/floor-panel', i:-3, j:3, y:0, rot:3},
-    {t:'station/stairs', i:2.5, j:1, y:0.004},
-    {t:'station/stairs', i:1, j:-2.5, y:0.004, rot:1},
-    {t:'station/stairs', i:-2.5, j:-1, y:0.004, rot:2},
-    {t:'station/stairs', i:-1, j:2.5, y:0.004, rot:3},
+    {t:'station/stairs', i:2.5, j:1, y:0.004, rot:2},
+    {t:'station/stairs', i:1, j:-2.5, y:0.004, rot:3},
+    {t:'station/stairs', i:-2.5, j:-1, y:0.004},
+    {t:'station/stairs', i:-1, j:2.5, y:0.004, rot:1},
     {t:'station/wall-door', i:2.5, j:1.6, y:0.304},
     {t:'station/wall-door', i:1.6, j:-2.5, y:0.304, rot:1},
     {t:'station/wall-door', i:-2.5, j:-1.6, y:0.304, rot:2},
@@ -167,11 +167,12 @@ PENG.defineLevel('hangar', {
     {t:'station/table-display-planet', i:0, j:0, y:0.004, sx:1.6, sy:1.6, sz:1.6, deco:true}
   ],
   arena: true,
+  space: true,
   goal: {cx:0, cy:-999, cz:0, r:0.1},
   checkpoints: [ {x:14.455, y:0.2, z:0} ],
   killY: -30,
   start: {x:14.455, y:0.2, z:0},
   spawns: [ {x:14.455, y:0.2, z:0}, {x:0, y:0.2, z:14.455}, {x:-14.455, y:0.2, z:0}, {x:0, y:0.2, z:-14.455} ],
-  pads: [ {x:0, y:0, z:0}, {x:5.605, y:0, z:0}, {x:0, y:0, z:5.605}, {x:-5.605, y:0, z:0}, {x:0, y:0, z:-5.605}, {x:10.03, y:0, z:0}, {x:0, y:0, z:10.03}, {x:-10.03, y:0, z:0}, {x:0, y:0, z:-10.03}, {x:10.847, y:0, z:10.847}, {x:-10.847, y:0, z:10.847}, {x:-10.847, y:0, z:-10.847}, {x:10.847, y:0, z:-10.847}, {x:7.384, y:0.885, z:7.384}, {x:-7.384, y:0.885, z:7.384}, {x:-7.384, y:0.885, z:-7.384}, {x:7.384, y:0.885, z:-7.384} ],
+  pads: [ {x:0, y:0, z:0}, {x:10.03, y:0, z:0}, {x:0, y:0, z:10.03}, {x:-10.03, y:0, z:0}, {x:0, y:0, z:-10.03}, {x:7.384, y:0.885, z:7.384}, {x:-7.384, y:0.885, z:7.384}, {x:-7.384, y:0.885, z:-7.384}, {x:7.384, y:0.885, z:-7.384} ],
   hints: [ '사분면마다 <b>벽으로 둘러싼 방</b>이 있습니다. 문으로 드나드세요.' ]
 });

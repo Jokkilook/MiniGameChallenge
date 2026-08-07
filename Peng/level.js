@@ -748,7 +748,10 @@ PENG.genPeak = function(seed){
     ringOf(R, Math.ceil(n/4), function(th){
       var rr = R + (rnd()-0.5)*0.32;               // 살짝 흔들어 고리 티를 없앤다
       var sc = SLAB_S * (0.92 + rnd()*0.2);
-      putTop(pick(DECK_SLABS), Math.cos(th)*rr, Math.sin(th)*rr, ri(0,3), sc, 0, g);
+      /* 윗면을 0 이 아니라 1~7mm 씩 어긋나게 놓는다. 전부 정확히 0 이면 겹친 자리에서
+         같은 깊이를 두고 다퉈 화면이 지지직거린다(실측: 그 쌍 228개).
+         걸음에는 영향이 없다 — 오를 수 있는 턱이 0.34m 다. */
+      putTop(pick(DECK_SLABS), Math.cos(th)*rr, Math.sin(th)*rr, ri(0,3), sc, -ri(0,6)*0.0004, g);
     });
   }
   /* 정상 소봉 — 고리 0 이라 끝까지 남는다. 마지막 결전이 여기서 난다.
@@ -800,44 +803,14 @@ PENG.genPeak = function(seed){
   putTop('rock-flat', Math.cos(0.785)*shR, Math.sin(0.785)*shR, 0, 1.6, SHELF_Y, RINGS.length-1);
   putTop('rock-flat-grass', Math.cos(0.60)*(shR+1.3), Math.sin(0.60)*(shR+1.3), 2, 1.15, SHELF_Y-0.55, RINGS.length-1);
 
-  /* --- 4) 산체 --- 절벽 기둥.
-     예전엔 큰 바위를 무작위 각도·반지름으로 흩뿌렸는데, 돌덩이 더미로 보일 뿐
-     기둥이 되지 않았다. 지금은 바위 하나를 '세로로만' 길게 늘여 기둥 한 줄로 쓰고
-     일정한 간격으로 둘러 세운다 — 실제 메사 절벽의 세로 결과 같은 실루엣이 나온다.
-     위치·간격·배율에 무작위를 넣지 않는다(그게 '막 놓은' 인상의 원인이었다).
-
-     겹침이 관건이다. 킷 바위는 꼭대기에서 폭이 82% 로 줄어드는데(실측), 기둥 폭을
-     둘레 간격과 같게 잡으면 원통들이 점으로만 맞닿아 사이로 하늘이 비친다.
-     그래서 꼭대기 폭이 간격의 1.5배 이상이 되게 폭을 먼저 정하고, 반지름은
-     '기둥 바깥 끝'이 원하는 자리에 오도록 역산한다(반폭 = 0.39*폭배율).
-     그래도 남는 틈은 안쪽 심(core)이 뒤에서 막아 준다.
-     단은 세 단이고 아래로 갈수록 굵어져(18m → 22m 반경) 스케치의 뷰트처럼 벌어진다. */
-  var RIB = ['rock-c','rock-sand-c'];
-  /* 기둥은 '적게, 굵게'다. 사분면당 4개(둘레 16개)로 가늘게 두르면 돌기둥 다발처럼
-     보여 난잡했다. 2개(둘레 8개)로 줄이고 폭을 키우면 메사 절벽의 큰 결이 된다.
-     폭은 위 주석의 규칙(꼭대기 폭 ≥ 둘레 간격의 1.5배)을 그대로 만족시킨다:
-       1단 R=3.66 간격 2.87 꼭대기폭 4.92 / 2단 3.87·3.04·5.74 / 3단 4.18·3.28·6.56 */
-  var TIERS = [
-    // out = 그 단의 바깥 반지름(킷유닛), w = 가로 배율, n = 사분면당 기둥 수
-    { top:-0.20, span:7.0, out:DECK_OUT,     w:6.0, n:2, core:8.0 },
-    { top:-6.60, span:7.5, out:DECK_OUT+0.6, w:7.0, n:2, core:9.5 },
-    { top:-13.6, span:8.5, out:DECK_OUT+1.3, w:8.0, n:2, core:11.0 }
-  ];
-  for(var T=0; T<TIERS.length; T++){
-    var ti = TIERS[T], sy = ti.span/TOP['rock-c'], R = ti.out - 0.39*ti.w;
-    ringOf(0, ti.n, (function(cfg, syy, rr, idx){ return function(th, q){
-      putTop(RIB[(idx+q)%RIB.length], Math.cos(th)*rr, Math.sin(th)*rr, (idx+q)&3,
-             cfg.w, cfg.top, 0, false, [cfg.w, syy, cfg.w]);
-    }; })(ti, sy, R, T));
-    /* 심 — 기둥 사이로 하늘이 비치지 않게 뒤를 채운다. 이것도 실체다: 심의 바깥
-       반지름(1.2+0.39*core)이 기둥 바깥(out)보다 안쪽이라 "안 보이니 deco 로 둬도
-       된다"고 적어 뒀었는데, 애초에 기둥 틈으로 보이라고 놓은 것이라 틀린 말이었다.
-       틈으로 보이는 면을 그대로 통과하는 게 이 맵에서 가장 눈에 띄는 어긋남이었다. */
-    ringOf(0, 1, (function(cfg, syy, idx){ return function(th){
-      putTop('rock-c', Math.cos(th)*1.2, Math.sin(th)*1.2, idx&3, cfg.core,
-             cfg.top-0.1, 0, false, [cfg.core, syy, cfg.core]);
-    }; })(ti, sy, T));
-  }
+  /* --- 4) 아래는 비운다 ---
+     예전엔 데크 밑에 바위 기둥으로 절벽 기둥(뷰트)을 세웠다. 그런데 이 판은
+     라운드가 흐르면 바깥 고리부터 사라지는 판이다 — 위는 야금야금 없어지는데
+     아래에는 통짜 절벽이 그대로 서 있으니 둘이 따로 놀았고, 기둥이 몇 개든
+     '받쳐 주는 것처럼 보이지 않는' 인상은 그대로였다.
+     그래서 아예 비운다. 데크 밑 테두리(3번)까지만 두고 그 아래는 허공이다 —
+     떠 있는 섬이 되어, 가장자리가 무너져 나가는 규칙과 그림이 맞는다.
+     (배경 바닥은 레벨 파일의 deco 상자가 -72m 에 깔아 준다.) */
 
   /* --- 5) 데크 위 소품 --- 진영 캠프 · 벼랑 끝 바위 · 나무 --- */
   function prop(t, i, j, rot, s, deco){
@@ -887,9 +860,15 @@ PENG.genPeak = function(seed){
   /* --- 6) 스폰·패드 --- 데크 위(월드 y=0), 정상 패드만 위에 있다. */
   var spawns=[], pads=[], sx=CX, sz=CZ;
   for(var sp=0; sp<4; sp++){ spawns.push({i:sx, j:sz, h:0}); var t2=sz; sz=-sx; sx=t2; }
-  pads.push({ i:0.3, j:0.3, h:SUMMIT_Y });
+  /* 패드도 제 고리를 들고 간다 — 발판이 무너지면 그 위의 패드도 같이 사라져야
+     한다(예전엔 허공에 아이템만 떠 있었다). 고리는 발판과 같은 식으로 잰다. */
+  function padRing(i,j){ return Math.min(RINGS.length-1,
+    Math.round(Math.hypot(i,j)/DECK_R*(RINGS.length-1))); }
+  pads.push({ i:0.3, j:0.3, h:SUMMIT_Y, order:0 });
   var px=DECK_R-0.9, pz=0;
-  for(var p=0;p<4;p++){ pads.push({i:px, j:pz, h:0}); var t3=pz; pz=-px; px=t3; }
+  for(var p=0;p<4;p++){ pads.push({i:px, j:pz, h:0, order:padRing(px,pz)}); var t3=pz; pz=-px; px=t3; }
+  var qx=DECK_R*0.55, qz=DECK_R*0.55;
+  for(var q2=0;q2<4;q2++){ pads.push({i:qx, j:qz, h:0, order:padRing(qx,qz)}); var t4=qz; qz=-qx; qx=t4; }
 
   return { pieces:pieces, spawns:spawns, pads:pads, maxRing:RINGS.length-1,
            deckR:DECK_OUT, summitY:SUMMIT_Y,
