@@ -39,10 +39,10 @@
     font-size:20px;font-weight:800;letter-spacing:.5px;color:#fff;white-space:nowrap;
     opacity:0;transition:opacity .18s linear}
   #roundMsg.on{opacity:1}
-  /* HUD — 컨텍스트(안 변함)와 상태(매 순간 변함)를 분리한다.
-     예전엔 칩 네 개가 한 줄에 같은 크기로 있어서, 맵 이름이 점수와 같은 무게로 읽혔다. */
-  #ctxbar{position:absolute;top:11px;left:14px;display:flex;gap:12px;opacity:.55;
-    font-size:11.5px;font-weight:700;color:#9dabc4}
+  /* HUD 에는 '매 순간 변하는 것'만 둔다.
+     좌상단에 맵 이름·방 코드·인원을 칩으로 나열하던 줄(#ctxbar)이 있었는데, 셋 다
+     경기 내내 안 변하는 값이라 읽을 일이 없었다. 맵은 눈앞에 있고 방 코드는 대기방에
+     있다. 인원은 점수 칩이 사람마다 하나씩 있으니 세면 된다. */
   #statbar{position:absolute;top:0;left:50%;transform:translateX(-50%);
     display:flex;flex-direction:column;align-items:center;gap:5px;padding-top:10px;min-width:190px}
   /* 붕괴 예고 — 숫자를 읽는 게 아니라 차오르는 걸 곁눈으로 본다 */
@@ -122,8 +122,7 @@
   .netline i{width:7px;height:7px;flex:none;background:#3d4a60;font-style:normal}
   .netline.ok i{background:var(--acc2)}
   .netline.bad{color:var(--warn)}   .netline.bad i{background:var(--warn)}
-  .netline s{text-decoration:none;letter-spacing:.2px;font-weight:700;color:#6f7d96;
-    font-family:"Pretendard","Inter",sans-serif}
+  .netline b{color:#cfd9e8;font-weight:900}
   .screen p{color:#9dabc4;font-size:14.5px;font-weight:500;line-height:1.7;max-width:520px;margin:6px 0}
   .screen p b{color:#fff;font-weight:800}
   .screen kbd{font-family:var(--mono);font-size:11.5px;font-weight:700;background:transparent;border:1px solid var(--line2);
@@ -361,9 +360,6 @@
   </svg>
   <!-- 라운드 정산 배너 — 떨어뜨린 직후 잠깐 뜨고, 다음 라운드가 시작되면 사라진다 -->
   <div id="roundMsg"></div>
-  <!-- 컨텍스트: 경기 내내 안 변하는 것들. 흐리게, 구석에.
-       예전엔 맵 이름과 접속 상태가 상태 정보와 같은 줄에 같은 크기로 있었다. -->
-  <div id="ctxbar"><span id="mapV">맵</span><span id="mpV">솔로</span></div>
   <!-- 상태: 매 순간 변하는 것들. 화면 위 가운데. -->
   <div id="statbar">
     <div id="collapseBar"><i></i></div>
@@ -782,9 +778,9 @@ function setLevel(id){
   buildTriSoup();                                          // 조각의 삼각형 = 실제 이동 판정
   buildPads();                                             // 아이템 패드 위치
   MARKS = PENG.coopMarkers(d);
-  // HUD 표시를 즉시 갱신 — 프레임을 기다리지 않아야 "지금 어느 맵인지"가 항상 맞다.
-  // 두 사람이 서로 다른 코스를 보고 있으면 이 칩만 비교해도 바로 드러난다.
-  var mv=document.getElementById('mapV'); if(mv) mv.textContent='🗺 '+(d.name||id);
+  /* 맵 이름은 HUD 에 안 띄운다. 서로 다른 코스를 달리는 사고는 시작할 때
+     채팅으로 알린다(startGame 의 '맵 불일치') — 그게 알아채야 할 순간이고,
+     경기 내내 구석에 이름을 띄워 두는 건 그 사고를 위한 대비치고 비싸다. */
   return true;
 }
 /* ---------- 무너지는 바닥 ----------
@@ -3122,21 +3118,21 @@ function mpConnect(room, onOk, onFail, asJoin){
   var settled=false;
   var timer=setTimeout(function(){ if(!settled){ settled=true; try{ws.close();}catch(e){} if(onFail)onFail(); } }, 4000);
   // 성공 판정은 'welcome' 수신 시(방 없음 거부 'nosuch' 보다 먼저 성공 처리되지 않도록)
-  ws.onopen=function(){ MP.connected=true; mpSend({t:'join',name:MP.name}); mpSend({t:'col',c:PLAYER_COL}); mpStatus(); };
+  ws.onopen=function(){ MP.connected=true; mpSend({t:'join',name:MP.name}); mpSend({t:'col',c:PLAYER_COL}); };
   ws.onclose=function(){ var wasSettled=settled; settled=true; clearTimeout(timer);
-    MP.connected=false; MP.ws=null; MP.peers={}; MP.players=[]; MP.host=null; mpStatus();
+    MP.connected=false; MP.ws=null; MP.peers={}; MP.players=[]; MP.host=null;
     if(!wasSettled && onFail) onFail();
     else if(wasSettled && mode==='lobbyScr'){ showScreen('title'); setWarn('bad','연결 끊김'); } };
   ws.onerror=function(){ /* onclose 에서 처리 */ };
   ws.onmessage=function(ev){ var m; try{m=JSON.parse(ev.data);}catch(e){return;}
     if(m.t==='nosuch'){ settled=true; clearTimeout(timer); MP.noSuchRoom=true; try{ws.onclose=null;ws.close();}catch(e){}
-      MP.ws=null; MP.connected=false; MP.room=null; mpStatus(); if(onFail)onFail('nosuch'); return; }
+      MP.ws=null; MP.connected=false; MP.room=null; if(onFail)onFail('nosuch'); return; }
     if(m.t==='welcome' && !settled){ settled=true; clearTimeout(timer); mpHandle(m); if(onOk)onOk(); return; }
     mpHandle(m); };
 }
 function mpDisconnect(){ if(MP.ws){ try{ MP.ws.onclose=null; MP.ws.close(); }catch(e){} }
   MP.ws=null; MP.connected=false; MP.peers={}; MP.players=[]; MP.host=null; MP.id=null; MP.room=null;
-  if(chatting) closeChat(false); CHAT.length=0; renderChat(); mpStatus(); }
+  if(chatting) closeChat(false); CHAT.length=0; renderChat(); }
 function mpSend(o){ if(MP.ws&&MP.connected){ try{ MP.ws.send(JSON.stringify(o)); }catch(e){} } }
 function mpHandle(m){
   if(m.t==='welcome'){ MP.id=m.id; }
@@ -3179,7 +3175,6 @@ function mpHandle(m){
     for(var _b=0;_b<BOTS.length;_b++) if(BOTS[_b].id!==m.id) spawnRemoteShot(BOTS[_b].sim, m); }
   else if(m.t==='ch'){ pushChat(m.name, m.text, m.id===MP.id); }
   else if(m.t==='left'){ delete MP.peers[m.id]; }
-  mpStatus();
 }
 
 /* ---------- 채팅 ---------- */
@@ -3248,8 +3243,6 @@ function closeChat(doSend){
   }
   if(mode==='play' && !locked) requestLock();
 }
-function mpStatus(){ var el=document.getElementById('mpV'); if(!el)return;
-  el.textContent = (MP.connected&&MP.room) ? (MP.room+' · '+Math.max(1,MP.players.length)+'명') : '솔로'; }
 
 /* ---------- 메뉴 / 대기방 ----------
    화면에는 두 종류가 있다.
@@ -4257,7 +4250,7 @@ buildLobbyKeys();   // 키 타일은 안 바뀐다 — 한 번만 짓는다
 /* 시작할 때 멀티 서버가 있는지 미리 짚어 낱말 하나로 띄운다(버튼을 눌러보기 전에
    알 수 있게). 왜 없는지·뭘 켜야 하는지는 실제로 눌렀을 때 그 화면에서 말한다. */
 (function probeServer(){
-  var off=function(){ setWarn('bad','OFFLINE <s>혼자 플레이만</s>'); };
+  var off=function(){ setWarn('bad','OFFLINE'); };
   if(location.protocol==='file:'){ off(); return; }
   var base=location.pathname.replace(/[^/]*$/,'');
   var done=false, to=setTimeout(function(){ if(!done){ done=true; off(); } }, 2500);
