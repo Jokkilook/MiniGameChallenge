@@ -1,6 +1,7 @@
 PENG.defineLevel('arena', {
   name: '우주 정거장 (경쟁)',
   arena: true,
+  space: true,          // 배경을 검은 우주 + 흰 별로
   collapse: {
     /* 판을 Kenney Space Station Kit 조각으로 조립한다(PENG.genStation).
        예전의 '원판을 깔고 파내는' 방식과 달리 코어 → 복도 → 포드 순으로 붙여
@@ -19,7 +20,10 @@ PENG.defineLevel('arena', {
   },
   boxes: [
     // 저 아래 장식 바닥 — 떨어졌다는 게 확실히 보이게. 발판은 전부 생성기가 만든다
-    {cx:0, cy:-40, cz:0, hx:90, hy:1, hz:90, col:'#161f33', deco:true}
+    /* 우주 맵이라 '저 아래 바닥'이 없다 — 검은 우주에 네모 판이 떠 있으면 그게 더
+       이상하다. 그래도 boxes 가 비면 레벨 검증에 걸리므로, 그리기 거리(FAR=400m)
+       바깥으로 내려 눈에 안 띄게 둔다. */
+    {cx:0, cy:-900, cz:0, hx:4, hy:1, hz:4, col:'#0a0d16', deco:true}
   ],
   goal: {cx:0, cy:-999, cz:0, r:0.1},
   checkpoints: [ {x:0, y:0, z:0} ],
