@@ -751,9 +751,14 @@ PENG.genPeak = function(seed){
       putTop(pick(DECK_SLABS), Math.cos(th)*rr, Math.sin(th)*rr, ri(0,3), sc, 0, g);
     });
   }
-  // 정상 소봉 — 고리 0 이라 끝까지 남는다. 마지막 결전이 여기서 난다.
-  putTop('rock-flat-grass', 0.46, 0.46, 0, 1.05, SUMMIT_Y, 0);
-  putTop('rock-flat',       0.0,  0.72, 1, 0.92, SUMMIT_Y, 0);
+  /* 정상 소봉 — 고리 0 이라 끝까지 남는다. 마지막 결전이 여기서 난다.
+     세로로만 늘려 밑동이 데크(0)에 닿게 한다. 예전엔 원래 두께(0.6~0.7m)로 놓고
+     밑을 작은 바위로 받쳤는데, 판이 공중에 뜬 채 받침돌만 보여 어색했다.
+     sy = SUMMIT_Y / TOP[t] 이면 윗면은 SUMMIT_Y, 밑면은 정확히 0 이 된다. */
+  putTop('rock-flat-grass', 0.46, 0.46, 0, 1.05, SUMMIT_Y, 0, false,
+         [1.05, SUMMIT_Y/TOP['rock-flat-grass'], 1.05]);
+  putTop('rock-flat',       0.0,  0.72, 1, 0.92, SUMMIT_Y, 0, false,
+         [0.92, SUMMIT_Y/TOP['rock-flat'], 0.92]);
   // 오르는 디딤돌(0.70m) — 1.35m 를 한 번에 뛰지 않아도 되게
   put4('rock-a', 1.15, 0.42, 0, 0.60, 0, 1, false);
 
@@ -808,11 +813,15 @@ PENG.genPeak = function(seed){
      그래도 남는 틈은 안쪽 심(core)이 뒤에서 막아 준다.
      단은 세 단이고 아래로 갈수록 굵어져(18m → 22m 반경) 스케치의 뷰트처럼 벌어진다. */
   var RIB = ['rock-c','rock-sand-c'];
+  /* 기둥은 '적게, 굵게'다. 사분면당 4개(둘레 16개)로 가늘게 두르면 돌기둥 다발처럼
+     보여 난잡했다. 2개(둘레 8개)로 줄이고 폭을 키우면 메사 절벽의 큰 결이 된다.
+     폭은 위 주석의 규칙(꼭대기 폭 ≥ 둘레 간격의 1.5배)을 그대로 만족시킨다:
+       1단 R=3.66 간격 2.87 꼭대기폭 4.92 / 2단 3.87·3.04·5.74 / 3단 4.18·3.28·6.56 */
   var TIERS = [
     // out = 그 단의 바깥 반지름(킷유닛), w = 가로 배율, n = 사분면당 기둥 수
-    { top:-0.20, span:7.0, out:DECK_OUT,     w:4.2, n:4, core:8.0 },
-    { top:-6.60, span:7.5, out:DECK_OUT+0.6, w:5.0, n:4, core:9.5 },
-    { top:-13.6, span:8.5, out:DECK_OUT+1.3, w:6.0, n:4, core:11.0 }
+    { top:-0.20, span:7.0, out:DECK_OUT,     w:6.0, n:2, core:8.0 },
+    { top:-6.60, span:7.5, out:DECK_OUT+0.6, w:7.0, n:2, core:9.5 },
+    { top:-13.6, span:8.5, out:DECK_OUT+1.3, w:8.0, n:2, core:11.0 }
   ];
   for(var T=0; T<TIERS.length; T++){
     var ti = TIERS[T], sy = ti.span/TOP['rock-c'], R = ti.out - 0.39*ti.w;
