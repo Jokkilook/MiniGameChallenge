@@ -649,7 +649,7 @@ var STATION={ buf:null, count:0, parts:null, unit:2.95 };
 /* 윤곽선 색·두께. 로드 때 setLevel 이 buildStation 을 부르므로 반드시 그보다
    위에서 값을 가져야 한다 — var 는 선언만 끌어올려지고 값은 안 따라온다. */
 var OUTLINE_COL=[0.04,0.06,0.10];
-var OUTLINE_PIECE=0.035;                 // 조각 윤곽선 껍질 두께(m)
+var OUTLINE_PIECE=0.022;                 // 조각 윤곽선 껍질 두께(m) — 몸통 윤곽선과 같은 값
 var STATION_LIGHT=[0.42,0.80,0.43];        // 간이 방향광 — 킷 색만 쓰면 전부 납작해 보인다
 /* 조각 모양에서 충돌 박스를 뽑는다.
    손으로 "벽=1x1x0.3" 식으로 적으면 문이 뚫린 벽도 통짜가 되고 탁자 밑도 막힌다.
@@ -2855,10 +2855,11 @@ function render(dt){
     gl.enableVertexAttribArray(PROG.main.aCol);
     gl.vertexAttribPointer(PROG.main.aCol,3,gl.FLOAT,false,24,12);
     gl.drawArrays(gl.TRIANGLES,0,STATION.count);
-    /* 윤곽선 껍질 — 앞면을 지우면 실루엣 테두리만 남는다. 본체를 먼저 그렸으므로
-       깊이 검사에 걸려 안쪽은 자동으로 가려진다. */
+    /* 윤곽선 껍질 — 바깥면을 지우면 실루엣 테두리만 남는다. 킷 메시는 바깥면이
+       CW(=GL 기준 뒷면)라 BACK 을 컬링해야 한다(캡슐·총 껍질과 같은 규칙).
+       FRONT 를 컬링했더니 껍질 바깥면이 그대로 남아 조각이 통째로 검게 덮였다. */
     if(STATION.obuf){
-      gl.enable(gl.CULL_FACE); gl.cullFace(gl.FRONT);
+      gl.enable(gl.CULL_FACE); gl.cullFace(gl.BACK);
       gl.bindBuffer(gl.ARRAY_BUFFER, STATION.obuf);
       gl.vertexAttribPointer(PROG.main.aPos,3,gl.FLOAT,false,24,0);
       gl.vertexAttribPointer(PROG.main.aCol,3,gl.FLOAT,false,24,12);
