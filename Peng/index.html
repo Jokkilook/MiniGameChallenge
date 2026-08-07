@@ -303,6 +303,9 @@
     transition:opacity .45s linear;word-break:break-word}
   .cmsg.me{border-left-color:#ff8a3a}
   .cmsg.sys{border-left-color:var(--line2);color:#9dabc4;font-style:normal;font-weight:600}
+  /* 줄 앞 아이템 그림 — 크기를 못 박아야 줄 높이가 안 흔들린다(이모지 폴백도 같은 칸). */
+  .cmsg .cic{display:inline-block;width:16px;height:16px;margin-right:6px;vertical-align:-3px;
+    object-fit:contain;font-size:14px;line-height:16px;text-align:center}
   .cmsg b{color:var(--acc2);font-weight:900}
   .cmsg.me b{color:#ff9d55}
   #chatInput{display:none;width:100%;pointer-events:auto;font:inherit;font-size:13.5px;font-weight:600;color:#fff;
@@ -1614,7 +1617,7 @@ function grantItem(who, padI, item){
       if(item==='feather') sim.glideLeft=1; }   // 깃털 1개당 글라이딩 1회
     tone(880,0.09,'triangle',0.10,1320);
   }
-  pushChat('', def.icon+' '+(mine?'나':nameOf(who))+' · '+def.name, false, true);
+  pushChat('', (mine?'나':nameOf(who))+' · '+def.name, false, true, item);
 }
 /* 아이템 HUD — 두 종류를 구분해서 보여준다.
    · 작동 중  : 시간이 흐르는 버프. 남은 초 + 아래 진행 바.
@@ -1623,12 +1626,23 @@ function grantItem(who, padI, item){
    다시 만들고, 평소엔 숫자와 바 길이만 갱신한다. */
 /* HUD 아이콘 한 칸. 구운 그림이 있으면 그걸 쓰고, 없으면 이모지로 떨어진다 —
    itemicons.js 를 못 불러와도(굽기 전이거나 파일이 빠졌거나) HUD 는 그대로 돌아간다.
-   활공처럼 패드에 없는 가짜 항목은 애초에 그림이 없어서 자연히 이모지가 된다.
-   채팅 줄(pushChat)은 텍스트 흐름이라 이모지 그대로 둔다 — 그림을 끼우면 줄 높이가 흔들린다. */
+   활공처럼 패드에 없는 가짜 항목은 애초에 그림이 없어서 자연히 이모지가 된다. */
 function iconHTML(key, def){
   var src=window.ITEM_ICONS && window.ITEM_ICONS[key];
   return src ? '<img class="ic" src="'+src+'" alt="">'
              : '<span class="ic">'+def.icon+'</span>';
+}
+/* 채팅 줄 앞의 아이콘. HUD·패드 표식과 같은 그림을 쓴다 — 세 곳이 같아야 패드에서 본
+   물건을 줄에서도 알아본다. 이모지는 그림이 없을 때의 폴백이지 기본이 아니다.
+   예전엔 여기만 이모지를 직접 박아 뒀는데, 이유가 '그림을 끼우면 줄 높이가 흔들린다'
+   였다. 그건 그림 탓이 아니라 크기를 안 정해줘서다 — 16px 상자에 넣으면 안 흔들린다.
+   renderChat 은 사용자 문자열을 textContent 로만 넣으므로 여기서도 노드를 만들어 준다. */
+function chatIconNode(key){
+  var def=ITEMS[key]; if(!def) return null;
+  var src=window.ITEM_ICONS && window.ITEM_ICONS[key], el;
+  if(src){ el=document.createElement('img'); el.src=src; el.alt=''; }
+  else { el=document.createElement('span'); el.textContent=def.icon; }
+  el.className='cic'; return el;
 }
 var itemsSig='';
 function renderItems(s){
@@ -3209,8 +3223,10 @@ function mpHandle(m){
 /* ---------- 채팅 ---------- */
 var CHAT=[], chatting=false;
 // 주의: 상대가 보낸 문자열은 신뢰할 수 없으므로 반드시 textContent 로만 넣는다(XSS 방지).
-function pushChat(name, text, self, sys){
-  CHAT.push({name:String(name||'?'), text:String(text||''), self:!!self, sys:!!sys, t:performance.now()});
+// icon: 아이템 키(선택). 있으면 줄 앞에 그 아이템 그림이 붙는다.
+function pushChat(name, text, self, sys, icon){
+  CHAT.push({name:String(name||'?'), text:String(text||''), self:!!self, sys:!!sys,
+             icon:icon||null, t:performance.now()});
   if(CHAT.length>8) CHAT.shift();
   renderChat();
 }
@@ -3220,6 +3236,7 @@ function renderChat(){
   for(var i=0;i<CHAT.length;i++){ var c=CHAT[i];
     var d=document.createElement('div');
     d.className='cmsg'+(c.self?' me':'')+(c.sys?' sys':'');
+    if(c.icon){ var ic=chatIconNode(c.icon); if(ic) d.appendChild(ic); }
     if(!c.sys){ var b=document.createElement('b'); b.textContent=c.name+': '; d.appendChild(b); }
     var sp=document.createElement('span'); sp.textContent=c.text; d.appendChild(sp);
     c.el=d; log.appendChild(d);
