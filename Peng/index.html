@@ -594,10 +594,17 @@ function tblMerge(){ var o={};
 var PIECE_FLAT=tblMerge(
   kitTbl('station',  {'floor':0.3, 'floor-detail':0.3, 'floor-panel':0.3}));
 /* '윗면만' 충돌시키는 조각. 바위 슬래브는 원반이라 테두리가 급경사인데, 그걸 그대로
-   넣으면 겹쳐 깔린 슬래브의 테두리마다 벽이 서서 데크를 가로지를 수가 없다
-   (실측: 15번 중 13~15번 멈춤). 그렇다고 통짜 납작 상자로 두면 보이는 모양과 아예
-   달라진다. 그래서 걸을 수 있는 기울기(SLOPE_MAX)의 면만 남긴다 —
-   보이는 윗면을 그대로 밟게 되고, 테두리 벽은 사라진다. */
+   넣으면 겹쳐 깔린 슬래브의 테두리마다 벽이 서서 데크를 가로지르다 걸린다.
+   그렇다고 통짜 납작 상자로 두면 보이는 모양과 아예 달라진다. 그래서 걸을 수 있는
+   기울기(SLOPE_MAX)의 면만 남긴다 — 보이는 윗면을 그대로 밟게 되고 테두리 벽은
+   사라진다.
+
+   대가는 분명하다: 슬래브의 충돌은 그려지는 삼각형의 41~46% 뿐이다(테두리와
+   밑면이 빠진다). 콜리전 보기(P)를 켜면 바위가 납작한 원반으로만 보이는 이유다.
+   그래도 이쪽이 낫다 — 시드를 고정하고 전체 폴리곤으로 되돌려 재 보면 데크를
+   가로지르는 16방향 중 막히는 방향이 4 → 6 으로 늘었다. 테두리를 넘어설 때
+   올라선 자리의 머리 공간 확인이 실패해서인데(계단 오르기 자체는 이미 되지만
+   슬래브 이음매에서만 안 된다), 그건 이동 코드 쪽 숙제로 남긴다. */
 var PIECE_TOPONLY=tblMerge(kitTbl('survival', {'rock-flat':1, 'rock-flat-grass':1}));
 /* 통짜 상자·줄기 기둥 같은 '단순화' override 는 없앴다. 격자를 8 → 16 으로 올리니
    기둥 방식만으로도 몸이 안 샌다(실측: 울타리·문 달린 울타리·간판·철판·나무 모두
@@ -1876,6 +1883,11 @@ function moveAxisStep(s, axis, delta){
         if(best===null) best=cand;
         else best=(delta<0)?Math.max(best,cand):Math.min(best,cand);
       } else {
+        /* 발밑 지오메트리는 수평으로 막지 않는다. 몸 상자는 발바닥에서 시작하므로
+           바로 밑에 있는 면도 '스쳤다'로 잡히는데, 꼭대기가 발보다 낮은 면은 나를
+           들어 올릴 수도 밀어낼 수도 없다. 이걸 벽으로 세는 바람에 같은 높이로
+           맞물린 바위 슬래브 이음매마다(테두리 경사가 발 높이에서 아래로 꺾인다)
+           걸음이 멈췄다 — 실측 16방향 중 6번. */
         /* 오를 수 있는 면인지는 '높이차'가 아니라 '기울기'로 본다. 높이차만 보면
            한 스텝에 파고드는 깊이가 얕아서 어떤 벽이든 조금씩 기어오르게 된다. */
         if(triNy(TSOUP.v,o) < SLOPE_MAX){ if(triBlocks(s,axis,delta,o)){hit=true;steepHit=true;} continue; }  // 가파름 = 벽
@@ -4159,9 +4171,16 @@ window.__peng={ makeSim:makeSim, stepSim:stepSim, doFire:doFire,
   get pads(){ return PADS; }, get items(){ return ITEMS; },   // 아이템 패드 검증용
   get cam(){ return CAMPOS; }, get camLen(){ return CAM_LEN; },   // 3인칭 카메라 충돌 검증용
   get matchSeed(){ return MATCH_SEED; }, get floorSeed(){ return FLOOR_SEED; },  // 절차 생성 검증용
+  // 시드를 고정해야 두 빌드의 지형이 같아진다 — 안 그러면 A/B 비교가 성립하지 않는다
+  set floorSeed(v){ FLOOR_SEED=v>>>0; },
   get bots(){ return BOTS; },        // AI 검증용
   get station(){ return STATION; }, buildStation:buildStation,   // 정거장 검증용
   pieceBoxes:pieceBoxes,             // 조각 모양 → 충돌 박스(검증용)
+  /* 콜리전 대조용 — 그려지는 삼각형과 실제 판정 삼각형이 같은지 밖에서 재려면
+     이 둘이 필요하다(둘 다 읽기 전용으로만 쓴다). */
+  get trisoup(){ return TSOUP; }, pieceBasis:pieceBasis, pieceOff:function(t){ return PIECE_OFF[t]||null; },
+  get flatPieces(){ return Object.keys(PIECE_FLAT); },
+  get topOnlyPieces(){ return Object.keys(PIECE_TOPONLY); },
   get vertCount(){ return TRI.length/6; },  // 이번 프레임에 쌓인 정점 수(렌더 검증용)
   // 프레임 강제 실행 — 검증 환경(탭이 숨겨진 상태)에선 rAF 가 멈춰 렌더가 안 돈다
   frame:function(now){ loop(now!=null?now:performance.now()); },
