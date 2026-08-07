@@ -1770,10 +1770,50 @@ function moveAxis(s, axis, delta){
     if(s.v[axis]===0) break;              // 막혔으면 더 밀어 봐야 소용없다
   }
 }
+/* 수평 걸음이 이 삼각형(벽 취급 면)에 막히는가 — 세 겹의 규칙.
+
+   1) 걸음 '전'에도 물고 있던 삼각형은 막을 자격이 없다. 막아도 겹침이 사라지지
+      않아 여덟 방향이 전부 되돌려지는 영구 조작 불능이 된다. 조각끼리 일부러
+      0.44유닛씩 겹쳐 두므로(PIECE_OFF 주석) 정상적으로 서 있어도 이웃 조각의
+      벽이 몸을 관통한다 — 실측: 피크 한 지점에서 수직면 15개가 몸을 물고 있었다.
+   2) 처음 무는 삼각형이라도 '그 면의 평면으로 다가가는 걸음'만 막는다.
+      한 평면이 여러 삼각형으로 쪼개져 있어서, 물린 채 벽과 나란히 걸으면 옆
+      삼각형을 '처음' 물게 되는데 그건 파고드는 게 아니다. 평면 부호가 뒤집히는
+      걸음(면을 넘음)은 무조건 막는다 — 부분걸음(MOVE_MAX=0.12)과 묶이면 반폭
+      0.35m 인 몸이 벽면을 한 걸음에 지나칠 수 없어 관통이 차단된다.
+   3) 판정 상자를 aabbHit 처럼 0.1mm 줄인다 — 안 그러면 스치기만 한 접촉이
+      '겹침'으로 읽혀 조각 모서리를 지날 때마다 한 프레임씩 멈칫거린다.
+
+   지난 두 시도는 모두 구멍이 있었다: '빼내는 최소 거리'는 몸 중심이 면을 넘는
+   순간부터 빠져나오는 중으로 읽혀 벽을 통과시켰고, '축 위 겹친 구간 길이'는
+   축과 수직인 면(정거장 킷 전부가 축 정렬이다)에서 길이가 늘 0 이라 방향을
+   아예 재지 못했다 — 문틀을 스치면 통로가 막히고, 잘게 쪼개진 바위 면은
+   구간이 포화된 뒤 그냥 뚫렸다. */
+function triBlocks(s, axis, delta, o){
+  var V=TSOUP.v, cy=s.p.y+PH_HY;
+  var ox=s.p.x, oz=s.p.z;
+  if(axis==='x') ox-=delta; else oz-=delta;
+  // 1) 걸음 전에도 물고 있었다 → 막지 않는다 (상자 축소는 후보 판정과 동일)
+  if(boxTri(ox, cy, oz, PH_HX-HIT_EPS, PH_HY-HIT_EPS, PH_HZ-HIT_EPS, V, o)) return false;
+  // 2) 면의 평면에 대한 부호 있는 거리로 방향을 잰다(정규화 불필요 — 같은 면끼리 비교)
+  var Ax=V[o], Ay=V[o+1], Az=V[o+2];
+  var e1x=V[o+3]-Ax, e1y=V[o+4]-Ay, e1z=V[o+5]-Az;
+  var e2x=V[o+6]-Ax, e2y=V[o+7]-Ay, e2z=V[o+8]-Az;
+  var nx=e1y*e2z-e1z*e2y, ny=e1z*e2x-e1x*e2z, nz=e1x*e2y-e1y*e2x;
+  var d0=nx*(ox-Ax)+ny*(cy-Ay)+nz*(oz-Az);
+  var d1=nx*(s.p.x-Ax)+ny*(cy-Ay)+nz*(s.p.z-Az);
+  if(d0>0 ? d1<0 : (d0<0 && d1>0)) return true;       // 평면을 넘었다
+  return Math.abs(d1) < Math.abs(d0) - 1e-9;          // 다가가는 중이다
+}
 function moveAxisStep(s, axis, delta){
   s.p[axis]+=delta;
   var hit=false, best=null;
   var canStep=true, riseTo=-Infinity;         // 수평 이동이 막혔을 때 "걸어 오를 수 있는가"
+  /* 삼각형 쪽 계단 오르기. 예전엔 riseTo 를 박스 경로에서만 채워서, 조각으로만 이뤄진
+     판(피크·정거장)에서는 20cm 턱도 못 넘고 그 앞에서 멈췄다 — 달리다 돌부리에
+     걸리는 느낌의 정체가 이것이다. 가파른 면이 앞을 막아도, 그 너머에 밟을 수 있는
+     면이 턱 높이 안에 있으면 벽이 아니라 계단으로 본다. */
+  var steepHit=false, triRise=-Infinity;
   for(var i=0;i<LEVEL.boxes.length;i++){ var b=LEVEL.boxes[i];
     if(!boxSolid(b) || b._tri) continue;       // 장식·꺼진 발판은 통과 / _tri 는 삼각형이 맡는다
     if(!aabbHit(s.p.x,s.p.y,s.p.z,b)) continue;
@@ -1795,10 +1835,14 @@ function moveAxisStep(s, axis, delta){
   if(TSOUP){
     var qx0=s.p.x-PH_HX, qx1=s.p.x+PH_HX, qz0=s.p.z-PH_HZ, qz1=s.p.z+PH_HZ;
     var cyB=s.p.y+PH_HY;
+    /* 수평 패스의 겹침 판정은 0.1mm 줄인 상자로 한다(triBlocks 규칙 3).
+       y 패스는 원치수 그대로 — 착지는 정확히 맞닿는 면을 찾는 일이다. */
+    var ehx=PH_HX, ehy=PH_HY, ehz=PH_HZ;
+    if(axis!=='y'){ ehx-=HIT_EPS; ehy-=HIT_EPS; ehz-=HIT_EPS; }
     var cnt=triGather(qx0, s.p.y, qz0, qx1, s.p.y+2*PH_HY, qz1);
     for(var q=0;q<cnt;q++){
       var o=TCAND[q];
-      if(!boxTri(s.p.x,cyB,s.p.z, PH_HX,PH_HY,PH_HZ, TSOUP.v,o)) continue;
+      if(!boxTri(s.p.x,cyB,s.p.z, ehx,ehy,ehz, TSOUP.v,o)) continue;
       if(axis==='y'){
         // 내려앉을 때 가파른 면은 발판이 아니다 — 벽에 기대 서 있게 되면 안 된다
         if(delta<0 && triNy(TSOUP.v,o) < SLOPE_MAX) continue;
@@ -1811,17 +1855,26 @@ function moveAxisStep(s, axis, delta){
       } else {
         /* 오를 수 있는 면인지는 '높이차'가 아니라 '기울기'로 본다. 높이차만 보면
            한 스텝에 파고드는 깊이가 얕아서 어떤 벽이든 조금씩 기어오르게 된다. */
-        if(triNy(TSOUP.v,o) < SLOPE_MAX){ hit=true; canStep=false; continue; }  // 가파름 = 벽
+        if(triNy(TSOUP.v,o) < SLOPE_MAX){ if(triBlocks(s,axis,delta,o)){hit=true;steepHit=true;} continue; }  // 가파름 = 벽
         var top=surfY(TSOUP.v,o, qx0,qx1,qz0,qz1, true);
-        if(top==null){ hit=true; canStep=false; continue; }   // 수직면
+        if(top==null){ if(triBlocks(s,axis,delta,o)){hit=true;steepHit=true;} continue; }   // 수직면
+        // 발보다 높고 턱 안쪽인 '밟을 수 있는 면' — 앞을 막은 게 이것뿐이면 걸어 오른다
+        if(top>s.p.y+1e-3 && top-s.p.y<=STEP_H && top>triRise) triRise=top;
         /* 걸을 수 있는 기울기이고 턱 높이 안쪽이면 아예 막지 않는다. 되돌린 뒤 올려
            세우는 예전 방식은 경사면에서 안 통한다 — 올라선 자리도 경사면 안이라
            머리 공간 확인이 계속 실패해 램프 앞에 벽이 섰다. 그냥 통과시키면 바로
            뒤따르는 y 패스(x→z→y 순서)가 그 면 위로 올려 준다. */
         if(top - s.p.y <= STEP_H) continue;
-        hit=true; canStep=false;
+        if(triBlocks(s,axis,delta,o)){ hit=true; canStep=false; }
       }
     }
+  }
+  /* 가파른 면이 막았을 때, 턱 안쪽에 밟을 면이 있으면 계단으로 취급한다.
+     없으면(=벽) 그때 비로소 오르기를 막는다 — 벽을 기어오르지 못하게 하는
+     7b17593 의 규칙은 그대로다. 벽면 앞에는 턱 높이 안에 밟을 면이 없다. */
+  if(steepHit){
+    if(triRise>s.p.y) riseTo=Math.max(riseTo, triRise);
+    else canStep=false;
   }
   if(!hit) return;
   if(axis==='y'){
@@ -1831,7 +1884,10 @@ function moveAxisStep(s, axis, delta){
      이미 false 로 초기화돼 있으므로 직전 프레임의 접지를 담고 있는 coyote 를 본다) —
      안 그러면 공중에서 벽에 붙어 기어오를 수 있게 된다. */
   if(s.coyote>0 && canStep && riseTo>s.p.y){
-    var oy=s.p.y; s.p.y=riseTo;
+    /* 1mm 여유 — 머리 공간 확인(triBlocked)은 오차 없이 재서, 올라선 발이 캡 면과
+       정확히 맞닿으면 그것부터 '막힘'으로 읽혀 삼각형 턱 오르기가 전부 거부됐다.
+       1mm 위에 세우면 다음 y 패스가 그대로 내려앉힌다. */
+    var oy=s.p.y; s.p.y=riseTo+1e-3;
     if(!boxBlocked(s.p.x,s.p.y,s.p.z)){ s.onGround=true; return; }   // 올라선 자리에 머리 공간이 있는가
     s.p.y=oy;                                                        // 없으면 원래대로 막힌다
   }
