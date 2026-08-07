@@ -19,6 +19,12 @@ primary_region = "nrt"        # 도쿄 — fly 에 서울 리전은 없습니다
 
 # 방 상태가 서버 메모리에 있으므로(server.js 의 방 테이블) 인스턴스는 1개여야 합니다.
 # 2개로 늘리면 두 사람이 다른 인스턴스에 붙어 같은 방에서 못 만납니다.
+#
+# ※ 함정: 첫 `fly deploy` 는 이 설정과 무관하게 고가용성 명목으로 머신을 2개 만듭니다
+#   ("Creating a second machine for high availability"). 반드시 확인하고 줄이세요:
+#       fly machines list -a peng-vs      # 1개여야 정상
+#       fly scale count 1 -a peng-vs      # 2개면 이걸로 줄임
+#   두 번째 배포부터는 기존 머신을 갱신하므로 다시 늘어나지 않습니다.
 [[vm]]
   size = "shared-cpu-1x"
   memory = "256mb"
