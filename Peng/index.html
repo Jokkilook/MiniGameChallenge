@@ -592,8 +592,13 @@ function tblMerge(){ var o={};
    실측(체비셰프 반경별 최고점): 반경 0.9 까지는 윗면이 거의 그대로고(낙차 rock-flat
    0.03 · rock-flat-grass 0.06 유닛) 마지막 10% 에서만 확 떨어진다 — 0.90 으로 자른다. */
 var PIECE_FLAT=tblMerge(
-  kitTbl('station',  {'floor':0.3, 'floor-detail':0.3, 'floor-panel':0.3}),
-  kitTbl('survival', {'rock-flat':[0.195,0.90], 'rock-flat-grass':[0.226,0.90]}));
+  kitTbl('station',  {'floor':0.3, 'floor-detail':0.3, 'floor-panel':0.3}));
+/* '윗면만' 충돌시키는 조각. 바위 슬래브는 원반이라 테두리가 급경사인데, 그걸 그대로
+   넣으면 겹쳐 깔린 슬래브의 테두리마다 벽이 서서 데크를 가로지를 수가 없다
+   (실측: 15번 중 13~15번 멈춤). 그렇다고 통짜 납작 상자로 두면 보이는 모양과 아예
+   달라진다. 그래서 걸을 수 있는 기울기(SLOPE_MAX)의 면만 남긴다 —
+   보이는 윗면을 그대로 밟게 되고, 테두리 벽은 사라진다. */
+var PIECE_TOPONLY=tblMerge(kitTbl('survival', {'rock-flat':1, 'rock-flat-grass':1}));
 /* 통짜 상자·줄기 기둥 같은 '단순화' override 는 없앴다. 격자를 8 → 16 으로 올리니
    기둥 방식만으로도 몸이 안 샌다(실측: 울타리·문 달린 울타리·간판·철판·나무 모두
    최대 틈 0~0.19m 로 몸 지름 0.7m 보다 좁다). 보이는 모양과 부딪히는 모양이 같은 게
@@ -1013,13 +1018,21 @@ function buildTriSoup(){
     var M=pieceBasis(pc), off=PIECE_OFF[pc.t], ox=off?off[0]:0, oz=off?off[1]:0;
     var I=m.idx, Q=m.pos, bx=pc.i*U, by=pc.y*U, bz=pc.j*U;
     var m0=M[0],m1=M[1],m2=M[2],m3=M[3],m4=M[4],m5=M[5],m6=M[6],m7=M[7],m8=M[8];
-    for(var k=0;k<I.length;k++){
-      var v=I[k]*3, px=Q[v]+ox, py=Q[v+1], pz=Q[v+2]+oz;
-      arr[w++]=bx+(m0*px+m3*py+m6*pz)*U;
-      arr[w++]=by+(m1*px+m4*py+m7*pz)*U;
-      arr[w++]=bz+(m2*px+m5*py+m8*pz)*U;
+    var topOnly=(PIECE_TOPONLY[pc.t]!=null);
+    for(var k=0;k<I.length;k+=3){
+      var t0=w;
+      for(var e=0;e<3;e++){
+        var v=I[k+e]*3, px=Q[v]+ox, py=Q[v+1], pz=Q[v+2]+oz;
+        arr[w++]=bx+(m0*px+m3*py+m6*pz)*U;
+        arr[w++]=by+(m1*px+m4*py+m7*pz)*U;
+        arr[w++]=bz+(m2*px+m5*py+m8*pz)*U;
+      }
+      // 윗면만 넣는 조각이면 걸을 수 없는 기울기의 면은 도로 뺀다(월드 기준으로 잰다)
+      if(topOnly && triNy(arr, t0) < SLOPE_MAX) w=t0;
     }
   }
+  if(w<arr.length) arr=arr.subarray(0,w);      // 윗면만 넣느라 뺀 만큼 잘라 낸다
+  if(!w) return;
   var n=arr.length/9;
   /* 삼각형마다 AABB 를 미리 재 둔다 — 격자에서 꺼낸 뒤 분리축 13개를 다 돌리기 전에
      이걸로 대부분을 걸러 낸다(실측: 분리축까지 가는 게 1/10 로 줄었다). */
