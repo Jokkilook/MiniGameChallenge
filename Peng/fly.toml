@@ -1,0 +1,24 @@
+# fly.io 배포 설정 — 로컬 플레이에는 필요 없습니다.
+# 앱 이름은 fly 전체에서 고유해야 합니다. `fly launch` 가 물어보면 거기서 정하고,
+# 여기 app 값도 같게 맞춰 주세요.
+app = "peng-vs"
+primary_region = "nrt"        # 도쿄 — fly 에 서울 리전은 없습니다. 한국에서 30~40ms
+
+[build]
+# Dockerfile 을 그대로 씁니다(빌드팩 감지 없음)
+
+[http_service]
+  internal_port = 8080        # Dockerfile 의 ENV PORT 와 같아야 합니다
+  force_https = true          # index.html:3133 이 https 면 wss 로 붙으므로 안전합니다
+
+  # 심사 기간에는 콜드스타트를 없애는 게 목적이므로 항상 켜 둡니다.
+  # 이 조합이 곧 과금 조건입니다 — 심사가 끝나면 아래 '정리' 절대 잊지 마세요.
+  auto_stop_machines = false
+  auto_start_machines = true
+  min_machines_running = 1
+
+# 방 상태가 서버 메모리에 있으므로(server.js 의 방 테이블) 인스턴스는 1개여야 합니다.
+# 2개로 늘리면 두 사람이 다른 인스턴스에 붙어 같은 방에서 못 만납니다.
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "256mb"
