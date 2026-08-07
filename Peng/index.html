@@ -803,7 +803,17 @@ function dropRing(r){
       var pp=LEVEL._pieces[q];
       if(pp.order===r && !pp._gone){ pp._gone=true; any=true; }
     }
-    if(any){ buildStation(LEVEL._pieces); buildTriSoup(); }
+    if(any){
+      /* VBO 는 고리 오름차순으로 쌓여 있다(buildStation) — 링 분리는 그리는 정점 수를
+         줄이는 것으로 끝난다. 예전처럼 통째로 다시 만들면(수십 ms) 무너지는 순간마다
+         프레임이 떨어져 화면이 튄다. 충돌용 삼각형 그물은 여전히 다시 짜야 한다. */
+      if(STATION.ends){
+        var cnt=0;
+        for(var e=0;e<STATION.ends.length;e++) if(STATION.ends[e].order<r) cnt=STATION.ends[e].count;
+        STATION.count=cnt;
+      } else buildStation(LEVEL._pieces);
+      buildTriSoup();
+    }
   }
   for(var i=0;i<LEVEL.boxes.length;i++){ var b=LEVEL.boxes[i];
     if(b.deco || b._ring!==r || b._fall) continue;
@@ -2389,8 +2399,18 @@ function pieceColliders(pc, m, U, extra){
 function buildStation(pieces){
   var P=stationParts(), S=STATION.unit, arr=[];
   var L=STATION_LIGHT, ll=Math.hypot(L[0],L[1],L[2])||1;
-  for(var p=0;p<pieces.length;p++){
-    var pc=pieces[p]; if(pc._gone) continue;
+  /* 살아 있는 조각을 '고리(order) 오름차순'으로 쌓고 고리별 끝 위치를 기록한다.
+     붕괴는 항상 바깥 고리(큰 order)부터이므로, 링이 떨어질 때 VBO 를 다시 만들 필요
+     없이 그리는 정점 수만 줄이면 된다(dropRing 참고). 예전엔 링마다 이 함수를 통째로
+     다시 돌려서(워밍업 후에도 5~20ms, GC 가 겹치면 60ms) 무너지는 순간마다 프레임이
+     몇 장씩 떨어졌다 — 경기 중 화면이 주기적으로 튀는 원인이었다.
+     쌓는 순서를 바꿔도 되는 이유: z버퍼가 있어 그리기 순서는 결과에 영향이 없다. */
+  var live=[];
+  for(var p=0;p<pieces.length;p++){ if(!pieces[p]._gone) live.push(pieces[p]); }
+  live.sort(function(a,b){ return (a.order||0)-(b.order||0); });
+  var ends=[];
+  for(p=0;p<live.length;p++){
+    var pc=live[p];
     var m=P[pc.t]; if(!m) continue;
     var ox=pc.i*S, oy=pc.y*S, oz=pc.j*S;
     var off=PIECE_OFF[pc.t], offx=off?off[0]:0, offz=off?off[1]:0;
@@ -2414,7 +2434,11 @@ function buildStation(pieces){
       arr.push(ox+PT[0]*S, oy+PT[1]*S, oz+PT[2]*S,
                m.col[v*3]*sh, m.col[v*3+1]*sh, m.col[v*3+2]*sh);
     }
+    // 고리 경계 — 다음 조각이 다른 고리면 여기까지가 이 고리의 끝이다
+    if(p===live.length-1 || (live[p+1].order||0)!==(pc.order||0))
+      ends.push({order:(pc.order||0), count:arr.length/6});
   }
+  STATION.ends=ends;
   if(!GLREADY){ STATION.pending=arr; return; }
   if(!STATION.buf) STATION.buf=gl.createBuffer();
   gl.bindBuffer(gl.ARRAY_BUFFER, STATION.buf);
@@ -2577,8 +2601,16 @@ function render(dt){
   var pnow=performance.now();
   for(var pid in MP.peers){ var pe=MP.peers[pid], ps=peerSample(pe, pnow); if(!ps)continue;
     emitCharacter(ps.x, ps.y, ps.z, ps.yaw, ps.pitch, ps.rc, (pe.col||PEER_COL)); }
-  if(sim.tp){ emitCharacter(sim.p.x, sim.p.y, sim.p.z, sim.yaw, sim.pitch, sim.recoil||0, PLAYER_COL); }
-  else { // 1인칭: 총만
+  /* 카메라가 지형에 막혀 몸 바로 뒤(1m 안)까지 당겨졌으면 내 캐릭터를 그리지 않는다.
+     그대로 그리면 주황 몸통이 화면을 가득 채운다 — 나무·바위가 많은 판에서 달리거나
+     아래를 볼 때 화면이 갑자기 황토색으로 '변하는' 현상의 정체가 이것이었다.
+     조준 당김은 CAM_DIST-AIM_PULL=1.3m 까지라 이 문턱(1.05m)에는 안 걸린다. */
+  if(sim.tp){
+    // 가려지는 동안은 총(emitCharacter 안에서 그려짐)까지 통째로 생략한다 —
+    // 캐릭터만 빼면 총이 허공에 혼자 떠 있게 된다.
+    if(!(CAM_LEN!=null && CAM_LEN<1.05))
+      emitCharacter(sim.p.x, sim.p.y, sim.p.z, sim.yaw, sim.pitch, sim.recoil||0, PLAYER_COL);
+  } else { // 1인칭: 총만
     var eye={x:sim.p.x,y:sim.p.y+EYE,z:sim.p.z}, kick=(sim.recoil||0)*(sim.recoil||0);
     emitGun(eye, AIMR, AIMU, AIMF, kick, null);
   }
