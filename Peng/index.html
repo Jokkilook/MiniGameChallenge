@@ -2070,10 +2070,13 @@ function botStep(dt, now){
   for(var i=0;i<BOTS.length;i++){
     var bot=BOTS[i], s=bot.sim;
     stepSim(s, Math.min(0.05,dt), botThink(bot, dt));
-    // 떨어졌으면 방장이 대신 신고한다
+    /* 떨어졌으면 방장이 대신 신고한다. 점수는 여기서 세지 않는다 — 서버가 되돌려
+       주는 fell 한 줄로만 센다(server.js 의 fell 주석). 예전엔 여기서도 한 번 세서
+       봇을 떨어뜨린 점수가 방장 화면에서만 2배가 됐고, 그래서 결과창도 방장에게만
+       떴다(실측: 봇 낙하 5회에 방장 10점 · 게스트 5점). */
     if(GAMEMODE==='versus' && (s.fell||0)>(bot.lastFell||0)){
-      bot.lastFell=s.fell; var bby=creditOf(s);
-      mpSend({t:'fell', bot:bot.id, by:bby}); scoreFall(bot.id, bby);
+      bot.lastFell=s.fell;
+      mpSend({t:'fell', bot:bot.id, by:creditOf(s)});
     }
     // 봇 상태를 '피어'로 넣어 두면 렌더·충돌·근접신관이 전부 그대로 동작한다
     var pe=MP.peers[bot.id] || (MP.peers[bot.id]={buf:[]});
@@ -2421,9 +2424,19 @@ function usePulse(s){
      굴러가는 몸(봇·허수아비)에게는 통째로 안 먹혔다.
      쏜 사람은 제외된다(applyLocalBlast 가 shooter 를 건너뛴다) — 발밑에서 터지는
      거리 0 이라 최대 힘으로 수직 발사돼 버린다. */
-  applyLocalBlast(s, c.x, c.y, c.z, false, {pf:IT_PULSE_F, pr:IT_PULSE_R, by:simOwner(s)});
-  if(typeof mpSend==='function') mpSend({t:'bl', x:c.x, y:c.y, z:c.z,
-    ox:c.x, oy:c.y, oz:c.z, pf:IT_PULSE_F, pr:IT_PULSE_R});
+  var opt={pf:IT_PULSE_F, pr:IT_PULSE_R, by:simOwner(s)};
+  applyLocalBlast(s, c.x, c.y, c.z, false, opt);
+  /* 원격에게도 총과 같은 길로 나간다.
+     · 넉백을 쏜 쪽에서 계산해 실어 보낸다 — 예전엔 hit 없이 폭발 지점만 보내서,
+       받는 쪽이 0.5초 늦은 제 위치로 다시 판정했다(총이 그래서 안 먹던 그 경로다).
+     · 봇이 쓴 펄스는 BOT_SHOT 을 거쳐 봇 id 로 나간다 — 예전엔 여기서 곧바로
+       보내는 바람에 서버가 보낸 사람(방장) id 를 찍었고, 봇이 밀어낸 것이
+       방장의 킬로 기록됐다. */
+  if(typeof mpSend==='function'){
+    var _pl={t:'bl', x:c.x, y:c.y, z:c.z, ox:c.x, oy:c.y, oz:c.z,
+      pf:IT_PULSE_F, pr:IT_PULSE_R, hit:peerHits(c, opt)};
+    if(FIRING_BOT) BOT_SHOT=_pl; else mpSend(_pl);
+  }
   return true;
 }
 /* 폭발을 '이 화면에서 돌아가는 다른 시뮬'에 먹인다 — 방장 자신과 봇들.
@@ -2480,27 +2493,39 @@ function doFire(s){
      INTERP_MS(110ms) + 맞는 쪽에서 탄을 다시 날리는 비행시간(20m면 320ms).
      합쳐 0.5~0.7초, 달리는 사람 기준 2.5~3.7m 어긋난다. 반경이 4.2m 이고 힘이
      선형으로 줄어드니 대부분 스치거나 아예 빗나갔다 — "펑건이 안 먹는다"의 정체다.
-     쏜 쪽 화면에서 맞았으면 맞은 것으로 한다(FPS 의 통상 규칙). 받는 쪽은 이 값을
-     즉시 적용하고, 탄환은 연출로만 날아간다. */
-  var _hits=null;
-  if(MP.connected){
-    var _now=performance.now(), _R=BLAST_R*(pw?IT_POWER_R:1), _F=BLAST_F*(pw?IT_POWER_F:1);
-    for(var _pid in MP.peers){
-      var _ps=peerSample(MP.peers[_pid], _now); if(!_ps) continue;
-      var _hx=_ps.x-center.x, _hy=(_ps.y+PH_HY)-center.y, _hz=_ps.z-center.z;
-      var _dd=Math.hypot(_hx,_hy,_hz); if(_dd>=_R) continue;
-      var _ff=_F*(1-_dd/_R), _sg=rev?-1:1;
-      if(_dd<0.001){ _hx=0; _hy=1; _hz=0; _dd=1; }
-      (_hits||(_hits=[])).push({ i:(_pid|0),
-        x:+(_sg*_hx/_dd*_ff).toFixed(2), y:+(_sg*_hy/_dd*_ff).toFixed(2), z:+(_sg*_hz/_dd*_ff).toFixed(2) });
-    }
-  }
+     쏜 쪽 화면에서 맞았으면 맞은 것으로 하고, 빗나갔으면 빗나간 것으로 한다
+     (FPS 의 통상 규칙). 받는 쪽은 이 값을 즉시 적용하고, 탄환은 연출로만 날아간다.
+
+     리프트 샷(협동)만 예외다. 순수 상승은 방향이 아니라 규칙이라 임펄스 하나로
+     실어 보낼 수 없다 — hit 을 안 실으면 받는 쪽이 lf 를 보고 제 몸에 적용한다. */
+  var _hits = lift ? null : peerHits(center, {rev:rev, pw:pw, by:byId});
   if(typeof mpSend==='function'){
     var _bl={t:'bl', x:center.x, y:center.y, z:center.z,
       ox:o.x, oy:o.y, oz:o.z, lf:lift?1:0, rv:rev?1:0, pw:pw?1:0, hit:_hits};
     if(FIRING_BOT) BOT_SHOT=_bl; else mpSend(_bl);   // 봇 사격은 봇 id 로 따로 나간다
   }
   return true;
+}
+/* 원격 피어에게 실어 보낼 넉백 목록 — '쏜 쪽 화면(보간된 위치)' 기준으로 여기서 정한다.
+   반경·세기는 applyBlast 와 같은 함수(kbRadius/kbForce)로 낸다. 그래야 같은 거리의
+   봇(로컬 applyBlast)과 사람(이 목록)이 똑같이 밀린다.
+   빈 배열도 뜻이 있다 — "쏜 쪽이 봤고, 아무도 안 맞았다". 그래서 null 을 안 돌려준다.
+   opt.by 는 쏜 사람이다. 자기 자신은 뺀다 — 봇은 제 상태를 MP.peers 에 실어 두므로
+   빼지 않으면 제가 쏜 폭발에 제 몫의 넉백을 실어 보낸다. */
+function peerHits(c, opt){
+  if(!MP.connected) return null;
+  var R=kbRadius(opt), F=kbForce(opt), sg=opt.rev?-1:1;
+  var now=performance.now(), out=[];
+  for(var pid in MP.peers){
+    if(opt.by!=null && (pid|0)===opt.by) continue;
+    var ps=peerSample(MP.peers[pid], now); if(!ps) continue;
+    var hx=ps.x-c.x, hy=(ps.y+PH_HY)-c.y, hz=ps.z-c.z;
+    var d=Math.hypot(hx,hy,hz); if(d>=R) continue;
+    var f=F*(1-d/R);
+    if(d<0.001){ hx=0; hy=1; hz=0; d=1; }
+    out.push({ i:(pid|0), x:+(sg*hx/d*f).toFixed(2), y:+(sg*hy/d*f).toFixed(2), z:+(sg*hz/d*f).toFixed(2) });
+  }
+  return out;
 }
 // 팀원이 쏜 탄환: 상대 총구에서 폭발 지점까지 날아가는 걸 보여주고, 도착 시 나에게 넉백+연출
 /* 쏜 쪽이 계산해 보낸 넉백을 그대로 받는다. 감쇠·끌어당김·과충전은 이미 반영돼
@@ -2541,17 +2566,24 @@ function spawnRemoteShot(s, m, noBlast){
    맞은 사람만 뜨도록 "내 몸이 폭발점에서 FUSE_R 안"일 때만 적용한다(3인 이상 방 대비). */
 /* opt = 탄에 실려 온 폭발의 성질. rev=끌어당김, pw=과충전, pf/pr=배율 직접 지정(펄스).
    받는 쪽 몸에 걸린 아이템(깃털·닻)은 여기서 곱해진다 — 그건 각자 로컬 값이다. */
+/* 폭발의 반경·세기. 반경은 셋으로 갈린다.
+     pr 이 실려 있다  — 펄스처럼 반경을 직접 정한 폭발이다. 그 값만 쓴다.
+     남을 때린다      — KB_R_OTHER 만큼 넓다(조준을 관대하게 하려는 것)
+     자기 폭발        — 예전 그대로. 로켓점프의 높이·거리가 곧 맵 설계라 건드리면 안 된다
+   pr 을 따로 빼 두지 않으면 펄스 반경에 KB_R_OTHER 가 겹쳐 붙어 6.7m 짜리가
+   9m 가 된다 — 떼어내라고 있는 물건이 판 절반을 덮게 된다.
+   세기도 같은 규칙이다 — pf 를 실은 폭발(펄스)은 그 값만, 남을 때리면 KB_F_OTHER.
+
+   함수로 떼어 둔 이유: 이 규칙을 쓰는 곳이 둘이다. 몸에 직접 먹이는 applyBlast 와,
+   원격에게 실어 보낼 넉백을 미리 계산하는 peerHits. 예전엔 peerHits 쪽에만 이
+   두 배수가 빠져 있었고(반경 4.2m·세기 13.5 그대로), 그래서 같은 거리에서
+   봇은 밀리는데 사람은 안 밀렸다 — 실측: 5.9m 에서 사람은 아예 판정 없음(봇은 밀림),
+   3m 에서 3.86 대 6.13. "잘 쐈는데 안 날아간다"의 정체다. 한 곳에서만 정한다. */
+function kbRadius(opt){ return BLAST_R*(opt.pr || (opt.by!=null?KB_R_OTHER:1))*(opt.pw?IT_POWER_R:1); }
+function kbForce (opt){ return BLAST_F*(opt.pf || (opt.by!=null?KB_F_OTHER:1))*(opt.pw?IT_POWER_F:1); }
 function applyBlast(s, cx, cy, cz, lift, opt){
   opt=opt||{};
-  /* 반경은 셋으로 갈린다.
-       pr 이 실려 있다  — 펄스처럼 반경을 직접 정한 폭발이다. 그 값만 쓴다.
-       남을 때린다      — KB_R_OTHER 만큼 넓다(조준을 관대하게 하려는 것)
-       자기 폭발        — 예전 그대로. 로켓점프의 높이·거리가 곧 맵 설계라 건드리면 안 된다
-     pr 을 따로 빼 두지 않으면 펄스 반경에 KB_R_OTHER 가 겹쳐 붙어 6.7m 짜리가
-     9m 가 된다 — 떼어내라고 있는 물건이 판 절반을 덮게 된다. */
-  var R=BLAST_R*(opt.pr || (opt.by!=null?KB_R_OTHER:1))*(opt.pw?IT_POWER_R:1);
-  // 세기도 반경과 같은 규칙이다 — pf 를 실은 폭발(펄스)은 그 값만, 남을 때리면 KB_F_OTHER
-  var F=BLAST_F*(opt.pf || (opt.by!=null?KB_F_OTHER:1))*(opt.pw?IT_POWER_F:1);
+  var R=kbRadius(opt), F=kbForce(opt);
   var take=1;
   if(s.items){ if(s.items.feather) take*=IT_FEATHER_KB; if(s.items.anchor) take*=IT_ANCHOR_KB; }
   var sgn=opt.rev?-1:1;
@@ -3933,8 +3965,12 @@ function scoreFall(fallerId, byId){
   if(best!==null && mode==='play'){
     // 예전엔 협동 클리어 화면(#win)을 그대로 썼다 — 상대를 절벽으로 밀어 이겨 놓고
     // "CLEAR / 도착! 🎉" 가 떴다. 경쟁에는 경쟁의 결과 화면이 있어야 한다.
-    renderVsWin(best);
-    showScreen('vsWin'); sndWin(); if(locked)document.exitPointerLock();
+    showVsWin(best);
+    /* 끝났다는 것을 방 전원에게 알린다 — 알리는 사람은 '먼저 알아챈 사람'이고
+       방장이 아니다. 점수는 fell 한 줄로만 세니 보통은 전원이 같은 순간에 스스로
+       판정하지만, 목표 점수는 인원에 비례하므로(vsWin) 누가 나가는 순간에는
+       어긋날 자리가 남는다. 결과창은 어떤 경우에도 전원이 봐야 한다. */
+    if(MP.connected) mpSend({t:'over', best:best});
     return;                                    // 경기가 끝났으면 다음 라운드는 없다
   }
 }
@@ -4128,8 +4164,11 @@ function mpHandle(m){
   }
   // 호스트가 고른 게임 모드
   else if(m.t==='gm'){ if(m.mode==='coop'||m.mode==='versus'){ GAMEMODE=m.mode; syncModePicker(); } }
-  // 누군가 아레나 밖으로 떨어졌다
+  // 누군가 아레나 밖으로 떨어졌다 — 내 낙하도 여기로 되돌아온다(점수의 단일 출처)
   else if(m.t==='fell'){ scoreFall(m.id, (m.by!=null?m.by:null)); }
+  /* 경기가 끝났다고 누군가 알려 왔다. 이미 결과창이면 아무 일도 안 한다 —
+     되받아 다시 알리지도 않는다(그러면 둘이 서로를 끝없이 끌어당긴다). */
+  else if(m.t==='over'){ if(mode==='play' && m.best!=null) showVsWin(m.best|0); }
   // 아이템 패드 — 서버가 '누가 먼저 밟았나'를 판정해 되돌려 준다(본인 포함)
   else if(m.t==='pad'){ grantItem(m.id, m.pad, m.item); }
   // 패드에 새로 채워진 내용물 — 전원이 같은 표식을 보게 서버가 정한다
@@ -4144,14 +4183,21 @@ function mpHandle(m){
     if(pe.buf.length>16)pe.buf.shift(); }
   else if(m.t==='bl'){ if(m.id===MP.id)return;
     /* 실려 온 넉백이 내 것이면 지금 바로 적용한다 — 탄이 날아오길 기다리면
-       그만큼 또 어긋난다. 탄환은 연출로만 날린다(hitMe=false). */
+       그만큼 또 어긋난다. 탄환은 연출로만 날린다(hitMe=false).
+
+       hit 배열이 실려 있으면 그것이 판정 전부다. 이름이 없으면 안 맞은 것이고,
+       빈 배열이면 아무도 안 맞은 것이다 — 받는 쪽이 제 위치로 다시 판정하지 않는다.
+       그 재판정이 바로 doFire 주석의 0.5~0.7초 어긋남이라, 남겨 두면 쏜 쪽 화면에서
+       분명히 빗나간 탄이 한참 뒤에 사람을 밀어낸다. hit 이 아예 없는 메시지는
+       리프트 샷(협동)뿐이고, 그건 방향이 아니라 규칙이라 받는 쪽이 적용해야 한다. */
+    var _judged=!!m.hit && typeof m.hit.length==='number';
     var _mine=findHit(m, MP.id);
-    if(sim&&!sim.win){ spawnRemoteShot(sim, m, !!_mine);
+    if(sim&&!sim.win){ spawnRemoteShot(sim, m, _judged || !!_mine);
       if(_mine) applyRemoteImpulse(sim, _mine, m.id, !!m.rv); }
     // 방장이 돌리는 봇들도 남의 폭발에 밀려야 한다(봇 자신이 쏜 건 제외)
     for(var _b=0;_b<BOTS.length;_b++){ if(BOTS[_b].id===m.id) continue;
       var _bh=findHit(m, BOTS[_b].id);
-      spawnRemoteShot(BOTS[_b].sim, m, !!_bh);
+      spawnRemoteShot(BOTS[_b].sim, m, _judged || !!_bh);
       if(_bh) applyRemoteImpulse(BOTS[_b].sim, _bh, m.id, !!m.rv); } }
   else if(m.t==='ch'){ pushChat(m.name, m.text, m.id===MP.id); }
   else if(m.t==='left'){ delete MP.peers[m.id]; }
@@ -5253,8 +5299,10 @@ function loop(now){ if(!last)last=now; var dt=Math.max(0, Math.min(0.05,(now-las
     if(vsLive && ROUND.phase==='live' && (sim.fell||0)>lastFell){
       lastFell=sim.fell;
       var _by=creditOf(sim);
+      /* 점수의 출처는 하나다 — 연결돼 있으면 서버가 되돌려 준 fell, 아니면 로컬.
+         둘 다 하면 내 화면에서만 2배가 된다(위 botStep 주석의 그 일이다). */
       if(MP.connected) mpSend({t:'fell', by:_by});
-      scoreFall(MP.id!=null?MP.id:-1, _by);
+      else scoreFall(MP.id!=null?MP.id:-1, _by);
     }
     // HUD — 모드·상황마다 보여야 하는 게 다르다(아래 renderHud 참고)
     renderHud(sim, vsLive);
@@ -5508,6 +5556,12 @@ function startTutorial(){
 }
 
 /* ---------- 결과 화면 ---------- */
+/* 결과창을 띄우는 길은 하나뿐이어야 한다 — 내가 판정했을 때와 남이 알려 줬을 때가
+   같은 곳을 지나야, 한쪽에만 소리가 빠지거나 마우스가 안 풀리는 일이 안 생긴다. */
+function showVsWin(bestId){
+  renderVsWin(bestId);
+  showScreen('vsWin'); sndWin(); if(locked)document.exitPointerLock();
+}
 function renderVsWin(bestId){
   var win = (bestId===MP.id);
   /* 제목은 이름이 아니라 WIN/LOSE 다 — 이겼는지부터 알아야 하고, 그건 이름을 읽는

@@ -400,13 +400,31 @@ server.on('upgrade', function(req, socket){
       sendRoster(room);
       return;
     }
-    if(m.t === 'fell'){         // 아레나 밖으로 떨어짐 — 떨어진 본인이 알린다
+    /* 아레나 밖으로 떨어짐 — 떨어진 본인이(봇은 방장이 대신) 알린다.
+       보낸 사람에게도 그대로 되돌려 준다. 점수는 전원이 '서버가 되돌려 준 이 한 줄'
+       로만 세야 하기 때문이다 — 채팅·아이템 패드와 같은 규칙이다.
+       예전에는 봇의 낙하만 되돌려 주면서 방장 클라이언트가 로컬로도 한 번 셌다.
+       그래서 봇을 떨어뜨린 점수가 방장 화면에서만 2배로 쌓였고, 방장만 먼저 목표
+       점수에 닿아 혼자 결과창을 봤다(실측: 봇 낙하 1회에 방장 2점·게스트 1점,
+       5회 뒤 10 대 5 — 게스트는 이기고 있는데도 결과창이 안 떴다). */
+    if(m.t === 'fell'){
       var who = id;
       if(m.bot != null){ var mb = ownsBot(room, id, m.bot|0); if(!mb) return; who = mb.id; }
       var by = (typeof m.by === 'number' && isFinite(m.by)) ? m.by : null;
-      broadcast(room, id, JSON.stringify({ t:'fell', id:who, by:by }));
-      // 봇의 낙하는 방장 화면에서도 점수에 반영돼야 한다(자기 신고는 안 되돌아온다)
-      if(m.bot != null) send(socket, JSON.stringify({ t:'fell', id:who, by:by }));
+      var fline = JSON.stringify({ t:'fell', id:who, by:by });
+      broadcast(room, id, fline); send(socket, fline);
+      return;
+    }
+    /* 경기 종료 — 목표 점수에 먼저 '닿은 것을 알아챈' 사람이 알린다. 방장이 아니다.
+       점수는 위 fell 하나로만 세므로 보통은 전원이 같은 순간에 스스로 판정한다.
+       그래도 한 줄을 두는 이유는 명단이 바뀌는 순간이 남기 때문이다 — 누가 나가면
+       목표 점수(5 × 인원-1)가 내려가고, 그 로스터를 먼저 받은 쪽만 경기를 끝낸다.
+       결과창은 어떤 경우에도 전원이 봐야 한다.
+       (아무나 경기를 끝낼 수 있다는 뜻이기도 하다 — 아이템 제안과 같은 이유로,
+        친구끼리 하는 프로토타입이라 막지 않는다.) */
+    if(m.t === 'over'){
+      if(typeof m.best !== 'number' || !isFinite(m.best)) return;
+      broadcast(room, id, JSON.stringify({ t:'over', best:m.best }));
       return;
     }
     /* st·bl 은 원래 보낸 사람 id 로 덮어쓴다(남을 사칭하지 못하게). 봇은 예외로,
