@@ -34,9 +34,12 @@ itch.io·GitHub Pages 같은 곳에 `index.html` 만 올리면 **심사위원은
 | `fly.toml` | 도쿄 리전, `internal_port = 8080`, 상시 가동, 인스턴스 1개 고정 |
 | `.dockerignore` | `.git`·`.claude` 만 제외. `Mesh/`·`Image/`·`levels/`·`audio/` 는 서버가 서빙하므로 반드시 포함 |
 
-> `audio/bgm/*.mp3` 는 합쳐 9.6MB 라 이미지에서 빼고 싶어지는데, 빼면 **배포본만 조용히
+> `audio/bgm/*.mp3` 는 합쳐 12MB 라 이미지에서 빼고 싶어지는데, 빼면 **배포본만 조용히
 > 무음이 됩니다** — 곡이 없으면 게임은 콘솔에 경고 한 줄만 남기고 그대로 돌기 때문에,
 > 소리를 켜 보기 전까지는 드러나지 않습니다. 아래 점검 목록에 mp3 확인이 들어 있는 이유입니다.
+> 곡은 여섯입니다: 맵 곡 넷(`space`·`factory`·`lab`·`outdoor`)에 더해 `title`(첫 화면과
+> 메뉴)과 `waiting`(대기방)이 있습니다. 앞의 둘은 심사위원이 **가장 먼저 듣는 소리**라,
+> 빠지면 첫인상이 통째로 조용해집니다.
 
 `server.js` 는 `process.env.PORT` 를 읽고(기본 8090) `0.0.0.0` 에 바인딩하므로
 **게임 코드는 한 줄도 고치지 않았습니다.**
@@ -94,7 +97,8 @@ curl -s -X POST https://pung-vs.fly.dev/__bake -d '{}' -w " [%{http_code}]\n"   
 curl -s https://pung-vs.fly.dev/__pung                                             # {"pung":1}
 
 # 브금 — 이미지에 실렸는지. 빠져도 게임은 도므로 여기서만 드러납니다
-for f in space factory lab outdoor; do
+# title·waiting 은 심사위원이 제일 먼저 듣는 소리라 특히 빠지면 안 됩니다
+for f in title waiting space factory lab outdoor; do
   curl -s -o /dev/null -w "%{http_code} %{content_type} %{size_download}  $f\n" \
     https://pung-vs.fly.dev/audio/bgm/$f.mp3      # 200 audio/mpeg, 크기가 0이 아닐 것
 done
