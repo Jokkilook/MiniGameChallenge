@@ -80,8 +80,13 @@
   #items .it kbd{font-family:var(--mono);font-size:10.5px;font-weight:700;
     border:1px solid var(--line2);padding:1px 5px;color:#9dabc4}
   #items .it i{position:absolute;left:0;bottom:0;height:2px;background:var(--c)}
-  #ammo{position:absolute;right:18px;bottom:18px;display:flex;gap:5px;align-items:flex-end}
-  #ammo .p{position:relative;width:7px;height:28px;background:transparent;border:1px solid var(--line2);overflow:hidden}
+  /* 탄창은 조준선 바로 아래다. 오른쪽 아래 구석에 7px 짜리로 세워 뒀었는데, 이건
+     "한 발 남았나"를 쏘기 직전에 알아야 하는 값이라 눈을 화면 끝으로 보내면 늦는다.
+     조준선 밑이면 표적을 보는 그대로 곁눈으로 읽힌다. 커진 만큼 개수도 한눈에 세인다. */
+  #ammo{position:absolute;left:50%;top:calc(50% + 26px);transform:translateX(-50%);
+    display:flex;gap:7px;align-items:flex-end}
+  #ammo .p{position:relative;width:13px;height:34px;background:rgba(8,11,17,.5);
+    border:1px solid var(--line2);overflow:hidden}
   #ammo .p.on{background:var(--acc);border-color:var(--acc)}
   /* 재충전 중인 칸: 아래에서 위로 차오르는 막대 */
   #ammo .p i{position:absolute;left:0;right:0;bottom:0;height:0;background:var(--acc);opacity:.55;display:block}
@@ -1710,11 +1715,27 @@ function aimRay(s){
    서버는 가상 참가자 슬롯만 잡아 준다. 게스트 입장에서는 사람과 구별되지 않는다.
    봇도 사람과 똑같이 stepSim 을 돌린다 — 별도 물리를 만들면 반드시 어긋난다. */
 var BOTS=[];                 // [{id, name, sim, ...}] — 방장만 채운다
+/* AI 의 목표는 '이기는 것' 이 아니라 '사람처럼 두는 것' 이다. 두 방향 모두에서 벗어나면
+   안 된다 — 사기적으로 잘하면 상대할 마음이 사라지고, 멍청하면 있으나 마나다.
+   그래서 실력은 사람의 한계(돌아보는 속도·조준이 잡히는 시간·조준 오차)로 묶고,
+   판단은 사람이 당연히 하는 것(가장자리 쪽으로 밀기·빈손이면 물러나기·등 뒤가
+   허공이면 비키기)까지 올린다. */
 var BOT_FIRE_CD=0.55;        // 사격 간격(사람보다 느리게 — 완벽하면 재미없다)
 var BOT_AIM_ERR=0.10;        // 조준 오차(rad)
 var BOT_RANGE=13;            // 이 거리 안이면 쏜다
 var BOT_EDGE=2.2;            // 이만큼 앞에 바닥이 없으면 물러난다
 var BOT_MIN_CLEAR=2.4;       // 이보다 가까운 게 막고 있으면 사격을 참는다
+/* 돌아보는 속도(rad/초). 예전엔 매 프레임 표적 쪽으로 즉시 스냅했다 — 사람이 낼 수
+   없는 속도라 기계로 보이고, 뒤를 잡아도 소용이 없어 접근이라는 선택지가 죽는다.
+   4.5 면 90도 도는 데 0.35초, 사람이 마우스를 휙 돌리는 정도다. */
+var BOT_TURN=4.5;
+/* 조준이 이만큼 안쪽으로 들어와야 쏜다(rad). 없으면 돌면서 쏴 허공에 터뜨린다 —
+   '많이 쏘는데 하나도 안 맞는' 그 그림이 가장 멍청해 보인다. */
+var BOT_AIM_OK=0.14;
+/* 상대의 '판 안쪽' 발밑을 노릴 때 안으로 당기는 거리(m). 폭발은 중심에서 바깥으로
+   밀어내므로, 안쪽을 때려야 상대가 가장자리로 간다. 이 게임의 실력이 사실상 이것이다. */
+var BOT_PUSH=1.2;
+var BOT_BACK=3.2;            // 등 뒤 이만큼이 허공이면 밀려서 죽는 자리다 — 비킨다
 /* 발밑에 설 곳이 있는지 — 봇이 스스로 떨어지지 않게 하는 가장 중요한 판정.
    이게 없으면 봇은 상대를 쫓다가 그대로 낭떠러지로 걸어 들어간다. */
 function groundAt(x, z, y){
@@ -1750,6 +1771,8 @@ function botTarget(bot){
     if(d2<bd){ bd=d2; best={x:sim.p.x, y:sim.p.y, z:sim.p.z, d:d2}; } }
   return best;
 }
+// 두 각의 최단 차이(-π..π)
+function angDiff(a,b){ var d=a-b; while(d>Math.PI)d-=6.283185307; while(d<-Math.PI)d+=6.283185307; return d; }
 function botThink(bot, dt){
   FIRING_BOT=true;
   var s=bot.sim, inp={mf:false,mb:false,ml:false,mr:false,jump:false};
@@ -1757,7 +1780,33 @@ function botThink(bot, dt){
   var tgt=botTarget(bot);
   var gx=tgt?tgt.x:0, gz=tgt?tgt.z:0;
   var dx=gx-s.p.x, dz=gz-s.p.z, dist=Math.hypot(dx,dz)||1;
-  s.yaw=Math.atan2(dx,dz);                       // 시선은 항상 표적
+
+  /* 겨눌 지점 — 상대 발밑이 아니라 '상대의 판 안쪽 발밑' 이다.
+     폭발은 터진 자리에서 바깥으로 밀어내므로, 안쪽을 때려야 상대가 가장자리로 간다.
+     정면 발밑을 때리면 상대는 '나에게서 멀어지는 쪽' 으로 밀리는데, 내가 어디 서
+     있느냐에 따라 그게 판 한가운데일 때가 절반이다 — 밀어내는 게임에서 그건 헛일이다.
+     붙어 있을 때(4m 안)는 그냥 발밑을 노린다. 그 거리에서 지점을 틀면 내 폭발 반경
+     (4.2m)에 내가 걸린다. */
+  var aimX=gx, aimZ=gz;
+  if(tgt && tgt.d>4.0){
+    var tc=Math.hypot(gx,gz)||1;
+    aimX=gx-(gx/tc)*BOT_PUSH; aimZ=gz-(gz/tc)*BOT_PUSH;
+  }
+  var wantYaw=Math.atan2(aimX-s.p.x, aimZ-s.p.z);
+
+  /* 조준 오차는 발마다 한 번만 굴린다. 매 프레임 굴리면 몸이 부들부들 떨리고,
+     그 떨림이 그대로 총구에 실려 오히려 '기계가 겨눈다' 는 인상을 준다.
+     사람은 잠깐 겨누고, 그 자세로 쏜다. */
+  if(bot.errT==null || (bot.errT-=dt)<=0){
+    bot.errY=(Math.random()*2-1)*BOT_AIM_ERR;
+    bot.errP=(Math.random()*2-1)*BOT_AIM_ERR;
+    bot.errT=0.35+Math.random()*0.4;
+  }
+  // 시선은 표적 쪽으로 '돌아간다' — 즉시 스냅하지 않는다(BOT_TURN 참고)
+  if(bot.aimYaw==null) bot.aimYaw=s.yaw;
+  var yawErr=angDiff(wantYaw, bot.aimYaw), step=BOT_TURN*dt;
+  bot.aimYaw += Math.max(-step, Math.min(step, yawErr));
+  s.yaw = bot.aimYaw + bot.errY;
 
   /* 가고 싶은 '월드 방향'을 먼저 정하고 마지막에 입력으로 바꾼다.
      예전엔 정면만 짚어 봐서 옆걸음(strafe) 중에는 낭떠러지를 그대로 밟았다 —
@@ -1780,6 +1829,19 @@ function botThink(bot, dt){
     var myRing=Math.round(toC/CC.size);
     if(myRing >= LEVEL._maxRing-(LEVEL._gone||0)){ mx=cx; mz=cz; }
   }
+  /* 빈손이면 붙어 있을 이유가 없다 — 재장전될 때까지 거리를 벌린다.
+     탄 없이 상대 얼굴 앞에서 서성이는 것이 '멍청해 보이는' 대표적인 장면이다. */
+  if(tgt && s.ammo===0 && tgt.d<9){ mx=-dx/dist; mz=-dz/dist; }
+
+  /* 등 뒤가 허공이면 비킨다. 상대의 폭발은 나를 '상대에게서 멀어지는 쪽' 으로 미는데,
+     그 방향 3m 앞이 낭떠러지면 지금 자리는 한 방에 지는 자리다. 사람은 그런 자리에
+     등을 대고 싸우지 않는다 — 예전 봇은 앞만 확인했기 때문에, 스스로 걸어 떨어지지는
+     않아도 가장자리를 등지고 버티다 그대로 밀려 나갔다. */
+  if(tgt && s.onGround &&
+     groundAt(s.p.x-dx/dist*BOT_BACK, s.p.z-dz/dist*BOT_BACK, s.p.y)===null){
+    mx=cx; mz=cz;
+  }
+
   // 안전 확인 — 가려는 쪽에 바닥이 없으면 가운데로 방향을 튼다
   if(s.onGround && groundAt(s.p.x+mx*BOT_EDGE, s.p.z+mz*BOT_EDGE, s.p.y)===null){
     if(groundAt(s.p.x+cx*BOT_EDGE, s.p.z+cz*BOT_EDGE, s.p.y)!==null){ mx=cx; mz=cz; }
@@ -1796,17 +1858,23 @@ function botThink(bot, dt){
       s.pitch=-PITCH_LIM; doFire(s); bot.cd=BOT_FIRE_CD*0.4; botBroadcastShot(bot);
     }
   } else if(tgt){
-    // 조준 — 상대 발밑을 노려야 넉백이 위로 뜬다. 약간의 오차를 준다(완벽하면 재미없다).
+    // 겨눈 지점까지의 수평거리로 내림각을 잡는다 — 지점이 표적보다 안쪽일 수 있다
     var eye=s.p.y+EYE, aimY=tgt.y+0.1;
-    s.pitch=Math.atan2(aimY-eye, Math.max(0.6,tgt.d)) + (Math.random()*2-1)*BOT_AIM_ERR;
-    s.yaw += (Math.random()*2-1)*BOT_AIM_ERR;
+    var aimD=Math.hypot(aimX-s.p.x, aimZ-s.p.z);
+    s.pitch=Math.atan2(aimY-eye, Math.max(0.6,aimD)) + bot.errP;
     /* 코앞이 막혔을 때만 참는다. 봇은 상대 '발밑'을 노리므로 광선이 표적 근처
        바닥에 닿는 게 정상이다 — 기준을 폭발 반경(4.2m)으로 잡으면 정상 사격까지
        전부 막혀 사격이 3분의 1로 줄어든다. 자기가 휘말릴 거리만 막는다. */
     var clear=botClear(s);
+    /* 조준이 아직 안 잡혔으면 참는다. 예전엔 돌아보는 중에도 쏴서 엉뚱한 데 터뜨렸다 —
+       '쉬지 않고 쏘는데 하나도 안 맞는' 그림이 실력 없어 보이는 가장 큰 이유였다.
+       기다렸다 쏘면 발수는 줄지만 맞는 비율이 올라, 사람이 겨누는 것처럼 보인다. */
+    var lined=Math.abs(angDiff(wantYaw, bot.aimYaw))<BOT_AIM_OK;
     if(clear < BOT_MIN_CLEAR){ bot.strafe=!bot.strafe; }
-    else if(tgt.d<BOT_RANGE && s.ammo>0 && bot.cd<=0 && ROUND.phase==='live'){
-      doFire(s); bot.cd=BOT_FIRE_CD; botBroadcastShot(bot);
+    else if(lined && tgt.d<BOT_RANGE && s.ammo>0 && bot.cd<=0 && ROUND.phase==='live'){
+      doFire(s); botBroadcastShot(bot);
+      // 간격을 흔든다 — 고정이면 박자가 읽혀서 사람은 그 사이에만 움직이면 된다
+      bot.cd=BOT_FIRE_CD*(0.8+Math.random()*0.5);
     }
   }
   s.pitch=Math.max(-PITCH_LIM, Math.min(PITCH_LIM, s.pitch));
@@ -1901,7 +1969,8 @@ function botsRespawn(){
     b.sim.p={x:sp.x,y:sp.y,z:sp.z}; b.sim.v={x:0,y:0,z:0};
     b.sim.ammo=AMMO_MAX; b.sim.items={}; b.sim.charges={};
     b.sim.blasts.length=0; b.sim.projectiles.length=0; b.sim.particles.length=0;
-    b.lastFell=b.sim.fell||0; b.cd=0;
+    // 시선도 초기화한다 — 안 그러면 새 자리에서 지난 라운드의 각도부터 돌기 시작한다
+    b.lastFell=b.sim.fell||0; b.cd=0; b.aimYaw=null; b.errT=null;
   });
 }
 /* ---------- 허수아비(체험존) ----------
@@ -4843,7 +4912,11 @@ function colWire(b){
     LINE.push(a[0],a[1],a[2],c[0],c[1],c[2], d[0],d[1],d[2],c[0],c[1],c[2]); }
 }
 var last=0, acc=0, STEP=1/120, jumpBuf=0;
-function loop(now){ if(!last)last=now; var dt=Math.min(0.05,(now-last)/1000); last=now;
+/* dt 는 0 아래로 내려가면 안 된다. 음수가 들어오면 쿨다운·재장전·타이머가 전부
+   거꾸로 흘러 상태가 조용히 망가진다(실측: 봇 사격 쿨다운이 34초까지 자라고 탄약이
+   영영 0 이 됐다). 시계가 되감기는 일은 없어야 하지만, 검증용 __pung.frame 으로
+   프레임을 억지로 돌리면 실제 rAF 와 섞여 실제로 그렇게 된다. 한 줄로 막아 둔다. */
+function loop(now){ if(!last)last=now; var dt=Math.max(0, Math.min(0.05,(now-last)/1000)); last=now;
   // 본선(play)과 대기방 연습(lobbyScr) 모두 물리를 돌린다 — 기다리는 동안 몸을 풀 수 있게
   if((mode==='play'||mode==='lobbyScr') && sim){
     // 점프 입력을 프레임이 아니라 시간으로 들고 있는다.
@@ -5159,7 +5232,13 @@ function renderWin(s){
      태그를 뺀 글자 수로 재야 <b> 가 시간을 부풀리지 않는다. */
 var lastHint='', hintAt=0, hintHold=0;
 function showHint(s){ var m=document.getElementById('msg');
-  if(!s){ if(lastHint!==''){ lastHint=''; m.innerHTML=''; m.classList.remove('on'); } return; }  // 대기방=힌트 없음
+  /* 힌트는 '판이 줄어드는 맵' 에서만 띄운다.
+     붕괴는 이 게임에서 유일하게 화면만 봐서는 모르는 규칙이다 — 바깥부터 떨어져
+     나간다는 것, 그래서 안쪽이 안전하다는 것은 한 판을 통째로 잃어 봐야 안다.
+     나머지 맵의 힌트는 보이는 것을 글로 옮긴 것뿐이었다("사분면마다 벽으로 둘러싼
+     방이 있습니다", "밖은 낭떠러지"). 눈에 뻔한 것을 굳이 글로 덮으면, 정작 읽어야 할
+     때 읽지 않는 습관만 든다. */
+  if(!s || !LEVEL.collapse){ if(lastHint!==''){ lastHint=''; m.innerHTML=''; m.classList.remove('on'); } return; }
   var hs=LEVEL.hints||[], h = hs.length ? (hs[Math.min(s.cpIdx, hs.length-1)]||'') : '';
   if(h!==lastHint){
     lastHint=h; m.innerHTML=h; m.classList.toggle('on', !!h);
