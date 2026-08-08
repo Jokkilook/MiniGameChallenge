@@ -66,20 +66,39 @@
   #scoreRow .sc.me{border-color:var(--you);color:#fff}
   #scoreRow .sc s{width:7px;height:7px;background:var(--c);flex:none}
   #scoreRow .sc b{font-family:var(--mono);font-weight:700;color:#fff}
-  /* 아이템 상태 — 탄창 위. 작동 중은 실선 + 남은 시간 바, 보유 중은 점선 + 사용 키 */
-  #items{position:absolute;right:18px;bottom:56px;display:flex;flex-direction:column;
-    align-items:flex-end;gap:4px}
-  #items .it{position:relative;overflow:hidden;border-radius:var(--r);background:rgba(8,11,17,.82);border:1px solid var(--c);
-    padding:6px 11px;display:flex;align-items:center;gap:8px;min-width:176px;
-    font-size:12.5px;font-weight:800;letter-spacing:.4px;color:#fff}
+  /* 아이템 상태 — 화면 아래 가운데. 작동 중은 실선 + 남은 시간 바, 보유 중은 점선 + 사용 키.
+     오른쪽 아래 구석에 작게 세워 뒀었는데, 남은 초는 "지금 이 힘이 언제 끊기나" 라
+     싸우는 도중에 봐야 하는 값이다. 눈을 화면 끝으로 보내면 그 사이에 밀려 떨어진다.
+     탄창(조준선 바로 아래)과 같은 세로선에 두면 시선이 한 번에 훑고 지나간다. */
+  /* 아이템 상태 — 화면 아래 가운데, 정사각형 타일.
+     자리를 두 번 옮겼다. 오른쪽 아래 구석의 12.5px 글줄은 싸우는 도중에 읽히지 않았고,
+     조준선 바로 아래로 올렸더니 이번엔 판을 가렸다 — 화면 한가운데는 표적이 지나가는
+     자리라 무엇도 놓으면 안 된다. 아래 가운데면 시선에서 가깝되 시야는 안 막는다.
+
+     글줄이 아니라 타일인 이유: 남은 시간은 '몇 초인가' 보다 '얼마나 남았나' 로 읽는
+     값이다. 숫자는 읽어야 알지만 줄어드는 부채꼴은 곁눈으로도 안다.
+     그림은 아이템 아이콘 그대로다 — 패드 위 표식·채팅·튜토리얼 설명판과 같은 그림이라
+     따로 배울 것이 없다. */
+  #items{position:absolute;left:50%;bottom:20px;transform:translateX(-50%);
+    display:flex;flex-direction:row;align-items:flex-end;gap:9px}
+  #items .it{position:relative;width:60px;height:60px;overflow:hidden;border-radius:var(--r);
+    background:rgba(8,11,17,.84);border:1px solid var(--c);
+    display:flex;align-items:center;justify-content:center}
   #items .it.use{border-style:dashed}
-  #items .it .ic{flex:none;width:22px;height:22px;font-size:16px;line-height:22px;text-align:center}
+  #items .it .ic{width:40px;height:40px;font-size:30px;line-height:40px;text-align:center}
   #items .it img.ic{display:block;object-fit:contain}
-  #items .it .nm{flex:1;color:var(--c)}
-  #items .it b{font-family:var(--mono);font-weight:700}
-  #items .it kbd{font-family:var(--mono);font-size:10.5px;font-weight:700;
-    border:1px solid var(--line2);padding:1px 5px;color:#9dabc4}
-  #items .it i{position:absolute;left:0;bottom:0;height:2px;background:var(--c)}
+  /* 시계방향으로 덮여 가는 그늘 = 남은 시간. --a 는 renderItems 가 매 프레임 준다.
+     conic-gradient 는 12시에서 시작해 시계방향이라 각도를 그대로 쓰면 된다. */
+  #items .it .cd{position:absolute;inset:0;pointer-events:none;
+    background:conic-gradient(rgba(4,7,12,.74) var(--a,0deg), rgba(0,0,0,0) 0)}
+  /* 숫자는 그늘 위에 얹는다 — 정확한 값이 필요한 순간(1초 남았나)을 위한 것이라 작아도 된다 */
+  #items .it b{position:absolute;left:0;right:0;bottom:1px;text-align:center;
+    font-family:var(--mono);font-size:14px;font-weight:700;color:#fff;
+    text-shadow:0 1px 3px #000,0 0 2px #000}
+  /* 눌러야 나가는 것(펄스 F·활공 Space)은 시간이 아니라 키와 횟수를 띄운다 */
+  #items .it kbd{position:absolute;top:2px;left:0;right:0;text-align:center;
+    font-family:var(--mono);font-size:10px;font-weight:700;color:#cfd9e8;
+    text-shadow:0 1px 3px #000}
   /* 탄창은 조준선 바로 아래다. 오른쪽 아래 구석에 7px 짜리로 세워 뒀었는데, 이건
      "한 발 남았나"를 쏘기 직전에 알아야 하는 값이라 눈을 화면 끝으로 보내면 늦는다.
      조준선 밑이면 표적을 보는 그대로 곁눈으로 읽힌다. 커진 만큼 개수도 한눈에 세인다. */
@@ -117,8 +136,8 @@
   .tsign b{display:block;font-family:"KenneyFuture","Pretendard","Inter",sans-serif;
     font-size:12px;font-weight:900;letter-spacing:1.2px;color:#fff}
   .tsign em{display:block;font-style:normal;font-size:10.5px;font-weight:700;color:#8fa0bb;margin-top:2px}
-  /* 지금 서 있는 구역의 설명판. 화면 왼쪽 아래 — 가운데(조준선)와 위(상태바)를 비켜야
-     하고, 오른쪽은 3인칭 조준 시 캐릭터가 서는 자리다. */
+  /* 지금 서 있는 구역의 설명판. 화면 왼쪽 아래 — 가운데(조준선·탄창·아이템)와
+     위(상태바·킬 로그)를 비켜야 한다. */
   /* 폭은 문장이 들어갈 만큼 준다 — 여기 글은 조각이 아니라 완결된 설명이라 두세 줄이 된다 */
   #tutorCard{position:absolute;left:26px;bottom:26px;width:min(380px,44vw);
     background:rgba(8,11,17,.86);border:1px solid var(--line2);border-left:3px solid var(--acc);
@@ -356,17 +375,37 @@
   /* 채팅은 화면 오버레이(z-index 20)보다 위에 있어야 게임 중에 보인다. 그래서
      전체를 덮는 메뉴·결과 화면에서는 아예 숨겨야 한다 — 안 그러면 말풍선이
      버튼 위에 겹쳐 찍힌다(결과 화면의 '다시' 가 실제로 그렇게 가려졌다). */
-  #chat{position:fixed;left:0;bottom:0;z-index:30;width:min(400px,62vw);padding:0 0 12px 12px;pointer-events:none}
+  /* 킬 로그가 따로 나가면서 이 자리에는 사람이 쓴 말과 드나듦만 남는다 — 그러니
+     작게 눌러 둘 이유가 없다. 읽으라고 있는 것이므로 읽히는 크기로 키운다. */
+  /* 폭을 화면의 36% 로 묶는다. 아이템 타일이 아래 가운데에 서므로, 채팅이 넓으면
+     좁은 창에서 그 위를 덮는다(851px 창에서 40vw 는 14px 겹쳤다).
+     넓은 화면에서는 520px 에서 멈춘다 — 그보다 길면 한 줄이 눈으로 안 따라온다. */
+  #chat{position:fixed;left:0;bottom:0;z-index:30;width:min(520px,36vw);padding:0 0 16px 16px;pointer-events:none}
   #chat.off{display:none}
-  #chatLog{display:flex;flex-direction:column;gap:1px;margin-bottom:5px}
-  .cmsg{background:rgba(8,11,17,.78);border-left:3px solid var(--acc2);border-radius:0;
-    padding:5px 11px;font-size:13px;font-weight:600;line-height:1.4;color:#fff;
+  #chatLog{display:flex;flex-direction:column;gap:2px;margin-bottom:6px}
+  .cmsg{background:rgba(8,11,17,.8);border-left:3px solid var(--acc2);border-radius:0;
+    padding:7px 13px;font-size:14.5px;font-weight:600;line-height:1.45;color:#fff;
     transition:opacity .45s linear;word-break:break-word}
   .cmsg.me{border-left-color:#ff8a3a}
   .cmsg.sys{border-left-color:var(--line2);color:#9dabc4;font-style:normal;font-weight:600}
   /* 줄 앞 아이템 그림 — 크기를 못 박아야 줄 높이가 안 흔들린다(이모지 폴백도 같은 칸). */
-  .cmsg .cic{display:inline-block;width:16px;height:16px;margin-right:6px;vertical-align:-3px;
-    object-fit:contain;font-size:14px;line-height:16px;text-align:center}
+  .cmsg .cic{display:inline-block;width:18px;height:18px;margin-right:7px;vertical-align:-4px;
+    object-fit:contain;font-size:15px;line-height:18px;text-align:center}
+  /* --- 킬 로그 ---
+     채팅과 자리를 나눈다. 둘은 수명이 다르다: 사람이 쓴 말은 남아야 하고, 킬은
+     순간의 사건이라 흘러가야 한다. 한 자리에 섞으면 킬이 쏟아질 때 대화가 밀려 사라진다.
+     좌상단인 이유는 그 자리가 이 게임에서 유일하게 비어 있기 때문이다(가운데 위는
+     상태바, 가운데는 조준선, 아래는 채팅). */
+  #killLog{position:absolute;left:16px;top:16px;display:flex;flex-direction:column;
+    gap:2px;align-items:flex-start;pointer-events:none;max-width:min(440px,46vw)}
+  .kill{display:flex;align-items:center;gap:8px;background:rgba(8,11,17,.82);
+    border:1px solid var(--line2);padding:5px 10px;transition:opacity .35s linear}
+  /* 이름 앞의 색 조각 — 점수 칩·이름표와 같은 값이라 셋이 한 사람으로 묶인다 */
+  .kill .who{display:flex;align-items:center;gap:6px;font-size:12.5px;font-weight:800;
+    color:#fff;white-space:nowrap}
+  .kill .who i{width:8px;height:8px;flex:none;background:var(--c,#8492ad);font-style:normal}
+  .kill .who.me{color:var(--you)}
+  .kill svg{flex:none;display:block}
   .cmsg b{color:var(--acc2);font-weight:900}
   .cmsg.me b{color:#ff9d55}
   #chatInput{display:none;width:100%;pointer-events:auto;font:inherit;font-size:13.5px;font-weight:600;color:#fff;
@@ -439,6 +478,8 @@
        (텍스처는 후처리 FBO 하나뿐이다). projectWorld 로 화면 좌표를 얻어 DOM 을
        얹으면 글자는 선명하고 한글도 그냥 나온다. 깊이 가림이 없는 건 감수한다 —
        튜토리얼 맵은 시야가 트여 있어서 표지판이 벽 뒤에 숨을 일이 거의 없다. -->
+  <!-- 킬 로그 — 좌상단. 채팅과 분리한 이유는 위 #killLog 주석 참고 -->
+  <div id="killLog"></div>
   <!-- 이름표 — 캐릭터 머리 위. 표지판과 같은 방식(projectWorld + DOM)이다.
        색만으로는 누가 누구인지 외워야 하고, 여섯이 뛰면 외울 수가 없다. -->
   <div id="tags"></div>
@@ -1383,7 +1424,6 @@ var RUN=_P.RUN, JUMPV=_P.JUMPV, GRAV=_P.GRAV, EYE=_P.EYE, PH_HX=_P.PH_HX, PH_HY=
 var BLAST_R=_P.BLAST_R, BLAST_F=_P.BLAST_F, BLAST_RANGE=_P.BLAST_RANGE;
 var AMMO_MAX=_P.AMMO_MAX, AMMO_REGEN=_P.AMMO_REGEN, PROJ_SPD=_P.PROJ_SPD;
 var KB_TIME=_P.KB_TIME;   // 폭발 후 조작 권한이 약해지는 시간(초)
-/* 3인칭 카메라 · 조준(우클릭) — 디버그 패널에서 실시간 조절 */
 /* 3인칭 카메라 상수(CAM_DIST·AIM_SIDE·AIM_PULL·AIM_RISE)와 수렴 조준의 CONV_MIN 은
    3인칭을 없애면서 함께 지웠다. 남은 카메라 상수는 아래 CAM_RAD·CAM_MIN 인데,
    그건 타이틀 배경 궤도(titleCamera)가 지형에 파고들지 않게 쓰는 것이다. */
@@ -2208,6 +2248,14 @@ function applyItem(s, item){
     if(item==='drum') s.ammo=AMMO_MAX;
     if(item==='feather') s.glideLeft=1; }      // 깃털 1개당 글라이딩 1회
 }
+/* '과충전을' / '펄스를' — 받침이 있으면 을, 없으면 를. 아이템 이름이 늘어날 때마다
+   문장을 손으로 고르지 않도록 여기서 정한다. 한글이 아닌 이름이 들어오면(영문 등)
+   판단할 근거가 없으므로 '을(를)' 로 물러선다. */
+function josaEul(word){
+  var c=String(word||'').charCodeAt(String(word).length-1);
+  if(!(c>=0xAC00 && c<=0xD7A3)) return word+'을(를)';
+  return word + (((c-0xAC00)%28) ? '을' : '를');
+}
 function grantItem(who, padI, item){
   var def=ITEMS[item]; if(!def) return;
   if(padI!=null && PADS[padI]) PADS[padI].cd=padCd();
@@ -2220,7 +2268,11 @@ function grantItem(who, padI, item){
      알 수 있다. 패드를 모르면(멀티에서 패드 없이 주는 경우) 소리를 안 낸다. */
   var _pad = (padI!=null && PADS[padI]) ? PADS[padI] : null;
   if(_pad) sndPickup({x:_pad.x, y:_pad.y+0.6, z:_pad.z});
-  pushChat('', (mine?'나':nameOf(who))+' · '+def.name, false, true, item);
+  /* 줄은 내가 집었을 때만 남긴다. 남이 집은 것까지 흘리면 여섯이 뛰는 판에서 채팅이
+     통째로 그 목록이 된다 — 정작 사람이 쓴 말을 밀어내면서. 남이 뭘 집었는지는
+     거리에 따라 작아지는 획득음이 이미 알려 주고, 그 편이 자리도 안 차지한다.
+     그림도 안 붙인다. 문장으로 끝나는 줄 앞에 아이콘이 붙으면 목록처럼 읽힌다. */
+  if(mine) pushChat('', nameOf(who)+'님이 '+josaEul(def.name)+' 획득했습니다.', false, true);
 }
 /* 아이템 HUD — 두 종류를 구분해서 보여준다.
    · 작동 중  : 시간이 흐르는 버프. 남은 초 + 아래 진행 바.
@@ -2265,24 +2317,24 @@ function renderItems(s){
   if(sig!==itemsSig){
     itemsSig=sig;
     var html='';
+    // title 로 이름을 남긴다 — 타일에는 그림만 있으므로 확인할 길이 하나는 있어야 한다
     live.forEach(function(r){
-      html+='<div class="it on" style="--c:'+r.def.col+'" data-k="'+r.k+'">'
-        +iconHTML(r.k, r.def)+'<span class="nm">'+r.def.name+'</span>'
-        +'<b>0</b><i></i></div>';
+      html+='<div class="it on" style="--c:'+r.def.col+'" data-k="'+r.k+'" title="'+r.def.name+'">'
+        +iconHTML(r.k, r.def)+'<div class="cd"></div><b>0</b></div>';
     });
     hold.forEach(function(r){
-      html+='<div class="it use" style="--c:'+r.def.col+'">'
-        +iconHTML(r.k, r.def)+'<span class="nm">'+r.def.name+'</span>'
-        +'<kbd>'+r.key+'</kbd><b>×'+r.n+'</b></div>';
+      html+='<div class="it use" style="--c:'+r.def.col+'" title="'+r.def.name+'">'
+        +iconHTML(r.k, r.def)+'<kbd>'+r.key+'</kbd><b>×'+r.n+'</b></div>';
     });
     host.innerHTML=html;
   }
-  // 숫자·바만 갱신(작동 중인 줄이 앞쪽에 순서대로 들어 있다)
+  /* 남은 시간만 매 프레임 갱신한다(작동 중인 타일이 앞쪽에 순서대로 들어 있다).
+     그늘은 '이미 지나간 만큼' 이라 1-남은비율 이다 — 다 쓰면 한 바퀴가 덮인다. */
   var rows=host.querySelectorAll('.it.on');
   for(var i=0;i<rows.length && i<live.length;i++){
-    var r=live[i];
+    var r=live[i], frac=Math.max(0,Math.min(1, r.t/r.max));
     rows[i].querySelector('b').textContent=r.t.toFixed(1);
-    rows[i].querySelector('i').style.width=(Math.max(0,Math.min(1,r.t/r.max))*100).toFixed(1)+'%';
+    rows[i].querySelector('.cd').style.setProperty('--a', ((1-frac)*360).toFixed(1)+'deg');
   }
 }
 var PADS_NEEDITEM=false;
@@ -2871,8 +2923,10 @@ function mat4Mul(a,b){ var o=new Float32Array(16);
   return o; }
 function hexRGB(hex){ return [parseInt(hex.substr(1,2),16)/255, parseInt(hex.substr(3,2),16)/255, parseInt(hex.substr(5,2),16)/255]; }
 
-// 렌더용 카메라 기저(CAM*)와 플레이어 조준 기저(AIM*)를 분리.
-// 1인칭: 둘이 동일. 3인칭: 카메라는 궤도(피치 제한+플레이어 바라봄), 총은 AIM* 사용.
+/* 렌더용 카메라 기저(CAM*)와 조준 기저(AIM*). 지금은 늘 1인칭이라 둘이 같다 —
+   3인칭이 있던 시절에는 카메라가 궤도를 돌고 총만 AIM* 을 쓰느라 갈라져 있었다.
+   그래도 둘을 합치지 않는 이유는 타이틀 배경(titleCamera)이 여전히 카메라만 따로
+   움직이기 때문이다. */
 var CAMPOS={x:0,y:0,z:0}, CAMF={x:0,y:0,z:1}, CAMR={x:1,y:0,z:0}, CAMU={x:0,y:1,z:0};
 var AIMF={x:0,y:0,z:1}, AIMR={x:1,y:0,z:0}, AIMU={x:0,y:1,z:0};
 /* 3인칭 카메라 충돌 — 예전엔 카메라가 지형을 그냥 뚫고 들어가 벽·바닥 안쪽이 보였다.
@@ -3800,10 +3854,8 @@ function scoreFall(fallerId, byId){
   if(GAMEMODE!=='versus') return;
   var who=(byId!=null && byId!==fallerId) ? byId : null;
   if(who!=null) SCORES[who]=(SCORES[who]||0)+1;
-  /* 게임 이름을 동사로 쓴다. "누가 누구를 떨어뜨렸다"는 문장보다 이쪽이 짧고,
-     한 줄만 봐도 누가 민 건지(화살표 방향) 바로 읽힌다. */
-  pushChat('', who!=null ? nameOf(who)+' → PUNG! → '+nameOf(fallerId)
-                         : nameOf(fallerId)+' 자멸', false, true);
+  // 킬은 채팅이 아니라 좌상단 킬 로그로 간다(위 pushKill 주석 참고)
+  pushKill(who, fallerId);
   var ids=MP.players.length ? MP.players.map(function(p){return p.id;}) : [MP.id];
   // 승리 판정
   var best=null;
@@ -3864,7 +3916,7 @@ function newArena(){
 function resetRound(){ ROUND.n=0; ROUND.t=0; ROUND.pause=0; ROUND.phase='live';
   arenaMsgT=0; roundBanner(''); }
 // 1인칭 PoofGun 3D 모델(카메라 로컬: x=오른쪽, y=위, z=앞)
-// 1·3인칭 공통 손 위치(몸에 붙게 자연스럽게). x=오른쪽, y=위, z=앞(조준 기저).
+// 총을 든 손의 자리. x=오른쪽, y=위, z=앞(조준 기저).
 var GUN=[
   {lc:[0.28,-0.34,0.46], lh:[0.05,0.11,0.05],  col:'#242c46'}, // 손잡이
   {lc:[0.28,-0.22,0.64], lh:[0.062,0.07,0.20], col:'#3a4664'}, // 몸통
@@ -3872,7 +3924,8 @@ var GUN=[
   {lc:[0.28,-0.20,1.07], lh:[0.056,0.056,0.03],col:'#141a2c'}, // 노즐
   {lc:[0.225,-0.285,0.62],lh:[0.062,0.062,0.075],col:'#2aa8e0'},// 공기통
 ];
-var GUN_TP=[0.15,0,-0.05]; // 3인칭: 오른쪽 가슴 쪽으로 살짝만(몸에 붙은 채 보이게)
+// 남의 몸에 붙여 그릴 때의 어긋냄 — 내 총은 1인칭이라 안 쓰고, 다른 사람 것만 이 값을 쓴다
+var GUN_TP=[0.15,0,-0.05];
 /* 위 박스 5개는 이제 폴백이다. Mesh/ShockWave_Gun.glb 가 읽히면 그 메시로 그린다
    (gunmesh.js). 못 읽으면(file:// 직접 열기 등) 박스가 그대로 나온다. */
 var GUNMESH_ON=1;
@@ -3915,7 +3968,7 @@ function peerSample(pe, now){
   }
   return b[b.length-1];                             // 패킷이 늦음 → 마지막 위치 유지
 }
-// 한 플레이어(캡슐+총)를 임의 위치/시점으로 렌더 — 3인칭 자기·원격 팀원 공용
+// 한 플레이어(캡슐+총)를 임의 위치/시점으로 렌더 — 남의 몸과 타이틀 배경의 내 몸에 쓴다
 function emitCharacter(px,py,pz,yaw,pitch,recoil,col){
   var f={x:Math.cos(pitch)*Math.sin(yaw), y:Math.sin(pitch), z:Math.cos(pitch)*Math.cos(yaw)};
   var R={x:Math.cos(yaw),y:0,z:-Math.sin(yaw)};
@@ -4035,6 +4088,57 @@ function mpHandle(m){
   else if(m.t==='left'){ delete MP.peers[m.id]; }
 }
 
+/* ---------- 킬 로그 ----------
+   예전엔 채팅에 '누가 → PUNG! → 누가' 라는 한 줄로 들어갔다. 두 가지가 문제였다.
+   하나는 자리다 — 킬이 쏟아지면 사람이 쓴 말이 그 여덟 줄에서 밀려나 버렸다.
+   다른 하나는 생김새다. 화살표와 느낌표로 그린 그림은 글자로 만든 그림이라, 옆에
+   진짜 그림(아이템 아이콘)이 있는 화면에서는 유독 설익어 보인다.
+
+   그래서 자리를 좌상단으로 떼고, 이름 앞에 그 사람 몸 색을 조각으로 붙이고,
+   가운데 표시는 SVG 로 그린다. 색은 이름표·점수 칩과 같은 값이라 셋이 한 사람으로
+   묶이고, 글자를 안 읽어도 '누가 누구를' 이 먼저 읽힌다.
+
+   그림을 파일로 굽지 않고 SVG 로 그리는 이유는 조준선(#crosshair)과 같다 —
+   두 색과 몇 개의 선이면 되는 그림에 에셋 관리 비용을 붙일 이유가 없다. */
+var KILL_MAX=5, KILL_HOLD=5200, KILL_OUT=380;
+/* 밀려나는 표시: 터진 점 → 밀리는 결 → 화살촉. 왼쪽이 민 사람, 오른쪽이 밀린 사람이라
+   방향이 곧 문장이다. */
+var KILL_SVG='<svg width="26" height="12" viewBox="0 0 26 12" aria-hidden="true">'+
+  '<circle cx="3.2" cy="6" r="2.8" fill="var(--acc)"/>'+
+  '<path d="M8 6h5.5M9.4 2.9h4M9.4 9.1h4" stroke="var(--acc)" stroke-width="1.5" '+
+  'stroke-linecap="round" opacity=".7"/>'+
+  '<path d="M17.5 1.9 25 6l-7.5 4.1z" fill="var(--acc)"/></svg>';
+/* 스스로 떨어진 경우 — 민 사람이 없으니 방향도 없다. 아래로 떨어지는 표시만 남긴다. */
+var FALL_SVG='<svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true">'+
+  '<path d="M7 1.6v6.6" stroke="var(--warn)" stroke-width="1.7" stroke-linecap="round"/>'+
+  '<path d="M3.2 7.6 7 12.4l3.8-4.8z" fill="var(--warn)"/></svg>';
+function killWho(id){
+  var w=document.createElement('span');
+  w.className='who'+(id===MP.id?' me':'');
+  w.style.setProperty('--c', peerCol(id));
+  var chip=document.createElement('i'); w.appendChild(chip);
+  var nm=document.createElement('span');
+  nm.textContent=nameOf(id);                 // 사용자 문자열 — 반드시 textContent
+  w.appendChild(nm);
+  return w;
+}
+function pushKill(byId, fallerId){
+  var host=document.getElementById('killLog'); if(!host) return;
+  var row=document.createElement('div'); row.className='kill';
+  if(byId!=null) row.appendChild(killWho(byId));
+  var g=document.createElement('span');
+  g.innerHTML=(byId!=null)?KILL_SVG:FALL_SVG;   // 내가 만든 마크업만 — 사용자 입력 아님
+  row.appendChild(g);
+  row.appendChild(killWho(fallerId));
+  host.appendChild(row);
+  while(host.children.length>KILL_MAX) host.removeChild(host.firstChild);
+  setTimeout(function(){ row.style.opacity=0; }, KILL_HOLD);
+  setTimeout(function(){ if(row.parentNode) row.parentNode.removeChild(row); }, KILL_HOLD+KILL_OUT);
+}
+function clearKills(){
+  var host=document.getElementById('killLog'); if(host) host.innerHTML='';
+}
+
 /* ---------- 채팅 ---------- */
 var CHAT=[], chatting=false;
 // 주의: 상대가 보낸 문자열은 신뢰할 수 없으므로 반드시 textContent 로만 넣는다(XSS 방지).
@@ -4042,7 +4146,7 @@ var CHAT=[], chatting=false;
 function pushChat(name, text, self, sys, icon){
   CHAT.push({name:String(name||'?'), text:String(text||''), self:!!self, sys:!!sys,
              icon:icon||null, t:performance.now()});
-  if(CHAT.length>8) CHAT.shift();
+  if(CHAT.length>10) CHAT.shift();
   renderChat();
 }
 function renderChat(){
@@ -4408,7 +4512,7 @@ function enterTitle(){
   else if(!fromMenu && !setLevel(CURLEVEL)){ sim=null; return; }
   if(!LEVEL){ sim=null; return; }
   sim=makeSim(); sim.practice=true; sim.titleCam=true;
-  sim.tp=true;              // 1인칭이면 총만 허공에 뜬다 — 타이틀은 시점 설정과 무관하게 3인칭
+  sim.tp=true;              // 여기서만 내 몸을 그린다 — 안 그리면 총만 허공에 떠 있다
   /* 스폰 높이는 '떨어뜨려 놓는' 값이라 그대로 두면 사람이 몇 cm 떠 있다.
      입력 없이 반 초만 굴려 바닥에 앉힌다. 한 번으로 끝이다 — 그 뒤로는 안 굴린다. */
   var still={mf:false,mb:false,ml:false,mr:false,jump:false};
@@ -4792,6 +4896,7 @@ function startGame(levelId){
   if(GAMEMODE==='versus' && !sim.practice) newArena();
   // 게스트도 시작할 때 피어를 비우므로 봇 색을 다시 알려 준다
   if(MP.connected) BOTS.forEach(function(b){ if(b.col) mpSend({t:'col', bot:b.id, c:b.col}); });
+  clearKills();               // 지난 경기의 킬이 새 판 첫 화면에 남아 있으면 안 된다
   showScreen('play'); acc=0; last=0; requestLock();
   if(missing){
     var warn='맵 불일치 · 내 쪽에 "'+levelId+'" 가 없어 "'+(LEVEL.name||CURLEVEL)+'" 로 시작 (levels/ 폴더 필요)';
@@ -4915,13 +5020,15 @@ document.getElementById('pauseLeave').addEventListener('click',function(){
 cv.addEventListener('click',function(){ ensureAudio(); if(chatting) return;
   if(PAUSED || OVERLAY) return;          // 시트는 화면 일부만 덮는다 — 캔버스 클릭이 새어든다
   if((mode==='play'||mode==='lobbyScr') && !locked) requestLock(); });
-/* 우클릭 홀드 = 조준 모드. contextmenu 는 document 에서 막아야 한다 —
-   포인터락 중에는 이벤트가 캔버스가 아니라 document 로 가기 때문에, cv 에만 걸면
-   메뉴가 떠서 락이 풀리고 그 다음 좌클릭이 '재잠금'으로 먹혀 발사가 안 됐다. */
+/* 우클릭은 이제 아무 일도 하지 않지만(조준 모드는 3인칭과 함께 없앴다) 오른쪽
+   메뉴는 계속 막는다 — 게임 중에 메뉴가 뜨면 포인터락이 풀리고, 그 다음 좌클릭이
+   '재잠금' 으로 먹혀 발사가 통째로 씹힌다.
+   document 에 거는 이유는 포인터락 중에 이벤트가 캔버스가 아니라 document 로 가기
+   때문이다. cv 에만 걸면 안 막힌다. */
 document.addEventListener('contextmenu',function(e){
   if(mode==='play'||mode==='lobbyScr') e.preventDefault(); });
 /* 발사는 click 대신 mousedown 으로 처리한다. click 은 좌버튼을 뗄 때만 오고
-   다른 버튼과 겹치면 누락될 수 있어, 조준(우클릭) 중 좌클릭이 씹히는 원인이 된다. */
+   다른 버튼과 겹치면 누락된다 — 두 버튼을 같이 쓰던 시절에 실제로 좌클릭이 씹혔다. */
 window.addEventListener('mousedown',function(e){
   if(chatting || !sim) return;
   // 디버그 패널·버튼을 누른 건 조작이 아니다(잠금 중이면 발사로 새어나간다)
@@ -5324,6 +5431,7 @@ function startTutorial(){
   MP.peers={}; BOTS.length=0;
   sim=makeSim(); sim.tutorial=true; sim.tutorHome=null;
   resetScores(); resetRound();
+  clearKills();               // 지난 경기의 킬이 새 판 첫 화면에 남아 있으면 안 된다
   showScreen('play'); acc=0; last=0; requestLock();
 }
 
