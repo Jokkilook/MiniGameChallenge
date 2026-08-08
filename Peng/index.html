@@ -637,9 +637,8 @@ function stGet(k, d){ try{ var v=localStorage.getItem('pung.'+k); return v==null
 function stNum(k, d){ var v=parseFloat(stGet(k,'')); return isFinite(v)?v:d; }
 function stPut(k, v){ try{ localStorage.setItem('pung.'+k, String(v)); }catch(e){} }
 
-/* 설정으로 조절되는 값들. 예전엔 셋 다 변수조차 아니었다 —
-   감도는 mousemove 핸들러 안 지역변수, 볼륨은 ensureAudio 안 상수,
-   기본 시점은 makeSim 안 리터럴이라 바깥에서 건드릴 방법이 없었다. */
+/* 설정으로 조절되는 값들. 예전엔 변수조차 아니었다 — 감도는 mousemove 핸들러 안
+   지역변수, 볼륨은 ensureAudio 안 상수라 바깥에서 건드릴 방법이 없었다. */
 var MOUSE_SENS=0.0022;   // 마우스 1픽셀당 라디안
 /* 소리 크기는 두 갈래다 — 효과음과 배경음. 예전엔 VOLUME 하나뿐이었는데, 맵마다
    BGM 이 깔리면서 그 하나로는 못 쓰게 됐다: 음악만 줄이려는 사람이 총소리까지
@@ -651,7 +650,6 @@ var SFX_VOL=0.6, BGM_VOL=0.45, MUTED=false;
    읽는 값이고 이건 믹스 값이라, 둘을 갈라 둔다 — 여기만 고치면 배경음 전체가
    같은 비율로 내려가고 슬라이더는 45 그대로 있는다. 0.5 = 절반(-6dB). */
 var BGM_TRIM=0.5;
-var TP_DEFAULT=false;    // 새 판을 3인칭으로 시작할지 — 기본은 1인칭 (V 로 언제든 전환)
 
 /* ---------- 오디오 ----------
    master(음소거) ← sfxBus / bgmBus. 버스를 갈라 둔 덕에 소리를 내는 쪽은 "어느
@@ -846,6 +844,7 @@ var BGM_WAIT='waiting';    // 대기방 = 자유 연습. 판은 깔렸지만 아
 var BGM_DIR='audio/bgm/', BGM_EXT=['.mp3','.ogg'];
 var BGM_FADE=1.2;                                    // 곡이 바뀔 때 겹치는 시간(초)
 var BGMBUF={}, BGMPEND={}, BGMWANT=null, BGMNOW=null, BGMVOICE=null;
+var BGMSEQ=0;   // 곡 요청 일련번호 — 겹쳐 들어온 지시 중 마지막만 살린다(bgmPlay 참고)
 
 /* 파일 하나를 받아 디코드해 둔다. 한 번 디코드한 곡은 BGMBUF 에 남으므로 맵을
    오갈 때마다 다시 받지 않는다(서버가 캐시를 막아 둬서 fetch 는 매번 새로 나간다).
@@ -878,6 +877,14 @@ function bgmLoad(name, cb){
 function bgmPlay(name){
   BGMWANT = name || null;
   if(BGMNOW===BGMWANT && BGMVOICE) return;          // 이미 그 곡이 돌고 있다
+  /* 이 요청의 일련번호. 곡을 켜라는 지시가 겹쳐 들어와도 마지막 하나만 살아남게 한다.
+     예전엔 이게 없어서 같은 곡이 두 벌 흘렀다: bgmSync 는 화면이 바뀔 때와 맵이
+     바뀔 때 둘 다 불리는데, 맵을 갈면 setLevel 과 showScreen 이 잇달아 부른다.
+     첫 호출이 지난 곡을 내리고 BGMNOW 를 비우면, 두 번째 호출은 '이미 그 곡이
+     돌고 있다' 에 걸리지 않아 그대로 통과해 로드를 한 번 더 건다. 그러면 콜백이
+     둘 다 살아나 소스가 둘 만들어지고, BGMVOICE 는 나중 것만 붙들고 있어서
+     먼저 것은 아무도 못 끄는 채 영원히 흐른다 — "브금이 겹친다" 의 정체다. */
+  var seq = ++BGMSEQ;
   /* 곡을 바꾸기로 정한 순간 지난 곡부터 내린다. 새 곡을 받아 온 뒤에 내리면,
      파일이 없어서 못 받았을 때 지난 맵의 곡이 그대로 흐른다 — 조립 라인에서
      우주 정거장 곡이 나오는 식이다. 겹침은 그래도 남는다: 한 번 디코드한 곡은
@@ -889,8 +896,9 @@ function bgmPlay(name){
      bgmSync 를 부르므로, 이 가드가 없으면 페이지가 열리자마자 AudioContext 가 생긴다. */
   if(!AUDIO_OK) return;
   bgmLoad(BGMWANT, function(buf){
-    // 받아 오는 사이에 맵이 또 바뀌었으면 버린다 — 안 그러면 지나간 맵의 곡이 뒤늦게 깔린다
-    if(!buf || BGMWANT!==name) return;
+    /* 버리는 경우 셋: 파일을 못 받았다 · 그 사이 다른 지시가 왔다(seq) ·
+       이미 누가 켰다(BGMVOICE). 뒤의 둘이 두 벌 흐르는 것을 막는다. */
+    if(!buf || seq!==BGMSEQ || BGMVOICE || BGMWANT!==name) return;
     ensureAudio(); if(!AC) return;
     var s=AC.createBufferSource(), g=AC.createGain(), t=AC.currentTime;
     s.buffer=buf; s.loop=true; s.connect(g); g.connect(bgmBus||AC.destination);
@@ -1367,7 +1375,9 @@ function makeSim(){  // practice 를 켜면 기록/승리 없이 자유 연습
   return { p:{x:s.x,y:s.y,z:s.z}, v:{x:0,y:0,z:0}, yaw:0, pitch:0, onGround:false,
     items:{}, charges:{},   // 아이템: id -> 남은 초 / id -> 남은 횟수
     glide:0, glideLeft:0,   // 깃털 글라이딩: 남은 시간 / 남은 사용 횟수
-    ammo:AMMO_MAX, ammoT:0, t:0, cpIdx:0, win:false, blasts:[], particles:[], projectiles:[], shake:0, _fireCd:0, tp:TP_DEFAULT, recoil:0, kb:0, aim:0, aimHold:false,   // 기본 시점은 설정에서 (V 로 전환)
+    /* tp 는 이제 '내 몸을 그릴지' 하나만 뜻한다. 게임은 늘 1인칭이라 여기서는 false 고,
+       참으로 세우는 곳은 타이틀 배경뿐이다(enterTitle) — 거기서만 내 캐릭터가 보여야 한다. */
+    ammo:AMMO_MAX, ammoT:0, t:0, cpIdx:0, win:false, blasts:[], particles:[], projectiles:[], shake:0, _fireCd:0, tp:false, recoil:0, kb:0, aim:0, aimHold:false,
     coyote:0, jumped:false, bjGrace:0 };
 }
 /* 접촉 여유(m). 착지는 s.p.y 에 발판 윗면 값을 그대로 대입한다(moveAxis 참조). 그래서
@@ -2138,6 +2148,13 @@ function usePulse(s){
   s.charges.pulse--;
   var c={x:s.p.x, y:s.p.y+PH_HY, z:s.p.z};
   blastFx(s, c.x, c.y, c.z); s.shake=Math.min(0.6, s.shake+0.3);
+  /* 이 화면에서 돌아가는 몸들에게 실제로 힘을 먹인다. 예전엔 이 줄이 없어서 펄스가
+     연출과 네트워크 통보만 하고 아무도 밀지 않았다 — 원격 피어는 아래 bl 을 받아
+     제 화면에서 스스로 밀렸으므로 사람끼리 할 때는 티가 안 났는데, 이 화면에서
+     굴러가는 몸(봇·허수아비)에게는 통째로 안 먹혔다.
+     쏜 사람은 제외된다(applyLocalBlast 가 shooter 를 건너뛴다) — 발밑에서 터지는
+     거리 0 이라 최대 힘으로 수직 발사돼 버린다. */
+  applyLocalBlast(s, c.x, c.y, c.z, false, {pf:IT_PULSE_F, pr:IT_PULSE_R, by:simOwner(s)});
   if(typeof mpSend==='function') mpSend({t:'bl', x:c.x, y:c.y, z:c.z,
     ox:c.x, oy:c.y, oz:c.z, pf:IT_PULSE_F, pr:IT_PULSE_R});
   return true;
@@ -4511,13 +4528,10 @@ var SET_SPEC=[
   // 슬라이더에 0.0022 를 보여주면 아무 의미가 없다 → 표시는 ×1000 단위로 하고 여기서 환산
   ['마우스 감도', 0.3, 6, 0.05, function(){ return MOUSE_SENS*1000; },
                                 function(v){ MOUSE_SENS=v/1000; stPut('sens', MOUSE_SENS); }],
-  /* 기본은 1인칭이다. 3인칭이 기본이던 건 협동 시절의 선택이었다 — 팀원을 눈으로
-     쫓고 발밑을 받쳐 쏘려면 몸이 보여야 했다. 경쟁만 남은 지금은 조준이 전부라 1인칭이 맞다. */
-  ['seg','기본 시점', [[0,'1인칭'],[1,'3인칭']],
-     function(){ return TP_DEFAULT?1:0; },
-     function(v){ TP_DEFAULT=!!v; stPut('tp', v?1:0); if(sim) sim.tp=TP_DEFAULT; }],
-  ['3인칭 거리', 1, 10, 0.1, function(){ return CAM_DIST; },
-                             function(v){ CAM_DIST=v; stPut('camdist', v); }],
+  /* 시점 설정('기본 시점' · '3인칭 거리')을 뺐다. 3인칭이 있던 건 협동 시절의
+     선택이었다 — 팀원을 눈으로 쫓고 그 발밑을 받쳐 쏘려면 내 몸이 보여야 했다.
+     경쟁만 남은 지금은 조준이 전부라 1인칭이 맞고, 고를 여지가 없으면 설정에 둘
+     이유도 없다. 게임은 늘 1인칭이다(makeSim 의 tp:false). */
   ['sec','화면'],
   ['시야각(도)', 50, 110, 1, function(){ return Math.round(FOV*180/Math.PI); },
                              function(v){ FOV=v*Math.PI/180; stPut('fov', v); }],
@@ -4552,8 +4566,9 @@ function settingsLoad(){
   SFX_VOL    = stNum('svol', stNum('vol', SFX_VOL));
   BGM_VOL    = stNum('bvol', BGM_VOL);
   MUTED      = stGet('mute','0')==='1';
-  TP_DEFAULT = stGet('tp','0')==='1';
-  CAM_DIST   = stNum('camdist', CAM_DIST);
+  /* 'tp'(기본 시점)와 'camdist'(3인칭 거리)는 더 읽지 않는다. 3인칭을 없애면서
+     설정에서 뺐고, 고를 수 없는 값을 저장소에서 되살려 봐야 쓸 데가 없다.
+     예전에 3인칭으로 저장해 둔 사람도 이제 1인칭으로 시작한다 — 그게 의도다. */
   LENS_ON    = stNum('lens', LENS_ON) ? 1 : 0;
   var fovDeg = stNum('fov', 0); if(fovDeg>=40 && fovDeg<=130) FOV = fovDeg*Math.PI/180;
   var nm     = stGet('name',''); if(nm) MP.name=nm;
@@ -4776,9 +4791,13 @@ window.addEventListener('keydown',function(e){
   if(PAUSED) return;                       // 멈춰 있는 동안은 게임 키가 전부 죽는다
   if(e.key==='Enter' && (mode==='play'||mode==='lobbyScr')){ e.preventDefault(); openChat(); return; }
   ensureAudio(); var k=e.key.toLowerCase(); keys[k]=true;
-  if(k===' '){ jumpEdge=true; e.preventDefault(); } if(k==='r'&&sim)respawn(sim);
+  /* R(리스폰)과 V(시점 전환)를 뺐다.
+     리스폰은 협동 시절의 것이다. 코스를 달리다 막히면 마지막 체크포인트로 돌아가는
+     장치였는데, 경쟁에서는 '떨어지는 것' 자체가 점수라 스스로 돌아가는 버튼이 있으면
+     불리할 때 눌러 버리는 수가 된다. 낙하 복귀는 killY 가 알아서 한다(stepSim).
+     시점 전환은 3인칭이 사라지면서 같이 없앴다 — 아래 makeSim 은 늘 1인칭이다. */
+  if(k===' '){ jumpEdge=true; e.preventDefault(); }
   if(k==='f'&&sim&&mode==='play') usePulse(sim);
-  if(k==='v'&&sim)sim.tp=!sim.tp;
   if(k==='p'){ SHOW_COL=!SHOW_COL; toastCol(); }
 });
 window.addEventListener('keyup',function(e){ if(chatting) return; keys[e.key.toLowerCase()]=false; });
@@ -4982,10 +5001,11 @@ function keyHTML(k){
 }
 function keysHTML(){ var o=''; for(var i=0;i<arguments.length;i++) o+=keyHTML(arguments[i]); return o; }
 // 일시정지의 조작법 표. 키 아이콘이 준비된 뒤에 만들어야 해서 열 때마다 짓는다.
+/* 리스폰(R)·시점 전환(V) 은 없앴다 — 여기 남겨 두면 눌러도 아무 일이 없는 키를
+   조작법에 적어 두는 셈이다. 자세한 이유는 위 keydown 핸들러. */
 var KEYHELP=[
   [['w','a','s','d'],'이동'], [['space'],'점프'],
   [['lmb'],'펑!'],            [['rmb'],'조준'],
-  [['r'],'리스폰'],           [['v'],'시점 전환'],
   [['enter'],'채팅'],         [['esc'],'일시정지']
 ];
 function buildKeyHelp(){
