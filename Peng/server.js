@@ -209,6 +209,27 @@ var roomMode  = {};    // room -> 호스트가 고른 게임 모드(coop/versus)
 var roomBots = {};     // room -> [{id, name, owner}]
 var nextBotId = 100000;   // 사람 id(1부터)와 절대 겹치지 않게 멀리 띄운다
 function botsOf(room){ return roomBots[room] || (roomBots[room] = []); }
+/* AI 이름 — 'AI 1' 대신 형용사 + 명사. 번호는 순서를 알려줄 뿐 누구인지는 안 알려준다.
+   화면에서 세 명이 동시에 뛰면 'AI 2 가 나를 밀었다' 는 기억에 안 남지만 '성난 두꺼비'
+   는 남는다. 이름표(캐릭터 위)와 점수 칩에 같은 이름이 뜨므로 그때 값이 산다.
+   방 안에서는 겹치지 않게 고르고, 다 떨어지면 그때만 숫자를 붙인다. */
+var BOT_ADJ = ['성난','조용한','굶주린','뻔뻔한','날쌘','둔한','명랑한','수상한',
+               '용감한','게으른','우아한','촌스러운','침착한','들뜬','고집센','엉뚱한'];
+var BOT_NOUN= ['두꺼비','수달','오소리','올빼미','너구리','고등어','도롱뇽','산양',
+               '까치','해달','살쾡이','물범','참새','두더지','불가사리','천산갑'];
+function botName(list){
+  /* 명사가 겹치지 않게 고른다. 이름 전체로만 비교하면 '게으른 올빼미'와 '우아한 올빼미'가
+     한 방에 같이 서고, 급하게 읽는 자리(이름표·점수 칩)에서는 그 둘이 같은 이름이다. */
+  var usedNoun = {};
+  list.forEach(function(b){
+    var t = String(b.name || '').split(' ');
+    if(t.length > 1) usedNoun[t[t.length - 1]] = 1;
+  });
+  var free = BOT_NOUN.filter(function(n){ return !usedNoun[n]; });
+  if(!free.length) return 'AI ' + (list.length + 1);
+  return BOT_ADJ[(Math.random() * BOT_ADJ.length) | 0] + ' ' +
+         free[(Math.random() * free.length) | 0];
+}
 function ownsBot(room, ownerId, botId){
   var b = botsOf(room);
   for(var i=0;i<b.length;i++) if(b[i].id === botId && b[i].owner === ownerId) return b[i];
@@ -347,6 +368,11 @@ server.on('upgrade', function(req, socket){
     if(m.t === 'pick'){
       var pi = m.pad|0;
       if(pi < 0 || pi > 63) return;
+      /* 봇도 아이템을 집는다. 봇은 방장의 클라이언트가 굴리므로 대신 신고해 주는데,
+         그대로 두면 서버가 '보낸 사람' 에게 줘 버려 방장이 봇의 아이템을 먹는다.
+         그 봇을 이 연결이 소유할 때만 받는 사람을 봇 id 로 바꾼다(st·bl·fell 과 같은 규칙). */
+      var to = id;
+      if(m.bot != null){ var pb = ownsBot(room, id, m.bot|0); if(!pb) return; to = pb.id; }
       var pads = roomPads[room] || (roomPads[room] = {});
       var slot = pads[pi];
       if(!slot) slot = pads[pi] = { ready:0, item:pickItem() };   // start 를 못 본 방 대비
@@ -355,7 +381,7 @@ server.on('upgrade', function(req, socket){
       var given = slot.item;
       slot.ready = tnow + PAD_CD_MS;
       slot.item  = pickItem();                  // 다음 내용물을 바로 굴려 표식에 띄운다
-      var pline = JSON.stringify({ t:'pad', pad:pi, id:id, item:given });
+      var pline = JSON.stringify({ t:'pad', pad:pi, id:to, item:given });
       var nline = JSON.stringify({ t:'padset', pad:pi, item:slot.item });
       broadcast(room, id, pline); send(socket, pline);
       broadcast(room, id, nline); send(socket, nline);
@@ -366,7 +392,7 @@ server.on('upgrade', function(req, socket){
       var list = botsOf(room);
       if(m.add){
         if(list.length >= 6) return;                 // 한 방에 봇 6까지
-        list.push({ id: nextBotId++, name: 'AI ' + (list.length + 1), owner: id });
+        list.push({ id: nextBotId++, name: botName(list), owner: id });
       } else {
         var gone = list.pop();
         if(gone) broadcast(room, -1, JSON.stringify({ t:'left', id:gone.id }));
