@@ -1437,7 +1437,7 @@ function makeSim(){  // practice 를 켜면 기록/승리 없이 자유 연습
     glide:0, glideLeft:0,   // 깃털 글라이딩: 남은 시간 / 남은 사용 횟수
     /* tp 는 이제 '내 몸을 그릴지' 하나만 뜻한다. 게임은 늘 1인칭이라 여기서는 false 고,
        참으로 세우는 곳은 타이틀 배경뿐이다(enterTitle) — 거기서만 내 캐릭터가 보여야 한다. */
-    ammo:AMMO_MAX, ammoT:0, t:0, cpIdx:0, win:false, blasts:[], particles:[], projectiles:[], shake:0, _fireCd:0, tp:false, recoil:0, kb:0,
+    ammo:AMMO_MAX, ammoT:0, t:0, cpIdx:0, win:false, blasts:[], particles:[], projectiles:[], shake:0, _fireCd:0, tp:false, recoil:0, kb:0, inv:0,
     coyote:0, jumped:false, bjGrace:0 };
 }
 /* 접촉 여유(m). 착지는 s.p.y 에 발판 윗면 값을 그대로 대입한다(moveAxis 참조). 그래서
@@ -2034,13 +2034,14 @@ function botStep(dt, now){
     }
     // 봇 상태를 '피어'로 넣어 두면 렌더·충돌·근접신관이 전부 그대로 동작한다
     var pe=MP.peers[bot.id] || (MP.peers[bot.id]={buf:[]});
-    pe.seen=now; pe.name=bot.name; if(bot.col) pe.col=bot.col;
+    pe.seen=now; pe.name=bot.name; if(bot.col) pe.col=bot.col; pe.inv=(s.inv>0);
     pe.buf.push({t:now, x:s.p.x, y:s.p.y, z:s.p.z, yaw:s.yaw, pitch:s.pitch, rc:s.recoil||0});
     if(pe.buf.length>16) pe.buf.shift();
     if(MP.connected && now-(bot.lastSend||0)>45){ bot.lastSend=now;
       mpSend({t:'st', bot:bot.id, x:Math.round(s.p.x*1000)/1000, y:Math.round(s.p.y*1000)/1000,
         z:Math.round(s.p.z*1000)/1000, yaw:Math.round(s.yaw*1000)/1000,
-        pitch:Math.round(s.pitch*1000)/1000, rc:Math.round((s.recoil||0)*100)/100}); }
+        pitch:Math.round(s.pitch*1000)/1000, rc:Math.round((s.recoil||0)*100)/100,
+        iv:(s.inv>0)?1:0}); }
   }
 }
 // 봇 명단을 로스터에 맞춘다(서버가 슬롯의 주인이다)
@@ -2194,7 +2195,18 @@ var IT_PULSE_F=2.0, IT_PULSE_R=1.6;
    반경을 넓히는 것은 '빗나가도 힘이 남는다' 는 뜻이라 조준 관대함이 그대로 오른다.
    다만 자기 폭발(로켓점프)에는 적용하지 않는다 — 그쪽까지 넓히면 이동 거리·높이가
    통째로 변해 맵을 다시 재야 한다. opt.by 가 그 둘을 가른다. */
-var KB_R_OTHER=1.35;   // 남을 때릴 때만 폭발 반경 배수(4.2 → 5.67m)
+/* 남을 때리는 폭발만 반경은 넓히고 힘은 줄인다. 둘을 따로 두는 이유가 여기 있다 —
+   반경만 넓히면 '빗나가도 닿는다' 와 '잘 맞히면 더 난다' 가 같이 올라간다. 실제로
+   그렇게 했다가 너무 잘 튀었다. 반경은 조준을 관대하게 하고, 힘은 날아가는 양을
+   정한다. 자기 폭발(로켓점프)에는 둘 다 안 붙는다 — 그쪽은 곧 맵 설계다. */
+var KB_R_OTHER=1.6;    // 폭발 반경 배수(4.2 → 6.72m)
+var KB_F_OTHER=0.82;   // 폭발 세기 배수(13.5 → 11.07)
+/* 떨어져서 돌아온 직후의 무적 시간(초).
+   판이 좁아질수록 스폰 자리와 싸움터가 가까워지는데, 돌아오자마자 다시 밀려 떨어지면
+   손쓸 방법이 없다 — 진 사람이 계속 지게 만드는 종류의 억울함이다.
+   대신 쏘는 순간 풀린다. 안 그러면 무적인 채로 먼저 쏘는 것이 제일 센 수가 되고,
+   그건 보호가 아니라 무기다. */
+var RESPAWN_INV=1.6;
 var KB_FLAT=1;         // 밀리는 방향은 그대로 둔다(1 = 눕히지 않음)
 /* 원판 반지름은 플레이어 반지름과 같다 → 지름 0.7m = 캐릭터 지름.
    집는 판정은 '몸이 원판에 닿으면'이라 거기에 몸 반지름을 더한다. */
@@ -2391,6 +2403,7 @@ function applyLocalBlast(shooter, cx, cy, cz, lift, opt){
 }
 function doFire(s){
   if(s.win || s.ammo<=0 || s._fireCd>0) return false;
+  s.inv=0;              // 쏘는 순간 무적을 내놓는다(위 RESPAWN_INV)
   s.ammo--; s._fireCd=0.12;
   var _ar=aimRay(s), o=_ar.o, d=_ar.d;
   var tHit=BLAST_RANGE;
@@ -2450,6 +2463,7 @@ function doFire(s){
 /* 쏜 쪽이 계산해 보낸 넉백을 그대로 받는다. 감쇠·끌어당김·과충전은 이미 반영돼
    있고, 깃털·닻처럼 '맞는 사람 몸에 걸린' 배율만 여기서 곱한다(그건 로컬 값이다). */
 function applyRemoteImpulse(s, h, byId, rev){
+  if(s.inv>0) return;                 // 리스폰 무적 — 실려 온 넉백도 안 받는다
   var take=1;
   if(s.items){ if(s.items.feather) take*=IT_FEATHER_KB; if(s.items.anchor) take*=IT_ANCHOR_KB; }
   s.v.x+=h.x*take; s.v.y+=h.y*take; s.v.z+=h.z*take;
@@ -2493,7 +2507,8 @@ function applyBlast(s, cx, cy, cz, lift, opt){
      pr 을 따로 빼 두지 않으면 펄스 반경에 KB_R_OTHER 가 겹쳐 붙어 6.7m 짜리가
      9m 가 된다 — 떼어내라고 있는 물건이 판 절반을 덮게 된다. */
   var R=BLAST_R*(opt.pr || (opt.by!=null?KB_R_OTHER:1))*(opt.pw?IT_POWER_R:1);
-  var F=BLAST_F*(opt.pw?IT_POWER_F:1)*(opt.pf||1);
+  // 세기도 반경과 같은 규칙이다 — pf 를 실은 폭발(펄스)은 그 값만, 남을 때리면 KB_F_OTHER
+  var F=BLAST_F*(opt.pf || (opt.by!=null?KB_F_OTHER:1))*(opt.pw?IT_POWER_F:1);
   var take=1;
   if(s.items){ if(s.items.feather) take*=IT_FEATHER_KB; if(s.items.anchor) take*=IT_ANCHOR_KB; }
   var sgn=opt.rev?-1:1;
@@ -2512,6 +2527,8 @@ function applyBlast(s, cx, cy, cz, lift, opt){
   if(lift && dist<FUSE_R){
     s.v.y+=LIFT_V*take; ungroundWithGrace(); s.kb=KB_TIME; return true; }
   if(dist>=R) return false;
+  // 리스폰 직후에는 남이 민 것을 안 받는다. 내 폭발(로켓점프)은 by 가 없으므로 그대로 통한다
+  if(s.inv>0 && opt.by!=null) return false;
   if(opt.by!=null){                  // 누가 밀었는지 기록 — 낙하 점수 귀속에 쓴다
     s.hitBy=opt.by; s.hitT=(typeof performance!=='undefined')?performance.now():0; }
   var f=F*(1-dist/R)*take;
@@ -2550,7 +2567,7 @@ function respawn(s){
      tutorTick 이 구역에 들어설 때마다 여기 쓸 자리를 적어 둔다. */
   if(s.tutorial){
     cp = s.tutorHome || LEVEL.start;
-    s.p={x:cp.x,y:cp.y,z:cp.z}; s.v={x:0,y:0,z:0}; s.onGround=true; sndDie();
+    s.p={x:cp.x,y:cp.y,z:cp.z}; s.v={x:0,y:0,z:0}; s.onGround=true; s.inv=RESPAWN_INV; sndDie();
     return;
   }
   if(GAMEMODE==='versus' && LEVEL.spawns && LEVEL.spawns.length){
@@ -2573,7 +2590,7 @@ function respawn(s){
       anyGate=true; if(ci<=s.cpIdx) gi=ci; }
     cp = LEVEL.checkpoints[anyGate ? (gi>=0?gi:0) : s.cpIdx];
   }
-  s.p={x:cp.x,y:cp.y,z:cp.z}; s.v={x:0,y:0,z:0}; s.onGround=true; sndDie();
+  s.p={x:cp.x,y:cp.y,z:cp.z}; s.v={x:0,y:0,z:0}; s.onGround=true; s.inv=RESPAWN_INV; sndDie();
 }
 
 function stepSim(s, dt, inp){
@@ -2583,6 +2600,7 @@ function stepSim(s, dt, inp){
   if(s.shake>0)s.shake=Math.max(0,s.shake-dt*2);
   if(s.recoil>0)s.recoil=Math.max(0,s.recoil-dt*4.5);
   if(s.kb>0)s.kb=Math.max(0,s.kb-dt);
+  if(s.inv>0)s.inv=Math.max(0,s.inv-dt);   // 리스폰 무적(위 RESPAWN_INV)
   // 탄 재충전
   // 아이템 지속시간
   if(s.items) for(var _it in s.items){ s.items[_it]-=dt; if(s.items[_it]<=0) delete s.items[_it]; }
@@ -3590,6 +3608,9 @@ function render(dt){
   // 원격 플레이어 — 보간된 위치
   var pnow=performance.now();
   for(var pid in MP.peers){ var pe=MP.peers[pid], ps=peerSample(pe, pnow); if(!ps)continue;
+    /* 리스폰 무적은 깜빡임으로 보인다. 색을 바꾸지 않는 이유는 몸 색이 곧 사람의
+       이름표라서다 — 잠깐이라도 다른 색이 되면 누구인지가 흔들린다. */
+    if(pe.inv && (Math.floor(pnow/110)&1)) continue;
     emitCharacter(ps.x, ps.y, ps.z, ps.yaw, ps.pitch, ps.rc, (pe.col||PEER_COL)); }
   /* tp 는 이제 '내 몸을 그릴지' 하나만 뜻하고, 참인 곳은 타이틀 배경뿐이다.
      예전에는 여기에 '카메라가 몸 바로 뒤까지 당겨졌으면 안 그린다'(CAM_LEN<1.05) 는
@@ -3831,12 +3852,17 @@ function setMyColor(c){ if(!/^#[0-9a-fA-F]{6}$/.test(c)) return;
 var GAMEMODE='versus', SCORES={};
 /* 목표 점수는 인원에 따라 오른다. 2인에 5점은 적당한데, 인원이 늘면 표적도 같이
    늘어 한 사람이 점수를 쌓는 속도가 빨라진다 — 여섯이 뛰면 5점은 순식간이고,
-   붙어 볼 새도 없이 판이 끝난다. 한 명 늘 때마다 한 점씩 올린다(2인 5 … 6인 9).
+   붙어 볼 새도 없이 판이 끝난다.
+   한 명당 한 점씩 올려 봤더니(2인 5 … 6인 9) 그래도 금방 끝났다. 표적이 N-1 명으로
+   느는 만큼 점수 쌓는 속도도 그만큼 빨라지는데, 목표는 그보다 훨씬 완만하게 올랐기
+   때문이다. 그래서 표적 수에 그대로 비례시킨다 — 5 × (인원-1).
+   2인 5 · 3인 10 · 4인 15 · 5인 20 · 6인 25. 5의 배수라 화면에 뜨는 '선취 N' 도
+   눈에 걸리는 숫자가 된다.
    상수가 아니라 함수인 이유는 대기방에서 AI 를 넣고 빼는 동안에도 표시가 따라가야
    하고, 무엇보다 모든 참가자가 같은 값을 봐야 하기 때문이다 — 명단(MP.players)은
    서버가 맞춰 주므로 각자 세어도 답이 같다. 어느 한쪽이 정해 보내면 그때부터
    어긋날 자리가 생긴다. */
-function vsWin(){ return 5 + Math.max(0, (MP.players.length||2) - 2); }
+function vsWin(){ return 5 * Math.max(1, (MP.players.length||2) - 1); }
 function nameOf(id){ for(var i=0;i<MP.players.length;i++) if(MP.players[i].id===id) return MP.players[i].name;
   return (id===MP.id)?MP.name:('P'+id); }
 /* 누군가 아레나 밖으로 떨어지면 나머지 전원이 1점.
@@ -4069,7 +4095,7 @@ function mpHandle(m){
       syncMapPickers(); applyLevelToPractice(); } }
   else if(m.t==='st'){ if(m.id===MP.id)return; var pe=MP.peers[m.id]||(MP.peers[m.id]={buf:[]});
     if(!pe.buf)pe.buf=[];
-    pe.name=m.name||pe.name; pe.seen=performance.now();
+    pe.name=m.name||pe.name; pe.seen=performance.now(); pe.inv=!!m.iv;
     // 스냅샷을 쌓아두고 렌더 시 보간 — 22Hz 수신을 60fps 화면에서 부드럽게
     pe.buf.push({t:pe.seen, x:m.x, y:m.y, z:m.z, yaw:m.yaw||0, pitch:m.pitch||0, rc:m.rc||0});
     if(pe.buf.length>16)pe.buf.shift(); }
@@ -5171,8 +5197,11 @@ function loop(now){ if(!last)last=now; var dt=Math.max(0, Math.min(0.05,(now-las
     if(jumpBuf>0) jumpBuf=Math.max(0, jumpBuf-dt);
     // 멀티: 내 상태 ~22Hz 전송 + 끊긴 피어 정리
     if(MP.connected && now-MP.lastSend>45){ MP.lastSend=now;
+      /* iv = 리스폰 무적. 쏘는 쪽에 이걸 안 알리면 "왜 안 밀리지" 만 남는다 —
+         맞아도 안 밀리는 이유가 화면에 있어야 한다(아래 render 의 깜빡임). */
       mpSend({t:'st', name:MP.name, x:Math.round(sim.p.x*1000)/1000, y:Math.round(sim.p.y*1000)/1000, z:Math.round(sim.p.z*1000)/1000,
-        yaw:Math.round(sim.yaw*1000)/1000, pitch:Math.round(sim.pitch*1000)/1000, rc:Math.round((sim.recoil||0)*100)/100}); }
+        yaw:Math.round(sim.yaw*1000)/1000, pitch:Math.round(sim.pitch*1000)/1000, rc:Math.round((sim.recoil||0)*100)/100,
+        iv:(sim.inv>0)?1:0}); }
     botStep(dt, now);            // 방장이 AI 참가자를 대신 굴린다
     dummyStep(dt, now);          // 튜토리얼 체험존의 허수아비(맵에 없으면 빈 배열이라 공짜)
     tutorTick(sim);              // 구역 안내판 · 되돌아올 자리 갱신
