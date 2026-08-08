@@ -1147,6 +1147,7 @@ function setLevel(id){
   buildCollapseFloor();                                    // 아레나 바닥은 여기서 깔린다
   buildStaticPieces();                                     // 에디터로 놓은 조각
   buildTriSoup();                                          // 조각의 삼각형 = 실제 이동 판정
+  buildGroundMap();                                        // 봇이 쓸 바닥 높이 격자(한 번만 굽는다)
   buildPads();                                             // 아이템 패드 위치
   buildDummies();                                          // 체험존 허수아비(튜토리얼)
   MARKS = PUNG.coopMarkers(d);
@@ -1277,7 +1278,7 @@ function buildCollapseFloor(){
    호출부마다 나열해 두는 바람에 buildTriSoup 만 빠져 있었다 — 2라운드부터는 화면에
    새 봉우리가, 몸에는 지난 봉우리가 걸렸다. 나무·통나무처럼 라운드마다 자리가 바뀌는
    소품에서 "메시와 콜리전이 다른 자리에 있다"로 드러났다. 하나로 묶어 못 빠지게 한다. */
-function rebuildFloor(){ buildCollapseFloor(); buildTriSoup(); buildPads(); }
+function rebuildFloor(){ buildCollapseFloor(); buildTriSoup(); buildGroundMap(); buildPads(); }
 /* 조각 목록의 단일 출처. 에디터로 만든 맵은 LEVEL.pieces, 생성기 맵(정거장·피크)은
    LEVEL._pieces 에 둔다. 이 둘 중 하나를 고르는 식을 호출부마다 적어 두는 바람에
    한 군데(GL 준비 전에 미뤄 둔 첫 프레임 재빌드)가 _pieces 만 봤고, 에디터 맵에서는
@@ -1303,7 +1304,8 @@ function dropRing(r){
         for(var e=0;e<STATION.ends.length;e++) if(STATION.ends[e].order<r) cnt=STATION.ends[e].count;
         STATION.count=cnt;
       } else buildStation(PS);
-      buildTriSoup();
+      // 조각이 떨어져 나갔으니 바닥 격자도 다시 굽는다 — 안 그러면 봇이 사라진 판을 딛는다
+      buildTriSoup(); buildGroundMap();
     }
   }
   for(var i=0;i<LEVEL.boxes.length;i++){ var b=LEVEL.boxes[i];
@@ -1486,8 +1488,46 @@ function boxSolid(b){ return !b.deco && (!b.link || !!LINK_ON[b.link]); }
    전수 검사는 안 된다(피크가 43,020 삼각형 · 축 3개 × 120Hz = 초당 1,550만 번).
    균일 격자에 넣어 두고 몸 상자가 닿는 칸만 훑는다. */
 var TSOUP=null, TCELL=1.5;
+/* ---------- 바닥 높이 격자 ----------
+   '이 (x,z) 에 설 곳이 있나, 있으면 몇 m 인가' 를 O(1) 로 답한다. 봇이 한 프레임에
+   여러 번 묻는 질문인데, 삼각형을 그때그때 훑으면 감당이 안 된다 — 실측: 조각이
+   309 개인 판에서 봇 두 기만 넣어도 프레임이 3.7ms 에서 14.3ms 가 됐다(봇당 5.3ms).
+
+   삼각형마다 AABB 가 이미 구워져 있으므로(TSOUP.bb) 그걸 XZ 격자에 한 번 굽는다.
+   칸마다 '그 칸을 덮는 삼각형들의 가장 높은 y' 를 남긴다 — 걸어 올라설 윗면이 곧
+   그 값이다. 층이 겹친 판이라면 아래층을 못 보지만, 이 게임의 경쟁 맵은 전부
+   한 겹짜리 판이고 이 값을 쓰는 곳은 '앞에 낭떠러지인가' 하나뿐이다. */
+var GMAP=null, GMAP_CELL=1.0;
+function buildGroundMap(){
+  GMAP=null;
+  if(!TSOUP || !TSOUP.bb) return;
+  var bb=TSOUP.bb, n=bb.length/6; if(!n) return;
+  var minX=1e9, minZ=1e9, maxX=-1e9, maxZ=-1e9, t, o;
+  for(t=0;t<n;t++){ o=t*6;
+    if(bb[o]<minX)minX=bb[o];   if(bb[o+3]>maxX)maxX=bb[o+3];
+    if(bb[o+2]<minZ)minZ=bb[o+2]; if(bb[o+5]>maxZ)maxZ=bb[o+5]; }
+  var c=GMAP_CELL;
+  var nx=Math.ceil((maxX-minX)/c)+1, nz=Math.ceil((maxZ-minZ)/c)+1;
+  if(!(nx>0&&nz>0) || nx*nz>400000) return;      // 말도 안 되게 큰 판이면 포기하고 예전처럼 돈다
+  var h=new Float32Array(nx*nz); h.fill(-Infinity);
+  for(t=0;t<n;t++){ o=t*6;
+    var top=bb[o+4];
+    var i0=(bb[o]-minX)/c|0, i1=(bb[o+3]-minX)/c|0;
+    var k0=(bb[o+2]-minZ)/c|0, k1=(bb[o+5]-minZ)/c|0;
+    for(var i=i0;i<=i1;i++){ var row=i*nz;
+      for(var k=k0;k<=k1;k++){ var q=row+k; if(top>h[q]) h[q]=top; } }
+  }
+  GMAP={x0:minX, z0:minZ, nx:nx, nz:nz, cell:c, h:h};
+}
+function groundMapAt(x,z){
+  if(!GMAP) return null;
+  var i=(x-GMAP.x0)/GMAP.cell|0, k=(z-GMAP.z0)/GMAP.cell|0;
+  if(i<0||k<0||i>=GMAP.nx||k>=GMAP.nz) return null;
+  var v=GMAP.h[i*GMAP.nz+k];
+  return v===-Infinity ? null : v;
+}
 function buildTriSoup(){
-  TSOUP=null;
+  TSOUP=null; GMAP=null;
   var list=levelPieces();
   if(!list.length) return;
   var P=stationParts(), U=STATION.unit, total=0, q, pc, m;
@@ -1727,10 +1767,10 @@ var BOT_AIM_OK=0.14;
    밀어내므로, 안쪽을 때려야 상대가 가장자리로 간다. 이 게임의 실력이 사실상 이것이다. */
 var BOT_PUSH=1.2;
 var BOT_BACK=3.2;            // 등 뒤 이만큼이 허공이면 밀려서 죽는 자리다 — 비킨다
-/* 아이템을 주우러 갈 최대 거리(m)와, 그러기 위해 상대와 벌어져 있어야 하는 거리.
-   붙어 싸우는 중에 등을 돌려 패드로 달려가는 건 사람도 안 한다 — 그건 똑똑한 게
-   아니라 딴짓이다. 충분히 떨어져 있을 때만 주우러 간다. */
-var BOT_PAD_R=16, BOT_PAD_SAFE=8;
+/* 아이템을 주우러 갈 최대 거리(m). 언제 주우러 가는지는 botThink 의 조건 셋이 정한다 —
+   싸울 상대가 사격 범위 밖일 때만이다. 붙어 싸우는 중에 등을 돌려 패드로 달려가는 건
+   똑똑한 게 아니라 딴짓이고, 실제로 그것 때문에 봇이 아예 안 싸운 적이 있다. */
+var BOT_PAD_R=16;
 var BOT_PULSE_D=4.5;         // 이보다 붙으면 펄스로 떼어낸다(그러라고 있는 물건이다)
 /* 발밑에 설 곳이 있는지 — 봇이 스스로 떨어지지 않게 하는 가장 중요한 판정.
    이게 없으면 봇은 상대를 쫓다가 그대로 낭떠러지로 걸어 들어간다. */
@@ -1741,6 +1781,14 @@ function groundAt(x, z, y){
     var top=b.cy+b.hy;
     if(top<=y+1.2 && top>y-6) return top;      // 걸어 내려갈 수 있는 범위
   }
+  /* 상자가 못 찾았으면 조각(pieces)으로 지은 판이다. 그런 맵에서 위 훑기는 늘 null 이라,
+     이게 없으면 봇이 '사방이 낭떠러지'로 읽고 그 자리에 굳는다 — 경쟁 맵 일곱 중
+     다섯이 그렇다(야영지·숲 공터·격납고·조립 라인·프로토타입 링). 정거장·피크만
+     멀쩡했던 건 그 둘이 런타임에 충돌 상자를 깔기 때문이다(buildCollapseFloor).
+     실측: 숲 공터에 AI 를 하나 넣으면 30초 동안 거리 16~24m 를 유지하며 한 발도
+     쏘지 않았다. "AI 를 하나만 넣으면 나를 공격하지 않는다" 의 정체다. */
+  var gh=groundMapAt(x,z);
+  if(gh!==null && gh<=y+1.2 && gh>y-6) return gh;
   return null;
 }
 /* 지금 보고 있는 방향으로 뭐가 얼마나 가까이 있나. 벽에 코를 박고 쏘면
@@ -1829,10 +1877,20 @@ function botThink(bot, dt){
      탄 없이 상대 얼굴 앞에서 서성이는 것이 '멍청해 보이는' 대표적인 장면이다. */
   if(tgt && s.ammo===0 && tgt.d<9){ mx=-dx/dist; mz=-dz/dist; }
 
-  /* 아이템 — 상대와 충분히 떨어져 있을 때만 주우러 간다. 사람도 붙어 싸우는 중에
-     등을 돌려 패드로 뛰지는 않는다. 가장 가까운, 지금 차 있는 패드 하나만 본다. */
-  if(!tgt || tgt.d>BOT_PAD_SAFE){
-    var bp=null, bpd=BOT_PAD_R;
+  /* 아이템은 '지금 싸울 상대가 없을 때' 만 주우러 간다. 조건이 셋인 이유는 하나만
+     빠져도 봇이 싸우지 않게 되기 때문이다.
+
+     처음엔 '상대와 8m 만 떨어지면' 이었는데, 그러면 상대에게 영영 붙지 않는다.
+     실측: AI 를 하나만 넣으면 거리가 14.6~24m 로 유지되고 사격 범위(13m) 안에
+     들어온 프레임이 0%, 30초 동안 한 발도 안 쐈다. 둘 이상일 때 싸우는 것처럼
+     보였던 건 봇끼리는 서로 가까워서 이 조건에 안 걸렸기 때문이다.
+
+       · 사격 범위 밖이다   — 쏠 수 있으면 쏘는 게 먼저다
+       · 손에 든 것이 없다  — 있으면 또 주우러 갈 이유가 없다
+       · 상대보다 가깝다    — 상대를 지나쳐 반대편으로 가면 그건 도망이다 */
+  var hasItem=(s.items && Object.keys(s.items).length>0) || (s.charges && s.charges.pulse>0);
+  if(!hasItem && (!tgt || tgt.d>BOT_RANGE)){
+    var bp=null, bpd=Math.min(BOT_PAD_R, tgt?tgt.d:BOT_PAD_R);
     for(var pi=0;pi<PADS.length;pi++){ var pd=PADS[pi];
       if(pd.cd>0) continue;
       var ddp=Math.hypot(pd.x-s.p.x, pd.z-s.p.z);
