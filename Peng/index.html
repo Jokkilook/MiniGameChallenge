@@ -1737,24 +1737,60 @@ function doFire(s){
   // 같은 화면에서 도는 봇(과 방장 자신)에게도 폭발이 닿아야 한다.
   // 원격 피어는 자기 화면에서 bl 을 받아 스스로 처리한다.
   applyLocalBlast(s, center.x, center.y, center.z, lift, {rev:rev, pw:pw, by:byId});
+  /* 원격에게 실릴 넉백은 '쏜 쪽이 본 위치'로 여기서 계산해 실어 보낸다.
+     예전에는 폭발 지점만 보내고 맞는 쪽이 제 위치로 다시 판정했는데, 그때까지
+     쌓이는 지연이 컸다: 상태 22Hz(45ms) + 왕복 ping + 일부러 과거를 그리는
+     INTERP_MS(110ms) + 맞는 쪽에서 탄을 다시 날리는 비행시간(20m면 320ms).
+     합쳐 0.5~0.7초, 달리는 사람 기준 2.5~3.7m 어긋난다. 반경이 4.2m 이고 힘이
+     선형으로 줄어드니 대부분 스치거나 아예 빗나갔다 — "펑건이 안 먹는다"의 정체다.
+     쏜 쪽 화면에서 맞았으면 맞은 것으로 한다(FPS 의 통상 규칙). 받는 쪽은 이 값을
+     즉시 적용하고, 탄환은 연출로만 날아간다. */
+  var _hits=null;
+  if(MP.connected){
+    var _now=performance.now(), _R=BLAST_R*(pw?IT_POWER_R:1), _F=BLAST_F*(pw?IT_POWER_F:1);
+    for(var _pid in MP.peers){
+      var _ps=peerSample(MP.peers[_pid], _now); if(!_ps) continue;
+      var _hx=_ps.x-center.x, _hy=(_ps.y+PH_HY)-center.y, _hz=_ps.z-center.z;
+      var _dd=Math.hypot(_hx,_hy,_hz); if(_dd>=_R) continue;
+      var _ff=_F*(1-_dd/_R), _sg=rev?-1:1;
+      if(_dd<0.001){ _hx=0; _hy=1; _hz=0; _dd=1; }
+      (_hits||(_hits=[])).push({ i:(_pid|0),
+        x:+(_sg*_hx/_dd*_ff).toFixed(2), y:+(_sg*_hy/_dd*_ff).toFixed(2), z:+(_sg*_hz/_dd*_ff).toFixed(2) });
+    }
+  }
   if(typeof mpSend==='function'){
     var _bl={t:'bl', x:center.x, y:center.y, z:center.z,
-      ox:o.x, oy:o.y, oz:o.z, lf:lift?1:0, rv:rev?1:0, pw:pw?1:0};
+      ox:o.x, oy:o.y, oz:o.z, lf:lift?1:0, rv:rev?1:0, pw:pw?1:0, hit:_hits};
     if(FIRING_BOT) BOT_SHOT=_bl; else mpSend(_bl);   // 봇 사격은 봇 id 로 따로 나간다
   }
   return true;
 }
 // 팀원이 쏜 탄환: 상대 총구에서 폭발 지점까지 날아가는 걸 보여주고, 도착 시 나에게 넉백+연출
-function spawnRemoteShot(s, m){
+/* 쏜 쪽이 계산해 보낸 넉백을 그대로 받는다. 감쇠·끌어당김·과충전은 이미 반영돼
+   있고, 깃털·닻처럼 '맞는 사람 몸에 걸린' 배율만 여기서 곱한다(그건 로컬 값이다). */
+function applyRemoteImpulse(s, h, byId){
+  var take=1;
+  if(s.items){ if(s.items.feather) take*=IT_FEATHER_KB; if(s.items.anchor) take*=IT_ANCHOR_KB; }
+  s.v.x+=h.x*take; s.v.y+=h.y*take; s.v.z+=h.z*take;
+  if(s.onGround || s.coyote>0) s.bjGrace=BJ_GRACE;
+  s.onGround=false; s.coyote=0; s.kb=KB_TIME;
+  if(byId!=null){ s.hitBy=byId; s.hitT=performance.now(); }
+}
+function findHit(m, id){
+  if(!m.hit || id==null) return null;
+  for(var i=0;i<m.hit.length;i++) if(m.hit[i].i===id) return m.hit[i];
+  return null;
+}
+function spawnRemoteShot(s, m, noBlast){
   var ox=(m.ox!=null)?m.ox:m.x, oy=(m.oy!=null)?m.oy:m.y, oz=(m.oz!=null)?m.oz:m.z;
   var dx=m.x-ox, dy=m.y-oy, dz=m.z-oz, L=Math.hypot(dx,dy,dz);
   // 탄에 실려 온 성질(끌어당김·과충전·펄스 배율)을 그대로 재현한다
   var opt={rev:!!m.rv, pw:!!m.pw, pf:m.pf, pr:m.pr, by:(m.id!=null?m.id:null)};
-  if(L<0.05){ applyBlast(s,m.x,m.y,m.z,m.lf,opt); blastFx(s,m.x,m.y,m.z,m.lf); return; }
+  if(L<0.05){ if(!noBlast) applyBlast(s,m.x,m.y,m.z,m.lf,opt); blastFx(s,m.x,m.y,m.z,m.lf); return; }
   dx/=L; dy/=L; dz/=L;
   var start=Math.min(0.6, L*0.5);
   s.projectiles.push({ x:ox+dx*start, y:oy+dy*start, z:oz+dz*start, dx:dx, dy:dy, dz:dz,
-    gone:0, dist:Math.max(0.05,L-start), bx:m.x, by:m.y, bz:m.z, hitMe:true, lift:m.lf,
+    gone:0, dist:Math.max(0.05,L-start), bx:m.x, by:m.y, bz:m.z, hitMe:!noBlast, lift:m.lf,
     rev:opt.rev, pw:opt.pw, pf:opt.pf, pr:opt.pr, by:opt.by });
 }
 /* 폭발 넉백(자기/원격 공용): 중심 기준으로 플레이어를 민다.
@@ -3261,9 +3297,16 @@ function mpHandle(m){
     pe.buf.push({t:pe.seen, x:m.x, y:m.y, z:m.z, yaw:m.yaw||0, pitch:m.pitch||0, rc:m.rc||0});
     if(pe.buf.length>16)pe.buf.shift(); }
   else if(m.t==='bl'){ if(m.id===MP.id)return;
-    if(sim&&!sim.win) spawnRemoteShot(sim,m);
+    /* 실려 온 넉백이 내 것이면 지금 바로 적용한다 — 탄이 날아오길 기다리면
+       그만큼 또 어긋난다. 탄환은 연출로만 날린다(hitMe=false). */
+    var _mine=findHit(m, MP.id);
+    if(sim&&!sim.win){ spawnRemoteShot(sim, m, !!_mine);
+      if(_mine) applyRemoteImpulse(sim, _mine, m.id); }
     // 방장이 돌리는 봇들도 남의 폭발에 밀려야 한다(봇 자신이 쏜 건 제외)
-    for(var _b=0;_b<BOTS.length;_b++) if(BOTS[_b].id!==m.id) spawnRemoteShot(BOTS[_b].sim, m); }
+    for(var _b=0;_b<BOTS.length;_b++){ if(BOTS[_b].id===m.id) continue;
+      var _bh=findHit(m, BOTS[_b].id);
+      spawnRemoteShot(BOTS[_b].sim, m, !!_bh);
+      if(_bh) applyRemoteImpulse(BOTS[_b].sim, _bh, m.id); } }
   else if(m.t==='ch'){ pushChat(m.name, m.text, m.id===MP.id); }
   else if(m.t==='left'){ delete MP.peers[m.id]; }
 }

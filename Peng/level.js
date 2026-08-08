@@ -867,8 +867,7 @@ PENG.genPeak = function(seed){
   pads.push({ i:0.3, j:0.3, h:SUMMIT_Y, order:0 });
   var px=DECK_R-0.9, pz=0;
   for(var p=0;p<4;p++){ pads.push({i:px, j:pz, h:0, order:padRing(px,pz)}); var t3=pz; pz=-px; px=t3; }
-  var qx=DECK_R*0.55, qz=DECK_R*0.55;
-  for(var q2=0;q2<4;q2++){ pads.push({i:qx, j:qz, h:0, order:padRing(qx,qz)}); var t4=qz; qz=-qx; qx=t4; }
+
 
   return { pieces:pieces, spawns:spawns, pads:pads, maxRing:RINGS.length-1,
            deckR:DECK_OUT, summitY:SUMMIT_Y,
@@ -1002,7 +1001,8 @@ PENG.genStation = function(seed){
   var spawns=[], pads=[{i:0,j:0}];
   function ring4(i,j,out){ for(var t2=0;t2<4;t2++){ out.push({i:i,j:j}); var n1=j, n2=-i; i=n1; j=n2; } }
   ring4(0, podC, spawns);            // 포드 안쪽 중심
-  ring4(0, 2, pads);                 // 복도 첫 칸 — 집으러 가려면 자리를 비워야 한다
+  /* 패드는 적게 — 가운데 하나와 포드 넷. 예전엔 복도 첫 칸에도 넉 장을 둬서
+     아홉 장이었는데, 그러면 아이템이 흔해져 "집으러 간다"가 선택이 아니게 된다. */
   ring4(0, podC+podR, pads);         // 포드 안쪽 가장자리(벽 고리 바로 안)
 
   return { pieces:pieces, colliders:colliders, spawns:spawns, pads:pads,
