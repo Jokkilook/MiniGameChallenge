@@ -1188,7 +1188,7 @@ function setLevel(id){
   buildCollapseFloor();                                    // 아레나 바닥은 여기서 깔린다
   buildStaticPieces();                                     // 에디터로 놓은 조각
   buildTriSoup();                                          // 조각의 삼각형 = 실제 이동 판정
-  buildGroundMap();                                        // 봇이 쓸 바닥 높이 격자(한 번만 굽는다)
+  buildGroundMap(); buildGroundBoxes();                    // 봇이 쓸 바닥 높이 격자(한 번만 굽는다)
   buildPads();                                             // 아이템 패드 위치
   buildDummies();                                          // 체험존 허수아비(튜토리얼)
   MARKS = PUNG.coopMarkers(d);
@@ -1319,7 +1319,7 @@ function buildCollapseFloor(){
    호출부마다 나열해 두는 바람에 buildTriSoup 만 빠져 있었다 — 2라운드부터는 화면에
    새 봉우리가, 몸에는 지난 봉우리가 걸렸다. 나무·통나무처럼 라운드마다 자리가 바뀌는
    소품에서 "메시와 콜리전이 다른 자리에 있다"로 드러났다. 하나로 묶어 못 빠지게 한다. */
-function rebuildFloor(){ buildCollapseFloor(); buildTriSoup(); buildGroundMap(); buildPads(); }
+function rebuildFloor(){ buildCollapseFloor(); buildTriSoup(); buildGroundMap(); buildGroundBoxes(); buildPads(); }
 /* 조각 목록의 단일 출처. 에디터로 만든 맵은 LEVEL.pieces, 생성기 맵(정거장·피크)은
    LEVEL._pieces 에 둔다. 이 둘 중 하나를 고르는 식을 호출부마다 적어 두는 바람에
    한 군데(GL 준비 전에 미뤄 둔 첫 프레임 재빌드)가 _pieces 만 봤고, 에디터 맵에서는
@@ -1346,7 +1346,7 @@ function dropRing(r){
         STATION.count=cnt;
       } else buildStation(PS);
       // 조각이 떨어져 나갔으니 바닥 격자도 다시 굽는다 — 안 그러면 봇이 사라진 판을 딛는다
-      buildTriSoup(); buildGroundMap();
+      buildTriSoup(); buildGroundMap(); buildGroundBoxes();
     }
   }
   for(var i=0;i<LEVEL.boxes.length;i++){ var b=LEVEL.boxes[i];
@@ -1537,11 +1537,18 @@ var TSOUP=null, TCELL=1.5;
    칸마다 '그 칸을 덮는 삼각형들의 가장 높은 y' 를 남긴다 — 걸어 올라설 윗면이 곧
    그 값이다. 층이 겹친 판이라면 아래층을 못 보지만, 이 게임의 경쟁 맵은 전부
    한 겹짜리 판이고 이 값을 쓰는 곳은 '앞에 낭떠러지인가' 하나뿐이다. */
-var GMAP=null, GMAP_CELL=1.0;
+var GMAP=null, GMAP_CELL=1.0, GMAP_LV=4;   // 칸마다 담아 둘 바닥 층 수
+/* 격자와 같이 구워 두는 '딛을 수 있는 상자' 목록. LEVEL.boxes 를 통째로 도는 건
+   조각 맵에서 헛일이다 — 숲 공터는 11,736개가 전부 _tri(광선 전용)라 한 칸도
+   건지지 못하면서 boxSolid 를 11,736번 부른다(실측 호출당 21.4µs).
+   붕괴로 발판이 꺼지는 건 b.deco 를 뒤집는 것이라 목록은 그대로 두고 매번
+   boxSolid 로 확인한다. 상자가 새로 밀려 들어오는 자리는 셋뿐이고 모두 곧바로
+   buildGroundMap 을 부른다(setLevel · rebuildFloor · dropRing). */
+var GBOX=null;
 function buildGroundMap(){
   GMAP=null;
   if(!TSOUP || !TSOUP.bb) return;
-  var bb=TSOUP.bb, n=bb.length/6; if(!n) return;
+  var V=TSOUP.v, bb=TSOUP.bb, n=bb.length/6; if(!n) return;
   var minX=1e9, minZ=1e9, maxX=-1e9, maxZ=-1e9, t, o;
   for(t=0;t<n;t++){ o=t*6;
     if(bb[o]<minX)minX=bb[o];   if(bb[o+3]>maxX)maxX=bb[o+3];
@@ -1549,22 +1556,59 @@ function buildGroundMap(){
   var c=GMAP_CELL;
   var nx=Math.ceil((maxX-minX)/c)+1, nz=Math.ceil((maxZ-minZ)/c)+1;
   if(!(nx>0&&nz>0) || nx*nz>400000) return;      // 말도 안 되게 큰 판이면 포기하고 예전처럼 돈다
-  var h=new Float32Array(nx*nz); h.fill(-Infinity);
-  for(t=0;t<n;t++){ o=t*6;
+  var h=new Float32Array(nx*nz*GMAP_LV); h.fill(Infinity);
+  for(t=0;t<n;t++){
+    /* 걸을 수 없는 기울기의 면은 바닥이 아니다. 나무 줄기·바위 옆면·벽이 여기서
+       걸러진다 — 안 걸러 내면 그 면들의 윗변이 '이 칸의 바닥' 으로 들어앉는다. */
+    if(triNy(V, t*9) < SLOPE_MAX) continue;
+    o=t*6;
     var top=bb[o+4];
     var i0=(bb[o]-minX)/c|0, i1=(bb[o+3]-minX)/c|0;
     var k0=(bb[o+2]-minZ)/c|0, k1=(bb[o+5]-minZ)/c|0;
     for(var i=i0;i<=i1;i++){ var row=i*nz;
-      for(var k=k0;k<=k1;k++){ var q=row+k; if(top>h[q]) h[q]=top; } }
+      for(var k=k0;k<=k1;k++){
+        /* 칸마다 '낮은 쪽 네 층' 을 담는다. 하나만 담던 때는 그 칸에서 제일 높은 면
+           — 나무 꼭대기·바위 위 — 이 바닥 행세를 했고, 봇은 발밑에 아무것도 없다고
+           읽어 낭떠러지 취급을 했다(실측: 조각 맵의 12~25% 칸이 그랬다).
+           높은 쪽이 아니라 낮은 쪽을 남기는 이유는 사람이 딛는 것이 바닥이기 때문이다.
+           그 위에 놓인 발판도 네 층 안에 들어오므로 다리·단은 그대로 잡힌다. */
+        var b0=(row+k)*GMAP_LV, v=top;
+        for(var L=0;L<GMAP_LV;L++){
+          var cur=h[b0+L];
+          /* 한 뼘 안에 겹친 면은 한 층으로 친다. 이때 남기는 건 '높은 쪽'이다 —
+             밟는 것은 널판의 윗면이지 밑면이 아니다. 낮은 쪽을 남겼더니 야영지
+             바닥이 널판 두께(0.19m)만큼 내려앉은 값으로 잡혔다. 0.35m 는 걸어
+             오를 수 있는 턱(STEP_H 0.34)이라, 이 안의 차이는 어차피 한 바닥이다. */
+          if(Math.abs(cur-v)<0.35){ if(v>cur) h[b0+L]=v; break; }
+          if(v<cur){ h[b0+L]=v; v=cur; }                   // 낮은 것부터 정렬되게 밀어 넣는다
+        }
+      } }
   }
   GMAP={x0:minX, z0:minZ, nx:nx, nz:nz, cell:c, h:h};
 }
-function groundMapAt(x,z){
+/* 격자를 굽지 못한 맵(TSOUP 이 없는 손수 지은 판)에서도 이 목록은 필요하다 —
+   그래서 buildGroundMap 안이 아니라 부르는 쪽에서 따로 짚는다. */
+function buildGroundBoxes(){
+  GBOX=[];
+  if(!LEVEL || !LEVEL.boxes) { GBOX=null; return; }
+  for(var i=0;i<LEVEL.boxes.length;i++){
+    var b=LEVEL.boxes[i];
+    if(b._tri) continue;                 // 몸의 이동 판정과 같은 기준 — 삼각형이 맡는다
+    GBOX.push(b);
+  }
+}
+/* 그 자리에서 '내 발 높이에 맞는' 층을 고른다 — 올라설 수 있는 것 중 가장 높은 것.
+   y 를 안 받던 때는 층을 하나만 갖고 있어서 고를 것도 없었다(위 buildGroundMap 참고). */
+function groundMapAt(x,z,y){
   if(!GMAP) return null;
   var i=(x-GMAP.x0)/GMAP.cell|0, k=(z-GMAP.z0)/GMAP.cell|0;
   if(i<0||k<0||i>=GMAP.nx||k>=GMAP.nz) return null;
-  var v=GMAP.h[i*GMAP.nz+k];
-  return v===-Infinity ? null : v;
+  var b0=(i*GMAP.nz+k)*GMAP_LV, best=null, hi=(y==null)?Infinity:y+1.2, lo=(y==null)?-Infinity:y-6;
+  for(var L=0;L<GMAP_LV;L++){
+    var v=GMAP.h[b0+L]; if(v===Infinity) break;      // 낮은 것부터 차 있다 — 빈 칸이 나오면 끝
+    if(v<=hi && v>lo && (best===null || v>best)) best=v;
+  }
+  return best;
 }
 function buildTriSoup(){
   TSOUP=null; GMAP=null;
@@ -1815,8 +1859,9 @@ var BOT_PULSE_D=4.5;         // 이보다 붙으면 펄스로 떼어낸다(그�
 /* 발밑에 설 곳이 있는지 — 봇이 스스로 떨어지지 않게 하는 가장 중요한 판정.
    이게 없으면 봇은 상대를 쫓다가 그대로 낭떠러지로 걸어 들어간다. */
 function groundAt(x, z, y){
-  for(var i=0;i<LEVEL.boxes.length;i++){ var b=LEVEL.boxes[i];
-    if(!boxSolid(b)) continue;
+  var L=GBOX||LEVEL.boxes;
+  for(var i=0;i<L.length;i++){ var b=L[i];
+    if(!boxSolid(b) || b._tri) continue;
     if(Math.abs(x-b.cx)>b.hx+0.2 || Math.abs(z-b.cz)>b.hz+0.2) continue;
     var top=b.cy+b.hy;
     if(top<=y+1.2 && top>y-6) return top;      // 걸어 내려갈 수 있는 범위
@@ -1827,9 +1872,7 @@ function groundAt(x, z, y){
      멀쩡했던 건 그 둘이 런타임에 충돌 상자를 깔기 때문이다(buildCollapseFloor).
      실측: 숲 공터에 AI 를 하나 넣으면 30초 동안 거리 16~24m 를 유지하며 한 발도
      쏘지 않았다. "AI 를 하나만 넣으면 나를 공격하지 않는다" 의 정체다. */
-  var gh=groundMapAt(x,z);
-  if(gh!==null && gh<=y+1.2 && gh>y-6) return gh;
-  return null;
+  return groundMapAt(x, z, y);
 }
 /* 지금 보고 있는 방향으로 뭐가 얼마나 가까이 있나. 벽에 코를 박고 쏘면
    자기 폭발 반경 안에서 터져 스스로 날아간다 — 봇이 '이상하게' 보이는 큰 원인. */
@@ -5618,6 +5661,8 @@ window.__pung={ makeSim:makeSim, stepSim:stepSim, doFire:doFire,
   get bots(){ return BOTS; },        // AI 검증용
   // 튜토리얼 검증용 — 허수아비가 실제로 밀리고 제자리로 돌아오는지, 구역 판정이 맞는지
   get dummies(){ return DUMMIES; }, applyLocalBlast:applyLocalBlast,
+  // 봇이 '앞에 설 곳이 있나' 를 묻는 함수 — 여기서 틀리면 봇이 그 자리에 굳거나 헛짓을 한다
+  groundAt:groundAt, groundMapAt:groundMapAt,
   // 파일 효과음이 실제로 디코드됐는지 — 안 실리면 조용히 합성음으로 떨어지므로 밖에서 재야 한다
   get sfx(){ var o={}; for(var k in SFXBUF) o[k]=SFXBUF[k]?+SFXBUF[k].duration.toFixed(2):null; return o; },
   get zone(){ return TUTOR_ZONE; }, claimPad:claimPad,

@@ -729,8 +729,10 @@ PUNG.genPeak = function(seed){
   var RIM  = ['rock-a','rock-b','rock-c','rock-sand-a','rock-sand-b','rock-sand-c'];
 
   var SUMMIT_Y = 0.45;                             // 정상 소봉 = +1.35m, 점프로 오른다
-  var SHELF_Y  = -0.85;                            // 아래 선반 = -2.55m
-  var RINGS    = [0, 1.2, 2.4, 3.6, 4.8];          // 데크 고리 반지름(킷유닛)
+  /* 고리를 하나 더 둘러 데크 반지름을 18m → 21.6m 로 넓혔다. 넉백 한 번이 3m
+     남짓이라, 넷이 붙으면 예전 판에서는 서로 밀 자리가 안 나왔다. 붕괴가 한 겹
+     늘어나므로 peak.js 의 every 를 9.5 → 8.5 로 줄여 한 판 길이를 맞췄다. */
+  var RINGS    = [0, 1.2, 2.4, 3.6, 4.8, 6.0];     // 데크 고리 반지름(킷유닛)
   var DECK_R   = RINGS[RINGS.length-1];
   var SLAB_S   = 1.35;                             // 슬래브 배율 → 지름 7.2m
   var DECK_OUT = DECK_R + 1.79*SLAB_S*0.5;         // 데크 바깥 끝 ≈ 6.0유닛 = 18m
@@ -788,12 +790,17 @@ PUNG.genPeak = function(seed){
 
   /* --- 2) 데크 밑 테두리 --- 두 겹. 위 겹은 데크 밑에 붙여 처마를 없애고,
      아래 겹은 조금 더 넓게 빼서 산체로 자연스럽게 이어 준다.
-     전부 실체다. 원래는 '여기 걸리면 밀려나도 안 죽는다'고 deco 로 뒀는데,
-     데크 끝에서 뻔히 보이는 바위를 그대로 통과해 떨어지는 쪽이 훨씬 이상하다.
-     걱정했던 일도 안 일어난다 — 시드 3개 × 16방향 낙하에서 생존이 4/16 로
-     deco 일 때와 같았고(그 4번은 의도한 아래 선반, 착지 y=-2.7 로 확인),
-     강한 넉백(13m/s)에서도 4/16 로 같았다. 바위 윗면이 가팔라(SLOPE_MAX)
-     설 수가 없어서다. 아래에서 기어오르는 것도 16방향 모두 막혔다. */
+     둘 다 deco 다 — 보이기만 하고 몸은 통과한다.
+
+     한때 실체로 뒀었다. 근거는 '16방향 낙하에서 생존이 4/16 로 deco 일 때와
+     같더라' 였는데, 그 실측이 표본을 잘못 골랐다. 방향 열여섯 개가 아니라 판
+     전체를 1m 격자로 훑어 보니 데크 아래에 설 수 있는 칸이 600개 넘게 있었다
+     (윗 겹 위 111칸 · 아래 겹과 선반 위 490칸). 밀려난 사람은 거기 내려앉아
+     죽지도, 데크로 돌아오지도 못한다 — 봇이 특히 그랬다. 킬존까지 30m 라
+     한참을 서 있게 된다.
+     밟을 수 없는 자리를 눈에만 남기는 쪽이 낫다: 데크 위에서는 이 바위들이
+     발밑 0.6m 아래에 있어 애초에 닿을 일이 없고, 떨어지는 사람만 0.2초쯤
+     스쳐 지나간다. 대신 killY 를 -8 로 올려(peak.js) 낙하가 금방 끝난다. */
   /* 반지름은 '바위 바깥 끝'이 데크 끝과 나란해지도록 역산한다(바위 반폭 ≈ 0.415*배율).
      밖으로 튀어나오면 보이는 바위를 뚫고 떨어지게 되어 더 이상하다. */
   /* 위 겹의 윗면 높이는 두 조건 사이에서 골라야 한다.
@@ -811,18 +818,21 @@ PUNG.genPeak = function(seed){
   var RIM_GREY = ['rock-a','rock-b','rock-c'];
   ringOf(0, 5, function(th){
     var sc = 2.4 + rnd()*0.5, rr = DECK_OUT - 0.12 - 0.415*sc;
-    putTop(pick(RIM_GREY), Math.cos(th)*rr, Math.sin(th)*rr, ri(0,3), sc, -0.20, 0, false);
+    putTop(pick(RIM_GREY), Math.cos(th)*rr, Math.sin(th)*rr, ri(0,3), sc, -0.20, 0, true);
   });
   ringOf(0, 4, function(th){
     var sc2 = 3.2 + rnd()*0.7, rr2 = DECK_OUT - 0.05 - 0.415*sc2;
-    putTop(pick(RIM), Math.cos(th)*rr2, Math.sin(th)*rr2, ri(0,3), sc2, -0.95, 0, false);
+    putTop(pick(RIM), Math.cos(th)*rr2, Math.sin(th)*rr2, ri(0,3), sc2, -0.95, 0, true);
   });
 
-  /* --- 3) 아래 선반 --- 네 귀퉁이. 데크 끝에 걸치게 놓아야 밀려난 사람이 떨어져
-     닿는다(데크 안쪽에 두면 데크 밑에 깔려 보이지도 닿지도 않는다). */
-  var shR = DECK_OUT + 1.4;
-  putTop('rock-flat', Math.cos(0.785)*shR, Math.sin(0.785)*shR, 0, 1.6, SHELF_Y, RINGS.length-1);
-  putTop('rock-flat-grass', Math.cos(0.60)*(shR+1.3), Math.sin(0.60)*(shR+1.3), 2, 1.15, SHELF_Y-0.55, RINGS.length-1);
+  /* --- 3) 아래 선반 --- 없앴다.
+     '밀려나도 한 번은 살아남는 자리'로 넣었던 네 귀퉁이 판인데, 실제로는
+     떨어진 사람이 영영 머무는 자리가 됐다. 데크보다 2.55m 아래라 로켓점프
+     없이는 못 올라오고, 킬존은 한참 밑이라 죽지도 않는다. 봇은 아예 거기서
+     판이 끝날 때까지 서 있었다(사용자 신고: "기둥형 구간에 AI가 안착하면
+     죽지도 않고 위로 올라올 수도 없어").
+     밀려나면 떨어진다 — 이 판의 규칙은 그 한 줄이면 되고, 예외를 두려면
+     '올라올 길'까지 같이 줘야 하는데 그건 이 좁은 테두리에 안 들어간다. */
 
   /* --- 4) 아래는 비운다 ---
      예전엔 데크 밑에 바위 기둥으로 절벽 기둥(뷰트)을 세웠다. 그런데 이 판은
@@ -839,7 +849,7 @@ PUNG.genPeak = function(seed){
     put4(t, i, j, 0|rot, s||1, 0,
          Math.min(RINGS.length-1, Math.round(Math.hypot(i,j)/DECK_R*(RINGS.length-1))), deco);
   }
-  var CX=2.75, CZ=2.75;                            // 진영 캠프 중심(대각선, 중심에서 11.7m)
+  var CX=3.35, CZ=3.35;                            // 진영 캠프 중심(대각선, 중심에서 14.2m)
   prop('tent',         CX-0.48, CZ+0.22, 2);
   prop('campfire-pit', CX+0.28, CZ+0.04, 0);
   prop('chest',        CX+0.50, CZ+0.66, 1);
@@ -857,21 +867,24 @@ PUNG.genPeak = function(seed){
      황토색이라 '밟을 수 있는 언덕'으로 읽히는데 실제로는 단단한 벽이다 — 1인칭으로
      걸어가 부딪히면 화면이 황토색으로 가득 차서 길이 막힌 이유도 안 보인다.
      이 맵의 색 어휘: 회색 = 단단한 장애물 · 황토/갈색 = 바닥. */
+  /* 예전엔 사분면마다 다섯 개씩 들어가 이 고리가 사실상 담장이었다(실측:
+     중심 12~16m 띠에서 바닥 칸의 70% 가 몸이 못 들어가는 자리였다).
+     간격을 넓히고 절반 넘게 걸러 사분면당 두 개 남짓으로 줄인다. */
   var EDGE=['rock-a','rock-b','rock-c'];
-  for(var eth=0.10; eth<1.5707; eth+=0.19){
-    if(rnd() < 0.40) continue;
-    var er = DECK_R - 0.15 - rnd()*0.5;
-    prop(pick(EDGE), Math.cos(eth)*er, Math.sin(eth)*er, ri(0,3), 0.8+rnd()*0.5);
+  for(var eth=0.14; eth<1.5707; eth+=0.30){
+    if(rnd() < 0.55) continue;
+    var er = DECK_R - 0.15 - rnd()*0.4;
+    prop(pick(EDGE), Math.cos(eth)*er, Math.sin(eth)*er, ri(0,3), 0.8+rnd()*0.4);
   }
-  // 나무 — 중간 반경에서 시야를 끊는다
+  // 나무 — 중간 반경에서 시야를 끊는다. 넓어진 판에 맞춰 반경도 같이 벌린다
   var TREES=['tree','tree-tall','tree-autumn'];
-  for(var tn=0; tn<3; tn++){
-    var ta=0.18+rnd()*1.2, tr=1.7+rnd()*2.0;
+  for(var tn=0; tn<2; tn++){
+    var ta=0.18+rnd()*1.2, tr=2.0+rnd()*2.6;
     prop(pick(TREES), Math.cos(ta)*tr, Math.sin(ta)*tr, ri(0,3), 0.85+rnd()*0.3);
   }
-  var ka=0.3+rnd()*0.95, kr=1.5+rnd()*1.6;
-  prop('tree-trunk', Math.cos(ka)*kr, Math.sin(ka)*kr, ri(0,3), 1.0);
-  var la=0.35+rnd()*0.9, lr=2.2+rnd()*1.5;
+  /* tree-trunk 는 빼 놨다 — 수관 없는 기둥이라 엄폐물로 읽히지 않으면서
+     몸만 정확히 막는다. 걸려 넘어지는 느낌만 남는 조각이다. */
+  var la=0.35+rnd()*0.9, lr=2.6+rnd()*1.8;
   prop('tree-log',   Math.cos(la)*lr, Math.sin(la)*lr, ri(0,3), 1.0);
   for(var gn=0; gn<4; gn++){
     var qa=0.12+rnd()*1.33, qr=1.2+rnd()*3.0;
