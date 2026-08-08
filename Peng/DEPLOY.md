@@ -24,6 +24,13 @@ itch.io·GitHub Pages 같은 곳에 `index.html` 만 올리면 **심사위원은
 
 > 링크 접속 → **방 만들기** → **+ AI** → **시작**
 
+아이템이 여섯인데 경기 중에는 배울 자리가 없으므로, 먼저 눌러 볼 곳을 하나 더 둡니다.
+
+> 링크 접속 → **튜토리얼**
+
+튜토리얼은 서버가 없어도 됩니다(혼자 도는 맵이라 WebSocket 을 안 씁니다).
+`levels/tutorial.js` 는 다른 맵과 같이 `_all.js` 로 묶여 나가므로 배포에 따로 챙길 것이 없습니다.
+
 ---
 
 ## 구성 파일
@@ -101,6 +108,14 @@ curl -s https://pung-vs.fly.dev/__pung                                          
 for f in title waiting space factory lab outdoor; do
   curl -s -o /dev/null -w "%{http_code} %{content_type} %{size_download}  $f\n" \
     https://pung-vs.fly.dev/audio/bgm/$f.mp3      # 200 audio/mpeg, 크기가 0이 아닐 것
+done
+
+# 효과음 — 빠지면 합성음이나 무음으로 조용히 떨어져서, 듣기 전에는 티가 안 납니다
+curl -s -o /dev/null -w "%{http_code} %{content_type} %{size_download}  shoot\n" \
+  https://pung-vs.fly.dev/audio/sfx/shoot.mp3
+for f in hit hitrev pickup; do
+  curl -s -o /dev/null -w "%{http_code} %{content_type} %{size_download}  $f\n" \
+    https://pung-vs.fly.dev/audio/sfx/$f.ogg
 done
 
 # WebSocket — 101 Switching Protocols 가 떠야 멀티가 됩니다
