@@ -1,4 +1,4 @@
-/* PENG! 캐릭터 정의 — 게임(index.html)과 편집기(editor.html)가 함께 쓴다.
+/* PUNG! 캐릭터 정의 — 게임(index.html)과 편집기(editor.html)가 함께 쓴다.
  *
  * 디자인 = { rig:{관절 위치·스윙}, parts:[부품...] }
  * 부품 = { n:이름, bone:붙는 뼈대, type:'box'|'cyl'|'dome'|'sph',
@@ -161,7 +161,7 @@ function charFaces(design, px,py,pz, yaw, pitch, walk, tint){
 }
 
 /* ---------- 저장/불러오기 ---------- */
-var STORE='peng.design';
+var STORE='pung.design';
 function clone(o){ return JSON.parse(JSON.stringify(o)); }
 function load(){
   try{ var raw=(global.localStorage||{}).getItem ? global.localStorage.getItem(STORE) : null;
@@ -209,7 +209,7 @@ function partTris(design, part, px,py,pz, yaw, walk){
     out.push([v[0],v[1],v[2]]); out.push([v[0],v[2],v[3]]); }
   return out;
 }
-global.PengChar={ DEFAULT:DEFAULT, BONES:BONES, BONE_LABEL:BONE_LABEL,
+global.PungChar={ DEFAULT:DEFAULT, BONES:BONES, BONE_LABEL:BONE_LABEL,
   faces:charFaces, load:load, save:save, sanitize:sanitize, clone:clone, STORE:STORE,
   bone:boneAt, tris:partTris };
 })(typeof window!=='undefined'?window:this);

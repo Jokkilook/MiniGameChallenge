@@ -1,6 +1,6 @@
-/* PENG! 레벨 — kiteditor.html 에서 만듦. 손으로 고쳐도 된다.
+/* PUNG! 레벨 — kiteditor.html 에서 만듦. 손으로 고쳐도 된다.
    pieces 의 좌표는 '킷유닛'이고 월드 미터 = 유닛 * unit 이다. */
-PENG.defineLevel('TESTR', {
+PUNG.defineLevel('TESTR', {
   name: 'TT',
   unit: 3,
   boxes: [

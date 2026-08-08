@@ -1,11 +1,11 @@
-/* PENG! 레벨 — 피크 (절벽 위의 평지)
+/* PUNG! 레벨 — 피크 (절벽 위의 평지)
    Kenney Survival Kit(CC0) 로 만든 두 번째 경쟁 아레나. 우주 정거장이 '실내 통로'라면
    여기는 '탁 트인 벼랑 끝'이다 — 벽이 거의 없어 밀려나면 바로 허공이고, 엄폐물은
    뛰어넘을 수 있는 바위·울타리뿐이라 서로 붙어서 싸우게 된다.
 
-   지형은 PENG.genPeak 이 시드로 만든다(라운드마다 새 봉우리). 판 자체는 여기 없고
+   지형은 PUNG.genPeak 이 시드로 만든다(라운드마다 새 봉우리). 판 자체는 여기 없고
    collapse 스펙만 있다 — 자세한 규칙은 level.js 의 genPeak 주석 참고. */
-PENG.defineLevel('peak', {
+PUNG.defineLevel('peak', {
   name: '피크 (경쟁)',
   arena: true,
   collapse: {

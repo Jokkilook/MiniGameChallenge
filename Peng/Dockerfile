@@ -1,5 +1,5 @@
 # 이 파일은 fly.io 배포용입니다 — 로컬 플레이에는 필요 없습니다.
-# PENG! 은 의존성이 0(Node 내장 모듈만)이라 npm install 단계가 없습니다.
+# PUNG! 은 의존성이 0(Node 내장 모듈만)이라 npm install 단계가 없습니다.
 # 그래서 fly launch 의 Node 자동 감지(package.json 을 봅니다)가 걸리지 않아,
 # 이 Dockerfile 을 직접 둡니다.
 FROM node:22-alpine

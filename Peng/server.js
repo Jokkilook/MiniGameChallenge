@@ -1,4 +1,4 @@
-/* PENG! 멀티플레이 서버 — 의존성 0 (Node 내장 모듈만)
+/* PUNG! 멀티플레이 서버 — 의존성 0 (Node 내장 모듈만)
  *   실행:  node server.js       (기본 포트 8090, 환경변수 PORT 로 변경)
  *   접속:  http://localhost:8090/         (같은 방)
  *          http://localhost:8090/?room=abc (특정 방 — 친구와 링크 공유)
@@ -16,7 +16,10 @@ var ROOT = __dirname;
 var MIME = { '.html':'text/html; charset=utf-8', '.js':'text/javascript', '.css':'text/css',
              '.json':'application/json', '.png':'image/png', '.jpg':'image/jpeg', '.svg':'image/svg+xml',
              '.ico':'image/x-icon', '.woff2':'font/woff2', '.map':'application/json',
-             '.glb':'model/gltf-binary' };
+             '.glb':'model/gltf-binary',
+             // BGM(audio/bgm/*). 타입을 안 붙이면 application/octet-stream 으로 나가고,
+             // 그러면 decodeAudioData 가 아니라 fetch 단계에서 브라우저마다 다르게 군다.
+             '.mp3':'audio/mpeg', '.ogg':'audio/ogg', '.m4a':'audio/mp4', '.wav':'audio/wav' };
 
 /* ---------- 레벨 묶음(levels/_all.js) 자동 생성 ----------
  * 맵을 추가할 때마다 index.html·editor.html 을 손으로 고치지 않도록,
@@ -134,7 +137,7 @@ function handleBake(req, res){
 var server = http.createServer(function(req, res){
   var urlPath = decodeURIComponent(req.url.split('?')[0]);
   // 클라이언트가 "멀티 서버가 맞는지" 확인하는 용도
-  if(urlPath === '/__peng'){ res.writeHead(200, {'Content-Type':'application/json'}); res.end('{"peng":1}'); return; }
+  if(urlPath === '/__pung'){ res.writeHead(200, {'Content-Type':'application/json'}); res.end('{"pung":1}'); return; }
   if(urlPath === '/__save'){
     if(req.method !== 'POST'){ res.writeHead(405); res.end('POST only'); return; }
     handleSave(req, res); return;
@@ -472,7 +475,7 @@ function send(socket, data, opcode){
   try{ socket.write(Buffer.concat([header, payload])); }catch(e){}
 }
 
-function log(){ var a = Array.prototype.slice.call(arguments); console.log('[peng]', a.join(' ')); }
+function log(){ var a = Array.prototype.slice.call(arguments); console.log('[pung]', a.join(' ')); }
 
 // 0.0.0.0 = 모든 네트워크 인터페이스에서 수신(외부 접속 허용). 기본값이며 별도 설정 불필요.
 server.listen(PORT, '0.0.0.0', function(){
@@ -483,7 +486,7 @@ server.listen(PORT, '0.0.0.0', function(){
     });
   });
   console.log('');
-  console.log('  PENG! 멀티 서버 실행 중 (포트 ' + PORT + ', 모든 인터페이스 수신)');
+  console.log('  PUNG! 멀티 서버 실행 중 (포트 ' + PORT + ', 모든 인터페이스 수신)');
   console.log('');
   console.log('  이 PC에서:      http://localhost:' + PORT + '/');
   if(lan.length){

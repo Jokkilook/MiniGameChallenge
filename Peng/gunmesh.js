@@ -1,4 +1,4 @@
-/* PENG! — glTF(.glb) 총 메시 로더
+/* PUNG! — glTF(.glb) 총 메시 로더
  *
  * 렌더러에 외부 라이브러리가 없으므로, 필요한 만큼만 직접 읽는다:
  * 삼각형 프리미티브 하나의 POSITION / NORMAL / TEXCOORD_0 / 인덱스 + 베이스컬러 텍스처.

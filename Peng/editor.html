@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>PENG! 맵 에디터</title>
+<title>PUNG! 맵 에디터</title>
 <style>
   :root{ --ink:#eaf2ff; --line:rgba(127,208,255,.22); }
   *{box-sizing:border-box}
@@ -94,7 +94,7 @@
 <svg id="ghost" width="46" height="46" viewBox="0 0 24 24"></svg>
 
 <div id="panel">
-  <h2>PENG! 맵 에디터</h2>
+  <h2>PUNG! 맵 에디터</h2>
   <div class="sub">MAP EDITOR</div>
 
   <div class="sec" style="border-top:0;margin-top:0;padding-top:0">
@@ -202,17 +202,17 @@
 "use strict";
 (function(){
 /* =========================================================================
-   PENG! 맵 에디터
+   PUNG! 맵 에디터
    게임(index.html)과 물리 상수·레벨 형식을 level.js 로 공유한다. 여기서 "넘을 수 있다"고
    판정한 협곡은 게임에서도 같은 숫자로 넘어간다.
    회전은 없다 — 게임 충돌이 축 정렬 AABB(aabbHit)라 박스를 돌리면 화면과 충돌이 어긋난다.
    ========================================================================= */
-if(!window.PENG || !PENG.PHYS){
+if(!window.PUNG || !PUNG.PHYS){
   var eDiv=document.getElementById('err'); eDiv.style.display='flex';
   eDiv.innerHTML='<div><b>level.js 를 불러오지 못했습니다.</b><br>editor.html 은 level.js · levels/ 와 같은 폴더에 있어야 합니다.</div>';
   return;
 }
-var P=PENG.PHYS;
+var P=PUNG.PHYS;
 var cv=document.getElementById('cv');
 var gl=cv.getContext('webgl',{antialias:true,alpha:false,depth:true})
      ||cv.getContext('experimental-webgl',{antialias:true,alpha:false,depth:true});
@@ -374,8 +374,8 @@ function arcs(){
   var ox=b.cx+dx*edge, oz=b.cz+dz*edge;
   var modes=[
     {v:P.JUMPV,                                              c:[0.35,1.0,0.55,0.95]},
-    {v:P.JUMPV+PENG.reach.selfBlast(),                       c:[1.0,0.72,0.28,0.95]},
-    {v:P.JUMPV+PENG.reach.selfBlast()+PENG.reach.teamBlast(),c:[0.42,0.80,1.0,0.95]}
+    {v:P.JUMPV+PUNG.reach.selfBlast(),                       c:[1.0,0.72,0.28,0.95]},
+    {v:P.JUMPV+PUNG.reach.selfBlast()+PUNG.reach.teamBlast(),c:[0.42,0.80,1.0,0.95]}
   ];
   var stopY=(nx?nx.cy+nx.hy:topY)-1.5;
   for(var m=0;m<modes.length;m++){
@@ -390,14 +390,14 @@ function arcs(){
     if(prev) boxWire({cx:prev[0],cy:prev[1],cz:prev[2],hx:0.22,hy:0.22,hz:0.22}, col);
   }
 }
-/* 협동 관문 표식 — 게임이 그리는 것과 같은 물건이다. 같은 함수(PENG.coopMarkers)에서
+/* 협동 관문 표식 — 게임이 그리는 것과 같은 물건이다. 같은 함수(PUNG.coopMarkers)에서
    나오므로 여기서 본 모습이 곧 플레이어가 볼 모습이다. 발판을 끌어 옮기다 표식이 사라지면
    그 구간이 더는 협동 전용이 아니라는 뜻이라, 옆의 구간 라벨을 읽기 전에 눈으로 먼저 안다.
    매 프레임 새로 만든다 — 드래그 중에도 따라와야 하고, LV.boxes 에 섞으면 저장 파일에
    딸려 들어가기 때문이다(장면은 어차피 프레임마다 통째로 다시 쌓는다). */
 function coopMarks(){
   if(!document.getElementById('optMark').checked) return;
-  var m=PENG.coopMarkers(LV);
+  var m=PUNG.coopMarkers(LV);
   for(var i=0;i<m.length;i++) boxTris(m[i], m[i].col, 0.92);
 }
 /* 플레이어 실제 크기 — 발판이 좁은지 넓은지 감을 잡기 위한 기준자 */
@@ -526,7 +526,7 @@ var palDrag=null, palPreview=null;
 function buildPalette(){
   var el=document.getElementById('palette'); el.innerHTML='';
   var tag=null;
-  PENG.PROPS.forEach(function(p){
+  PUNG.PROPS.forEach(function(p){
     if(p.tag!==tag){ tag=p.tag;
       var h=document.createElement('div'); h.className='pcat'; h.textContent=tag; el.appendChild(h); }
     var d=document.createElement('div'); d.className='pitem'; d.title=p.name+' — 뷰포트로 끌어다 놓으세요';
@@ -558,7 +558,7 @@ function dropProp(){
   if(!pt||!p) return;
   pushUndo();
   var gid = p.build().length>1 ? nextGid(p.id) : null;
-  var boxes=PENG.placeProp(p.id, pt.x, pt.y, pt.z, gid);
+  var boxes=PUNG.placeProp(p.id, pt.x, pt.y, pt.z, gid);
   var first=LV.boxes.length;
   boxes.forEach(function(b){ LV.boxes.push(b); });
   SEL = gid ? {t:'group', g:gid} : {t:'box', i:first};
@@ -593,7 +593,7 @@ function buildScene(){
   coopMarks();
   arcs(); playerGhost();
   if(palPreview && palDrag){                       // 배치 미리보기
-    var prev=PENG.placeProp(palDrag.id, palPreview.x, palPreview.y, palPreview.z);
+    var prev=PUNG.placeProp(palDrag.id, palPreview.x, palPreview.y, palPreview.z);
     prev.forEach(function(b){ boxTris(b, b.col||'#5a7bb0', 0.45); boxWire(b,[1,0.9,0.35,0.9]); });
   }
   drawGizmo();
@@ -755,12 +755,12 @@ function removeSel(){
 function autoPlace(kind){
   var base=null, bs=selBoxes();
   if(bs.length===1 && !bs[0].deco) base=bs[0];
-  else { var route=PENG.levelRoute(LV); base=route[route.length-1]; }
+  else { var route=PUNG.levelRoute(LV); base=route[route.length-1]; }
   if(!base){ toast('먼저 발판을 하나 놓으세요'); return; }
   var dy=parseFloat(document.getElementById('autoDy').value)||0;
-  var gap=PENG.gapFor(kind,dy);
+  var gap=PUNG.gapFor(kind,dy);
   if(gap===null||gap<=0){ toast('그 높이차는 '+KIND[kind]+'로 넘을 수 없습니다'); return; }
-  var route2=PENG.levelRoute(LV), dx=0, dz=1, idx=route2.indexOf(base);
+  var route2=PUNG.levelRoute(LV), dx=0, dz=1, idx=route2.indexOf(base);
   if(idx>0){ var pv=route2[idx-1], vx=base.cx-pv.cx, vz=base.cz-pv.cz, L=Math.hypot(vx,vz);
     if(L>0.01){ dx=vx/L; dz=vz/L; } }
   var nh={hx:3,hz:3};
@@ -769,7 +769,7 @@ function autoPlace(kind){
   var dist=ra+gap+rb;
   var x=snap(base.cx+dx*dist), z=snap(base.cz+dz*dist), y=(base.cy+base.hy)+dy;
   pushUndo();
-  var boxes=PENG.placeProp(kind==='jump'?'platform':'platform_hard', x, y, z);
+  var boxes=PUNG.placeProp(kind==='jump'?'platform':'platform_hard', x, y, z);
   var first=LV.boxes.length;
   boxes.forEach(function(b){ LV.boxes.push(b); });
   // 체크포인트를 같이 넣어야 경로 분석이 이 발판을 다음 구간의 기준으로 삼는다
@@ -800,7 +800,7 @@ function refreshPanel(){
   document.getElementById('pcol').value=one.col||'#5a7bb0';
   document.getElementById('pdeco').checked=!!one.deco;
 }
-function groupLabel(g){ var p=PENG.propById(String(g).split('#')[0]); return p?p.name:g; }
+function groupLabel(g){ var p=PUNG.propById(String(g).split('#')[0]); return p?p.name:g; }
 function refreshOutliner(){
   var el=document.getElementById('outliner'); el.innerHTML='';
   var seen={};
@@ -862,7 +862,7 @@ function previewHint(t){
 }
 function refreshAnalysis(){
   var el=document.getElementById('analysis'); el.innerHTML='';
-  var segs=PENG.analyzeLevel(LV);
+  var segs=PUNG.analyzeLevel(LV);
   if(!segs.length) el.textContent='발판이 2개 이상이어야 분석됩니다.';
   segs.forEach(function(s){
     var d=document.createElement('div'); d.className='g';
@@ -879,7 +879,7 @@ function refreshAnalysis(){
   var noSw=segs.filter(function(s){ return s.kind==='noswitch'; });
   // 협동 전용 구간(간격이 커서) 과 협동 관문(압력판 다리) 은 둘 다 "2인이어야 넘는다"
   var coop=segs.filter(function(s){ return s.kind==='coop' || s.kind==='gate'; });
-  if(!PENG.goalAtEnd(LV)){ v.className='v-no';
+  if(!PUNG.goalAtEnd(LV)){ v.className='v-no';
     v.textContent='⚠ 결승이 코스 끝에 있지 않습니다. 마지막 발판을 선택하고 [결승을 여기로] 를 누르세요.'; }
   else if(bad.length){ v.className='v-no';
     v.textContent='⚠ 넘을 수 없는 구간 '+bad.length+'개 (구간 '+bad.map(function(s){return s.from+'→'+s.to;}).join(', ')+'). 클리어 불가 맵입니다.'; }
@@ -935,7 +935,7 @@ document.getElementById('btnGoal').addEventListener('click',function(){
   var b=selBoxes()[0]; if(!b){ toast('발판을 먼저 선택하세요'); return; }
   pushUndo(); LV.goal={cx:b.cx, cy:b.cy+b.hy+0.5, cz:b.cz, r:3.2}; onEdit(); toast('결승 이동'); });
 document.getElementById('btnCps').addEventListener('click',function(){
-  var goalP=PENG.platformAt(LV.boxes, LV.goal.cx, LV.goal.cy-0.5, LV.goal.cz);
+  var goalP=PUNG.platformAt(LV.boxes, LV.goal.cx, LV.goal.cy-0.5, LV.goal.cz);
   var pf=LV.boxes.filter(function(b){ return !b.deco && b!==goalP; })
                  .slice().sort(function(a,b){ return a.cz-b.cz; });
   pushUndo();
@@ -969,9 +969,9 @@ function download(id,txt){
   a.download=id+'.js'; a.click(); setTimeout(function(){ URL.revokeObjectURL(a.href); },1000);
 }
 document.getElementById('btnSave').addEventListener('click',function(){
-  var bad=PENG.validateLevel(LV);
+  var bad=PUNG.validateLevel(LV);
   if(bad){ toast('레벨이 올바르지 않습니다: '+bad); return; }
-  var id=currentId(), txt=PENG.serialize(id, collect());
+  var id=currentId(), txt=PUNG.serialize(id, collect());
   fetch('__save',{method:'POST',headers:{'Content-Type':'application/json'},
                   body:JSON.stringify({id:id,text:txt})})
     .then(function(r){ return r.ok ? r.json() : r.text().then(function(t){ throw new Error(t); }); })
@@ -981,22 +981,22 @@ document.getElementById('btnSave').addEventListener('click',function(){
       saveHint('서버 저장 실패('+String(err.message||err).slice(0,50)+') → levels/ 에 직접 넣어주세요'); });
 });
 document.getElementById('btnDl').addEventListener('click',function(){
-  var id=currentId(); download(id, PENG.serialize(id, collect())); toast(id+'.js 다운로드'); });
+  var id=currentId(); download(id, PUNG.serialize(id, collect())); toast(id+'.js 다운로드'); });
 document.getElementById('btnCopy').addEventListener('click',function(){
-  var txt=PENG.serialize(currentId(), collect());
+  var txt=PUNG.serialize(currentId(), collect());
   if(navigator.clipboard&&navigator.clipboard.writeText)
     navigator.clipboard.writeText(txt).then(function(){ toast('클립보드에 복사됨'); },function(){ window.prompt('복사하세요:',txt); });
   else window.prompt('복사하세요:',txt);
 });
 document.getElementById('btnPlay').addEventListener('click',function(){
-  var bad=PENG.validateLevel(LV);
+  var bad=PUNG.validateLevel(LV);
   if(bad){ toast('레벨이 올바르지 않습니다: '+bad); return; }
-  try{ localStorage.setItem('peng.playtest', JSON.stringify(collect())); }
+  try{ localStorage.setItem('pung.playtest', JSON.stringify(collect())); }
   catch(err){ toast('시험 플레이를 넘기지 못했습니다'); return; }
   window.open('index.html?playtest=1','_blank');
 });
 function loadLevel(id){
-  var d=PENG.getLevel(id);
+  var d=PUNG.getLevel(id);
   LV = d ? cloneLevel(d) : blankLevel();
   LVID = d ? id : 'newmap';
   if(!LV.hints) LV.hints=[];
@@ -1015,21 +1015,21 @@ document.getElementById('btnNew').addEventListener('click',function(){
   refreshAll(); toast('새 레벨 — 콘텐츠 브라우저에서 끌어다 놓으세요');
 });
 var lvSel=document.getElementById('lvSel');
-PENG.order.forEach(function(id){
-  var o=document.createElement('option'); o.value=id; o.textContent=PENG.getLevel(id).name||id; lvSel.appendChild(o); });
+PUNG.order.forEach(function(id){
+  var o=document.createElement('option'); o.value=id; o.textContent=PUNG.getLevel(id).name||id; lvSel.appendChild(o); });
 lvSel.addEventListener('change',function(){ loadLevel(lvSel.value); toast(lvSel.value+' 불러옴'); });
 
-/* ---------- 검증 노출 (index.html 의 __peng 과 같은 용도) ---------- */
+/* ---------- 검증 노출 (index.html 의 __pung 과 같은 용도) ---------- */
 window.__editor={ cam:cam,
   level:function(){ return LV; },
   sel:function(){ return SEL; },
   select:function(s){ SEL=s; refreshPanel(); refreshAnalysis(); },
-  analyze:function(){ return PENG.analyzeLevel(LV); },
-  serialize:function(){ return PENG.serialize(currentId(), collect()); },
+  analyze:function(){ return PUNG.analyzeLevel(LV); },
+  serialize:function(){ return PUNG.serialize(currentId(), collect()); },
   load:loadLevel, redraw:render,
   hit:gizmoHit, grab:startDrag, moveTo:updateDrag, drop:function(){ drag=null; hover=null; },
   screen:toScreen,
-  place:function(id,x,y,z){ palDrag=PENG.propById(id); palPreview={x:x,y:y,z:z};
+  place:function(id,x,y,z){ palDrag=PUNG.propById(id); palPreview={x:x,y:y,z:z};
     dropProp(); palDrag=null; palPreview=null; },
   undo:undo, redo:redo, del:removeSel, dup:duplicate, auto:autoPlace,
   undoDepth:function(){ return UNDO.length; } };
@@ -1037,7 +1037,7 @@ window.__editor={ cam:cam,
 /* ---------- 시작 ---------- */
 layout();
 buildPalette();
-loadLevel(PENG.defaultLevel());
+loadLevel(PUNG.defaultLevel());
 requestAnimationFrame(loop);
 })();
 </script>

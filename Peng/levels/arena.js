@@ -1,9 +1,9 @@
-PENG.defineLevel('arena', {
+PUNG.defineLevel('arena', {
   name: '우주 정거장 (경쟁)',
   arena: true,
   space: true,          // 배경을 검은 우주 + 흰 별로
   collapse: {
-    /* 판을 Kenney Space Station Kit 조각으로 조립한다(PENG.genStation).
+    /* 판을 Kenney Space Station Kit 조각으로 조립한다(PUNG.genStation).
        예전의 '원판을 깔고 파내는' 방식과 달리 코어 → 복도 → 포드 순으로 붙여
        허브+스포크 실루엣이 나온다. 라운드마다 시드가 바뀐다.
        size 는 킷 1칸의 미터 크기(index.html 의 STATION.unit 과 맞춰야 한다). */

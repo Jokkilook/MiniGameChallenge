@@ -1,4 +1,4 @@
-# PENG! 배포 메모 (fly.io)
+# PUNG! 배포 메모 (fly.io)
 
 제출 심사 기간에 심사위원이 아무 때나 들어와 플레이할 수 있도록 올려 둔 서버 기록.
 **로컬 플레이(`node server.js`)에는 이 문서도, `Dockerfile`·`fly.toml`도 필요 없습니다.**
@@ -6,6 +6,20 @@
 - **주소: <https://peng-vs.fly.dev/>**
 - 앱 `peng-vs` · 리전 `nrt`(도쿄) · 머신 1개 · `shared-cpu-1x` / 256MB
 - 배포일 2026-08-08 · 소유: kshpt9043 개인 org
+
+> ### ⏳ 이 주소는 `pung-vs` 로 갈아탈 예정입니다
+>
+> 게임 이름이 PENG! → PUNG! 로 바뀌었는데 **앱 이름만 아직 옛 이름**입니다.
+> fly.io 는 앱 이름이 곧 주소라 이름을 고치는 명령이 없습니다 — 새 앱을 만들어
+> 다시 올리고 옛 앱을 지우는 수밖에 없고, 그 순간 `peng-vs.fly.dev` 는 죽습니다.
+>
+> **아직 심사 기간이 아니라 지금은 이 주소를 아무도 안 보고 있으므로 갈아타도
+> 안전합니다.** BGM 작업이 끝나 음원이 리포에 들어온 뒤에 한 번에 처리합니다
+> (곡이 빠진 채로 새 주소를 올려 두면 그 주소로 두 번 배포하게 됩니다).
+> 절차는 아래 **"앱 이름 갈아타기"** 에 있습니다.
+>
+> 폴더 이름(`C:\MiniGameChallenge\Peng`)은 그대로 둡니다 — 리포 경로라 바꾸면
+> 원격·로컬 설정이 같이 흔들리고, 얻는 것이 이름의 일관성뿐입니다.
 
 ---
 
@@ -87,7 +101,7 @@ curl -s -o /dev/null -w "%{http_code}\n" https://peng-vs.fly.dev/               
 curl -s -o /dev/null -w "%{http_code}\n" https://peng-vs.fly.dev/levels/_all.js    # 200
 curl -s -X POST https://peng-vs.fly.dev/__save -d '{}' -w " [%{http_code}]\n"      # 403
 curl -s -X POST https://peng-vs.fly.dev/__bake -d '{}' -w " [%{http_code}]\n"      # 403
-curl -s https://peng-vs.fly.dev/__peng                                             # {"peng":1}
+curl -s https://peng-vs.fly.dev/__pung                                             # {"pung":1}
 
 # WebSocket — 101 Switching Protocols 가 떠야 멀티가 됩니다
 curl -s -i -N --max-time 8 -H "Connection: Upgrade" -H "Upgrade: websocket" \
@@ -139,3 +153,45 @@ flyctl apps destroy peng-vs
 
 **마감선: 2026년 8월 하순** (2026-08-08 기준 심사 기간 약 2주).
 잠깐 멈추기만 할 거면 `flyctl scale count 0 -a peng-vs`.
+
+## 앱 이름 갈아타기 (`peng-vs` → `pung-vs`)
+
+**fly.io 는 앱 이름을 바꾸는 명령이 없습니다.** 이름이 곧 주소라, 새 앱을 만들어 다시
+배포하고 옛 앱을 지우는 것이 유일한 방법입니다.
+
+**언제**: BGM 음원 4개가 `audio/bgm/` 에 들어온 뒤. 심사 주소를 아직 아무 데도
+알리지 않았을 때만 안전합니다 — 한 번이라도 주소가 나갔다면 심사가 끝난 뒤에 하세요.
+
+`flyctl` 은 PATH 에 없습니다. 전체 경로로 부르세요: `C:\Users\kshpt\.fly\bin\flyctl.exe`
+
+```bash
+# 1) 새 앱을 만든다 (아직 아무것도 안 올라간 빈 앱)
+flyctl apps create pung-vs --org personal
+
+# 2) fly.toml 의  app = "peng-vs"  를  app = "pung-vs"  로 고친다
+#    (이 줄을 고치기 전에는 3번이 옛 앱으로 올라갑니다)
+
+# 3) 올린다
+flyctl deploy C:\MiniGameChallenge\Peng --remote-only
+
+# 4) 상시 가동으로 (콜드스타트 없음 — 과금은 여기서부터 시작됩니다)
+flyctl scale count 1 -a pung-vs
+flyctl machines list -a pung-vs                  # 1개여야 정상
+
+# 5) 새 주소가 실제로 사는지 확인한다 — 이걸 통과하기 전에는 6번 금지
+curl -s https://pung-vs.fly.dev/__pung           # {"pung":1}
+curl -s -o /dev/null -w "%{http_code}\n" https://pung-vs.fly.dev/levels/_all.js   # 200
+curl -s -o /dev/null -w "%{http_code}\n" https://pung-vs.fly.dev/audio/bgm/space.mp3  # 200
+
+# 6) 옛 앱을 지운다 (되돌릴 수 없습니다)
+flyctl apps destroy peng-vs
+```
+
+5번의 세 줄이 전부 통과한 뒤에 6번을 하세요. 특히 `audio/bgm/*.mp3` 는 새로 들어온
+파일이라 `.dockerignore` 에 걸려 빠지지 않았는지 여기서 처음 드러납니다.
+
+갈아탄 뒤 이 문서의 `peng-vs` 를 전부 `pung-vs` 로 고치고, 맨 위의 "갈아탈 예정"
+안내 문단과 이 절을 지우세요. 그러면 문서가 다시 현재 상태만 말하게 됩니다.
+
+**철거 마감선은 그대로입니다** — 이름만 바뀌었을 뿐 상시 가동이라 계속 과금됩니다.
+심사가 끝나면 `flyctl apps destroy pung-vs`.

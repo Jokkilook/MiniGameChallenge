@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>PENG! · 밀고 날리는 파티 액션</title>
+<title>PUNG! · 밀고 날리는 파티 액션</title>
 <style>
   /* ============================================================
      모던·샤프: 직각 · 얇은 1px 선 · 플랫 컬러 · 타이트한 대문자 라벨.
@@ -97,7 +97,7 @@
      한글은 매칭이 안 되어 Pretendard 로 떨어지므로 한 줄에 섞여도 안전하다.
 
      ※ 그래서 제목은 영문이어야 한다. 예전엔 작은 영문 라벨(.sub) 위에 큰 한글
-       제목(대기방·맵 고르기·설정)이라, 애써 구운 폰트가 타이틀의 PENG! 한 곳에만
+       제목(대기방·맵 고르기·설정)이라, 애써 구운 폰트가 타이틀의 PUNG! 한 곳에만
        나왔다. 위계를 뒤집어 큰 워드마크를 영문으로 올리고 한글을 .kr 로 내렸다. */
   .screen h1{margin:0;font-family:"KenneyFuture","Pretendard","Inter","Segoe UI","Malgun Gothic",sans-serif;
     font-size:clamp(38px,9vw,64px);font-weight:900;letter-spacing:-3px;color:#fff;line-height:1}
@@ -361,7 +361,7 @@
      있어 낮은 창에서는 버튼이 화면 밖으로 밀려났다. 조작법은 일시정지 화면에 있고,
      무슨 게임인지는 모드 선택 화면이 한 줄씩 설명한다. -->
 <div class="screen" id="title">
-  <h1>PENG!</h1>
+  <h1>PUNG!</h1>
   <p class="tagline">밀고 날리는 파티 액션</p>
   <div class="menu">
     <button class="go" id="soloBtn">플레이</button>
@@ -517,11 +517,11 @@
 "use strict";
 (function(){
 /* =========================================================================
-   PENG! — 공기폭발(PoofGun) 넉백 이동 FPS 프로토타입 (WebGL, 외부 라이브러리 없음)
+   PUNG! — 공기폭발(PoofGun) 넉백 이동 FPS 프로토타입 (WebGL, 외부 라이브러리 없음)
    외부 라이브러리 없음. 블록형 로우폴리.
    ========================================================================= */
 // 레벨 파일이 하나도 안 실렸으면 게임을 켤 수 없다 — 조용히 깨지지 않게 먼저 알린다.
-if(!window.PENG || !PENG.PHYS || !PENG.defaultLevel()){
+if(!window.PUNG || !PUNG.PHYS || !PUNG.defaultLevel()){
   document.getElementById('title').innerHTML =
     '<div class="card panel9"><h1>NO LEVELS</h1>'+
     '<p class="kr">코스 데이터를 못 불러왔다</p>'+
@@ -542,30 +542,55 @@ function layout(){
 window.addEventListener('resize',layout);
 
 /* ---------- 설정 저장 ----------
-   키는 전부 'peng.' 접두 — 기존 peng.color / peng.solomap 과 같은 규칙이다.
+   키는 전부 'pung.' 접두 — 기존 pung.color / pung.solomap 과 같은 규칙이다.
    localStorage 가 막힌 환경(file:// 시크릿 창 등)에서도 게임이 멈추면 안 되므로 전부 try. */
-function stGet(k, d){ try{ var v=localStorage.getItem('peng.'+k); return v==null?d:v; }catch(e){ return d; } }
+function stGet(k, d){ try{ var v=localStorage.getItem('pung.'+k); return v==null?d:v; }catch(e){ return d; } }
 function stNum(k, d){ var v=parseFloat(stGet(k,'')); return isFinite(v)?v:d; }
-function stPut(k, v){ try{ localStorage.setItem('peng.'+k, String(v)); }catch(e){} }
+function stPut(k, v){ try{ localStorage.setItem('pung.'+k, String(v)); }catch(e){} }
 
 /* 설정으로 조절되는 값들. 예전엔 셋 다 변수조차 아니었다 —
    감도는 mousemove 핸들러 안 지역변수, 볼륨은 ensureAudio 안 상수,
    기본 시점은 makeSim 안 리터럴이라 바깥에서 건드릴 방법이 없었다. */
 var MOUSE_SENS=0.0022;   // 마우스 1픽셀당 라디안
-var VOLUME=0.5, MUTED=false;
-var TP_DEFAULT=true;     // 새 판을 3인칭으로 시작할지 (V 로 언제든 전환)
+/* 소리 크기는 두 갈래다 — 효과음과 배경음. 예전엔 VOLUME 하나뿐이었는데, 맵마다
+   BGM 이 깔리면서 그 하나로는 못 쓰게 됐다: 음악만 줄이려는 사람이 총소리까지
+   같이 죽여야 했다. 음소거는 여전히 하나다(둘 다 끄는 것 말고 쓸 데가 없다). */
+var SFX_VOL=0.6, BGM_VOL=0.45, MUTED=false;
+/* 배경음은 슬라이더 눈금을 그대로 내보내지 않는다. 음악은 총소리·폭발보다 한참
+   아래에 깔려야 하는데, 그 크기를 슬라이더로 표현하면(예: 20 에서 시작) 설정을
+   열어 본 사람에게는 "소리가 거의 꺼진 채로 출고된 것"처럼 보인다. 눈금은 사람이
+   읽는 값이고 이건 믹스 값이라, 둘을 갈라 둔다 — 여기만 고치면 배경음 전체가
+   같은 비율로 내려가고 슬라이더는 45 그대로 있는다. 0.5 = 절반(-6dB). */
+var BGM_TRIM=0.5;
+var TP_DEFAULT=false;    // 새 판을 3인칭으로 시작할지 — 기본은 1인칭 (V 로 언제든 전환)
 
-/* ---------- 오디오 ---------- */
-var AC=null,master=null;
-function ensureAudio(){ if(!AC){try{AC=new(window.AudioContext||window.webkitAudioContext)();master=AC.createGain();master.gain.value=MUTED?0:VOLUME;master.connect(AC.destination);}catch(e){}} if(AC&&AC.state==='suspended')AC.resume(); }
+/* ---------- 오디오 ----------
+   master(음소거) ← sfxBus / bgmBus. 버스를 갈라 둔 덕에 소리를 내는 쪽은 "어느
+   버스에 물릴지"만 고르면 되고, 볼륨은 게인 두 개만 만지면 전부 따라온다. */
+var AC=null, master=null, sfxBus=null, bgmBus=null;
+function ensureAudio(){
+  if(!AC){ try{
+    AC=new(window.AudioContext||window.webkitAudioContext)();
+    master=AC.createGain(); master.connect(AC.destination);
+    sfxBus=AC.createGain(); sfxBus.connect(master);
+    bgmBus=AC.createGain(); bgmBus.connect(master);
+    applyVolume();
+  }catch(e){} }
+  if(AC&&AC.state==='suspended')AC.resume();
+}
 // 볼륨은 살아 있는 gain 에 즉시 반영한다 — 설정에서 슬라이더를 움직이면 바로 들려야 한다
-function applyVolume(){ if(master) master.gain.value = MUTED?0:VOLUME; }
-function setVolume(v){ VOLUME=Math.max(0,Math.min(1,v)); stPut('vol', VOLUME); applyVolume(); }
+function applyVolume(){
+  if(master) master.gain.value = MUTED?0:1;
+  if(sfxBus) sfxBus.gain.value = SFX_VOL;
+  if(bgmBus) bgmBus.gain.value = BGM_VOL * BGM_TRIM;
+}
+function setSfxVol(v){ SFX_VOL=Math.max(0,Math.min(1,v)); stPut('svol', SFX_VOL); applyVolume(); }
+function setBgmVol(v){ BGM_VOL=Math.max(0,Math.min(1,v)); stPut('bvol', BGM_VOL); applyVolume(); }
 function setMuted(m){ MUTED=!!m; stPut('mute', MUTED?1:0); applyVolume(); }
 function tone(f,dur,type,vol,to){ ensureAudio(); if(!AC)return; var t=AC.currentTime,o=AC.createOscillator(),g=AC.createGain();
   o.type=type||'sine';o.frequency.setValueAtTime(f,t); if(to)o.frequency.exponentialRampToValueAtTime(Math.max(30,to),t+dur);
   g.gain.setValueAtTime(0.0001,t);g.gain.exponentialRampToValueAtTime(vol||0.15,t+0.008);g.gain.exponentialRampToValueAtTime(0.0001,t+dur);
-  o.connect(g);g.connect(master||AC.destination);o.start(t);o.stop(t+dur+0.02); }
+  o.connect(g);g.connect(sfxBus||AC.destination);o.start(t);o.stop(t+dur+0.02); }
 function sndShoot(){ tone(560,0.06,'square',0.11,260); tone(240,0.05,'triangle',0.08); }
 function sndPoof(){ tone(140,0.18,'square',0.16,50); tone(320,0.1,'sawtooth',0.1,90); }
 function sndJump(){ tone(400,0.08,'sine',0.08,600); }
@@ -573,8 +598,8 @@ function sndWin(){ [523,659,784,1046].forEach(function(f,i){setTimeout(function(
 function sndDie(){ tone(200,0.2,'sawtooth',0.1,80); }
 
 /* ---------- UI 소리 ----------
-   구운 ogg(Kenney UI Pack, CC0)를 AudioContext 로 디코드해 master 게인에 물린다.
-   <audio> 엘리먼트로 틀면 설정의 볼륨·음소거가 안 먹는다 — 그쪽은 master 를 안 거친다.
+   구운 ogg(Kenney UI Pack, CC0)를 AudioContext 로 디코드해 효과음 버스에 물린다.
+   <audio> 엘리먼트로 틀면 설정의 볼륨·음소거가 안 먹는다 — 그쪽은 버스를 안 거친다.
    디코드는 비동기라 첫 소리 하나는 놓칠 수 있는데, 버튼은 누르기 전에 반드시
    스쳐 지나가므로(pointerover) 그때 시작해 두면 누를 때는 이미 준비돼 있다. */
 var UIBUF={}, uiDecoding=false;
@@ -595,7 +620,7 @@ function uiSnd(k, vol){
   var b=UIBUF[k]; if(!b||!AC) return;
   var s=AC.createBufferSource(), g=AC.createGain();
   s.buffer=b; g.gain.value=(vol==null?0.45:vol);
-  s.connect(g); g.connect(master||AC.destination); s.start();
+  s.connect(g); g.connect(sfxBus||AC.destination); s.start();
 }
 /* 소리를 낼 자격이 있는 것 — 화면 위의 조작 요소만. 캔버스 클릭은 발사라 소리가 따로 있다.
    #pause 도 .screen 이므로 한 선택자로 둘 다 걸린다. */
@@ -611,6 +636,94 @@ document.addEventListener('pointerdown',function(e){
   var el=uiCtl(e.target); if(!el || el.disabled) return; uiSnd('click',0.5);
 });
 
+/* ---------- 배경음(BGM) ----------
+   맵마다 곡이 다르다. 다만 맵 수(7)만큼 곡을 두지는 않았다 — 같은 킷으로 지은 맵은
+   화면이 서로 닮아서, 곡까지 나누면 만드는 품만 늘고 듣는 쪽은 구분하지 못한다.
+   그래서 '킷 = 곡' 으로 묶어 넷이다. 맵을 추가하면 여기 한 줄만 더하면 된다.
+   표에 없는 맵은 무음이다 — 오류가 아니라 "아직 곡을 안 정한 맵" 이라는 뜻이다.
+
+   파일은 audio/bgm/<트랙>.mp3 다. 없으면 콘솔에 한 줄 남기고 조용히 넘어간다:
+   음악 파일이 아직 없는 상태에서도 게임은 그대로 돌아가야 한다(에셋은 따로 만든다). */
+var BGM_TRACK = {
+  arena:'space',   hangar:'space',                   // 정거장 — 금속·진공
+  plant:'factory',                                   // 조립 라인 — 공장
+  protoring:'lab',                                   // 프로토타입 링 — 실험실
+  camp:'outdoor',  grove:'outdoor', peak:'outdoor'   // 야영지·숲 공터·피크 — 야외
+};
+var BGM_DIR='audio/bgm/', BGM_EXT=['.mp3','.ogg'];
+var BGM_FADE=1.2;                                    // 곡이 바뀔 때 겹치는 시간(초)
+var BGMBUF={}, BGMPEND={}, BGMWANT=null, BGMNOW=null, BGMVOICE=null;
+
+/* 파일 하나를 받아 디코드해 둔다. 한 번 디코드한 곡은 BGMBUF 에 남으므로 맵을
+   오갈 때마다 다시 받지 않는다(서버가 캐시를 막아 둬서 fetch 는 매번 새로 나간다).
+   확장자를 순서대로 시도하는 이유: 원본은 mp3 지만 용량 때문에 ogg 로 다시
+   인코딩해 둘 수 있고, 그때 코드를 고치게 만들고 싶지 않다. */
+function bgmLoad(name, cb){
+  if(BGMBUF[name]){ cb(BGMBUF[name]); return; }
+  if(BGMPEND[name]){ BGMPEND[name].push(cb); return; }
+  ensureAudio(); if(!AC) return;
+  BGMPEND[name]=[cb];
+  var i=0;
+  (function next(){
+    if(i>=BGM_EXT.length){ done(null); return; }
+    fetch(BGM_DIR+name+BGM_EXT[i++])
+      .then(function(r){ if(!r.ok) throw 0; return r.arrayBuffer(); })
+      // 콜백형으로 부른다 — 프라미스를 돌려주지 않는 구형 구현에서도 그대로 산다
+      .then(function(a){ return new Promise(function(ok,no){ AC.decodeAudioData(a, ok, no); }); })
+      .then(function(b){ BGMBUF[name]=b; done(b); })
+      .catch(next);
+  })();
+  function done(b){
+    var q=BGMPEND[name]||[]; delete BGMPEND[name];
+    if(!b) console.warn('[pung] BGM 파일 없음: '+BGM_DIR+name+' — audio/bgm/README.md 참고');
+    q.forEach(function(f){ f(b); });
+  }
+}
+
+/* 트랙 전환. 겹쳐 페이드한다 — 딱 끊으면 맵이 바뀐 티가 나는 게 아니라
+   소리가 고장 난 것처럼 들린다. */
+function bgmPlay(name){
+  BGMWANT = name || null;
+  if(BGMNOW===BGMWANT && BGMVOICE) return;          // 이미 그 곡이 돌고 있다
+  /* 곡을 바꾸기로 정한 순간 지난 곡부터 내린다. 새 곡을 받아 온 뒤에 내리면,
+     파일이 없어서 못 받았을 때 지난 맵의 곡이 그대로 흐른다 — 조립 라인에서
+     우주 정거장 곡이 나오는 식이다. 겹침은 그래도 남는다: 한 번 디코드한 곡은
+     BGMBUF 에 있어 즉시 시작하고, 처음 받는 곡도 페이드(1.2초) 안에 들어온다. */
+  bgmFadeOut(BGMVOICE); BGMVOICE=null; BGMNOW=null;
+  if(!BGMWANT) return;
+  bgmLoad(BGMWANT, function(buf){
+    // 받아 오는 사이에 맵이 또 바뀌었으면 버린다 — 안 그러면 지나간 맵의 곡이 뒤늦게 깔린다
+    if(!buf || BGMWANT!==name) return;
+    ensureAudio(); if(!AC) return;
+    var s=AC.createBufferSource(), g=AC.createGain(), t=AC.currentTime;
+    s.buffer=buf; s.loop=true; s.connect(g); g.connect(bgmBus||AC.destination);
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.linearRampToValueAtTime(1, t+BGM_FADE);
+    s.start(t);
+    BGMVOICE={src:s, gain:g}; BGMNOW=name;
+  });
+}
+function bgmFadeOut(v){
+  if(!v || !AC) return;
+  var t=AC.currentTime;
+  try{
+    v.gain.gain.cancelScheduledValues(t);
+    v.gain.gain.setValueAtTime(v.gain.gain.value, t);
+    v.gain.gain.linearRampToValueAtTime(0.0001, t+BGM_FADE);
+    v.src.stop(t+BGM_FADE+0.05);
+  }catch(e){}
+}
+function bgmStop(){ bgmPlay(null); }
+
+/* 지금 화면·맵에 맞는 곡을 건다. 화면이 바뀔 때와 맵이 바뀔 때 둘 다 부른다 —
+   대기방에서 호스트가 맵을 갈아 끼우면 화면은 그대로인데 곡만 바뀌어야 한다.
+   메뉴에서는 끈다: 여기 곡은 '그 맵의 곡' 이라 맵 밖에서 틀 자리가 없고,
+   AudioContext 를 건드리지 않으므로 첫 클릭 전에 자동재생으로 막힐 일도 없다. */
+function bgmSync(){
+  var inMap = (mode==='play' || mode==='lobbyScr');
+  bgmPlay(inMap ? BGM_TRACK[CURLEVEL] : null);
+}
+
 /* ---------- 벡터 ---------- */
 function sub(a,b){return {x:a.x-b.x,y:a.y-b.y,z:a.z-b.z};}
 function len(a){return Math.hypot(a.x,a.y,a.z);}
@@ -625,8 +738,8 @@ var LEVEL=null, CURLEVEL=null;
    대기방 선택과 어느 쪽이 진짜인지 헷갈렸다. */
 var SOLO_LEVEL=null;
 function setSoloLevel(id){
-  if(!PENG.getLevel(id)) return false;
-  SOLO_LEVEL=id; try{ localStorage.setItem('peng.solomap', id); }catch(e){}
+  if(!PUNG.getLevel(id)) return false;
+  SOLO_LEVEL=id; try{ localStorage.setItem('pung.solomap', id); }catch(e){}
   return true;
 }
 /* 협동 관문 표식 — 물리 판정에서 파생된 장식 박스(level.js 의 coopMarkers).
@@ -757,8 +870,8 @@ function buildStaticPieces(){
   buildStation(LEVEL.pieces);
 }
 function setLevel(id){
-  var d=PENG.getLevel(id);
-  if(!d){ id=PENG.defaultLevel(); d=PENG.getLevel(id); }   // 모르는 맵이면 기본 맵으로
+  var d=PUNG.getLevel(id);
+  if(!d){ id=PUNG.defaultLevel(); d=PUNG.getLevel(id); }   // 모르는 맵이면 기본 맵으로
   if(!d) return false;
   LEVEL=cloneLevel(d); CURLEVEL=id;
   /* 킷 조각 VBO 를 비우고 시작한다. 안 그러면 조각 맵에서 박스 코스로 넘어갈 때
@@ -768,10 +881,11 @@ function setLevel(id){
   buildStaticPieces();                                     // 에디터로 놓은 조각
   buildTriSoup();                                          // 조각의 삼각형 = 실제 이동 판정
   buildPads();                                             // 아이템 패드 위치
-  MARKS = PENG.coopMarkers(d);
+  MARKS = PUNG.coopMarkers(d);
   /* 맵 이름은 HUD 에 안 띄운다. 서로 다른 코스를 달리는 사고는 시작할 때
      채팅으로 알린다(startGame 의 '맵 불일치') — 그게 알아채야 할 순간이고,
      경기 내내 구석에 이름을 띄워 두는 건 그 사고를 위한 대비치고 비싸다. */
+  bgmSync();                                               // 맵이 바뀌면 곡도 바뀐다
   return true;
 }
 /* ---------- 무너지는 바닥 ----------
@@ -783,7 +897,7 @@ function buildCollapseFloor(){
   var C=LEVEL&&LEVEL.collapse; if(!C) return;
   // 원본에서 통째로 다시 만든다. 타일만 지우면 지난 라운드에 같이 떨어진
   // 단·엄폐물이 _fall/deco 상태로 남아 2라운드부터 아레나가 텅 빈다.
-  var src=PENG.getLevel(CURLEVEL);
+  var src=PUNG.getLevel(CURLEVEL);
   LEVEL.boxes = src ? cloneLevel(src).boxes
                     : LEVEL.boxes.filter(function(b){ return !b._tile; });
   var maxR=0, i, j;
@@ -800,7 +914,7 @@ function buildCollapseFloor(){
        조각은 정적 VBO 로 따로 그리고, 여기서는 충돌체만 LEVEL.boxes 에 넣는다.
        _ring 은 '분리 순서'다 — 기존 붕괴 코드가 그대로 쓴다(큰 값부터 떨어져 나간다). */
     STATION.unit = C.size || STATION.unit;      // 레벨이 정한 칸 크기를 따른다
-    var ST=PENG.genStation(FLOOR_SEED), U=STATION.unit, PP=stationParts();
+    var ST=PUNG.genStation(FLOOR_SEED), U=STATION.unit, PP=stationParts();
     /* 충돌체는 조각 '모양'에서 뽑는다 — 목록을 따로 받지 않는다.
        그래야 문 구멍으로 지나가고 탁자 밑으로 들어갈 수 있다. */
     ST.pieces.forEach(function(pc){
@@ -833,7 +947,7 @@ function buildCollapseFloor(){
        바위 슬래브는 배율을 키워 '발판'으로 쓰고, 윗면이 전부 같은 평면에 오도록
        생성기가 y 를 내려 놓는다(자세한 건 level.js 의 genPeak 주석). */
     STATION.unit = C.size || STATION.unit;
-    var PK=PENG.genPeak(FLOOR_SEED), U2=STATION.unit, PP2=stationParts();
+    var PK=PUNG.genPeak(FLOOR_SEED), U2=STATION.unit, PP2=stationParts();
     PK.pieces.forEach(function(pc){
       if(pc.order>maxR) maxR=pc.order;
       if(pc.deco) return;                       // 산체·풀 — 보이기만 하고 통과
@@ -853,7 +967,7 @@ function buildCollapseFloor(){
   } else if(C.gen){
     /* 절차적 판 — 시드 하나로 전원이 같은 지형을 만든다(릴레이라 지형 권위가 없다).
        FLOOR_SEED 는 라운드마다 바뀐다: 경기 시드 + 라운드 번호. */
-    var G=PENG.genArena(C, FLOOR_SEED);
+    var G=PUNG.genArena(C, FLOOR_SEED);
     /* 바닥은 병합된 슬랩으로 깐다. 낱개 타일이면 2.6m 정사각형 눈금이 그대로 보여
        아무리 파내도 '바둑판'으로 읽힌다. 슬랩은 틈 없이 맞물리므로 이음매가 안 보인다
        — 어느 고리가 무너질지는 예고 깜빡임이 고리 전체를 물들여서 그대로 읽힌다. */
@@ -969,32 +1083,32 @@ function collapseTick(dt){
 // 임시 맵으로 등록한다. 에디터에서 배치 → 바로 실제 게임으로 확인하는 왕복을 없애기 위한 것.
 try{
   if(/[?&]playtest=1/.test(location.search)){
-    var _pt=localStorage.getItem('peng.playtest');
-    if(_pt){ var _d=JSON.parse(_pt); _d.name='시험 플레이: '+(_d.name||''); PENG.defineLevel('__playtest', _d); }
+    var _pt=localStorage.getItem('pung.playtest');
+    if(_pt){ var _d=JSON.parse(_pt); _d.name='시험 플레이: '+(_d.name||''); PUNG.defineLevel('__playtest', _d); }
   }
 }catch(e){}
 /* 로드 시점의 기본 맵. 여기서 터지면 아래 초기화가 통째로 멈춰 메인 메뉴의 맵
    목록까지 사라진다 — 실제로 에디터로 만든 맵이 알파벳순 첫 번째가 되어 기본 맵으로
    잡히면서 그렇게 됐다. 어떤 맵이 들어와도 메뉴는 떠야 하므로 감싸 둔다. */
 (function(){
-  var want = PENG.getLevel('__playtest') ? '__playtest' : PENG.defaultLevel();
+  var want = PUNG.getLevel('__playtest') ? '__playtest' : PUNG.defaultLevel();
   try{ setLevel(want); }
   catch(e){
-    if(console&&console.warn) console.warn('[peng] 기본 맵 "'+want+'" 을 못 열었습니다', e);
+    if(console&&console.warn) console.warn('[pung] 기본 맵 "'+want+'" 을 못 열었습니다', e);
     var alt=['canyon','arena','spire'];
-    for(var i=0;i<alt.length;i++){ if(!PENG.getLevel(alt[i])) continue;
+    for(var i=0;i<alt.length;i++){ if(!PUNG.getLevel(alt[i])) continue;
       try{ setLevel(alt[i]); break; }catch(e2){} }
   }
 })();
 // 지난번에 고른 맵이 남아 있으면 그대로 켠다
 SOLO_LEVEL=CURLEVEL;
-try{ var _sm=localStorage.getItem('peng.solomap');
-  if(_sm && PENG.getLevel(_sm)){ SOLO_LEVEL=_sm; setLevel(_sm); } }catch(e){}
+try{ var _sm=localStorage.getItem('pung.solomap');
+  if(_sm && PUNG.getLevel(_sm)){ SOLO_LEVEL=_sm; setLevel(_sm); } }catch(e){}
 
 /* ---------- 물리 상수 ---------- */
-// 상수의 단일 출처는 level.js 의 PENG.PHYS 다. 에디터가 도달 거리를 게임과 똑같은
+// 상수의 단일 출처는 level.js 의 PUNG.PHYS 다. 에디터가 도달 거리를 게임과 똑같은
 // 숫자로 계산해야 하므로, 값을 고칠 일이 있으면 level.js 에서만 고친다.
-var _P=PENG.PHYS;
+var _P=PUNG.PHYS;
 var RUN=_P.RUN, JUMPV=_P.JUMPV, GRAV=_P.GRAV, EYE=_P.EYE, PH_HX=_P.PH_HX, PH_HY=_P.PH_HY, PH_HZ=_P.PH_HZ;
 var BLAST_R=_P.BLAST_R, BLAST_F=_P.BLAST_F, BLAST_RANGE=_P.BLAST_RANGE;
 var AMMO_MAX=_P.AMMO_MAX, AMMO_REGEN=_P.AMMO_REGEN, PROJ_SPD=_P.PROJ_SPD;
@@ -3064,9 +3178,9 @@ var OUTLINE_BODY=0.022, OUTLINE_EYE=0.012;   // 윤곽선 두께(월드 단위)
 var EYE_PUPIL_SINK=0.88;   // 눈동자가 흰자 안으로 얼마나 들어가는지(1에 가까울수록 깊이 박힘)
 /* 내 몸통 색 — 대기방에서 고르고 저장한다. 팀원에게도 전송해 각자 자기 색으로 보인다. */
 var PLAYER_COL='#ff8a3a';
-try{ var _c=localStorage.getItem('peng.color'); if(_c&&/^#[0-9a-fA-F]{6}$/.test(_c)) PLAYER_COL=_c; }catch(e){}
+try{ var _c=localStorage.getItem('pung.color'); if(_c&&/^#[0-9a-fA-F]{6}$/.test(_c)) PLAYER_COL=_c; }catch(e){}
 function setMyColor(c){ if(!/^#[0-9a-fA-F]{6}$/.test(c)) return;
-  PLAYER_COL=c; try{ localStorage.setItem('peng.color',c); }catch(e){}
+  PLAYER_COL=c; try{ localStorage.setItem('pung.color',c); }catch(e){}
   if(MP.connected) mpSend({t:'col', c:c}); }
 /* 게임 모드 — coop(협동, 결승까지) / versus(경쟁, 밖으로 떨어뜨리기) */
 /* 지금 출시 대상은 경쟁뿐이다. 협동(coop) 코드는 그대로 살아 있고 GAMEMODE 만
@@ -3086,7 +3200,7 @@ function scoreFall(fallerId, byId){
   if(who!=null) SCORES[who]=(SCORES[who]||0)+1;
   /* 게임 이름을 동사로 쓴다. "누가 누구를 떨어뜨렸다"는 문장보다 이쪽이 짧고,
      한 줄만 봐도 누가 민 건지(화살표 방향) 바로 읽힌다. */
-  pushChat('', who!=null ? nameOf(who)+' → PENG! → '+nameOf(fallerId)
+  pushChat('', who!=null ? nameOf(who)+' → PUNG! → '+nameOf(fallerId)
                          : nameOf(fallerId)+' 자멸', false, true);
   var ids=MP.players.length ? MP.players.map(function(p){return p.id;}) : [MP.id];
   // 승리 판정
@@ -3418,6 +3532,7 @@ function showScreen(which){
   var ch=document.getElementById('chat');
   if(ch) ch.classList.toggle('off', !(which==='play' || which==='lobbyScr'));
   var fn=SCREEN_ENTER[which]; if(fn) fn();
+  bgmSync();                        // 맵 안(play·lobbyScr)에서만 곡이 돈다
 }
 
 /* 메뉴 뒤로가기. 게임 상태(play·lobbyScr)는 스택에 넣지 않는다 —
@@ -3477,7 +3592,7 @@ function setErr(id, html){ var e=document.getElementById(id); if(e) e.innerHTML=
 
    ※ 재보려고 setLevel() 을 부르면 안 된다. 그건 세계를 통째로 다시 짓고(충돌체·조각
      VBO·패드·표식) CURLEVEL 을 마지막으로 그린 맵에 남긴다. 여기서는 레지스트리
-     원본(PENG.getLevel)만 읽는다. */
+     원본(PUNG.getLevel)만 읽는다. */
 var THUMBS={}, THUMB_SEED=1;      // 시드 고정 — 카드가 볼 때마다 달라지면 안 된다
 
 /* 맵 → 위에서 본 사각형 목록. 출처가 셋이라 하나로 모은다.
@@ -3486,7 +3601,7 @@ var THUMBS={}, THUMB_SEED=1;      // 시드 고정 — 카드가 볼 때마다 �
      · 절차 맵 : 생성기를 한 번 굴린다. genStation/genPeak/genArena 는 전부 순수
                 함수라 LEVEL·STATION 을 건드리지 않는다(level.js 참고). */
 function mapFootprint(id){
-  var d=PENG.getLevel(id); if(!d) return null;
+  var d=PUNG.getLevel(id); if(!d) return null;
   var R=[], C=d.collapse;
 
   function push(x,z,w,h,y,ring,deco){
@@ -3497,9 +3612,9 @@ function mapFootprint(id){
   if(C && C.gen){
     var U=C.size||STATION.unit, G=null;
     try{
-      if(C.gen==='station')   G=PENG.genStation(THUMB_SEED);
-      else if(C.gen==='peak') G=PENG.genPeak(THUMB_SEED);
-      else                    G=PENG.genArena(C, THUMB_SEED);
+      if(C.gen==='station')   G=PUNG.genStation(THUMB_SEED);
+      else if(C.gen==='peak') G=PUNG.genPeak(THUMB_SEED);
+      else                    G=PUNG.genArena(C, THUMB_SEED);
     }catch(e){ G=null; }
     if(G && G.pieces){                       // station · peak
       G.pieces.forEach(function(p){ push(p.i*U, p.j*U, U, U, (p.y||0)*U, p.order, p.deco); });
@@ -3569,7 +3684,7 @@ function drawThumb(cv, id){
 /* 카드에 찍을 숫자. 없는 값을 지어내지 않는다 — 난이도 별점 같은 건 근거가 없다.
    높이차와 체크포인트 수가 "얼마나 빡센 코스인가"를 공짜로 알려준다. */
 function mapMeta(id){
-  var d=PENG.getLevel(id); if(!d) return '';
+  var d=PUNG.getLevel(id); if(!d) return '';
   if(d.arena){
     var C=d.collapse, out=[];
     if(C) out.push('붕괴 '+C.first+'초 · 간격 '+C.every+'초');
@@ -3584,10 +3699,13 @@ function mapMeta(id){
   return out2.join(' · ');
 }
 
-/* 모드에 맞는 맵만 — 협동 맵엔 떨어뜨릴 가장자리가 없고, 아레나엔 결승선이 없다 */
+/* 모드에 맞는 맵만 — 협동 맵엔 떨어뜨릴 가장자리가 없고, 아레나엔 결승선이 없다.
+   hidden 은 "등록은 되지만 고를 수는 없는 맵" 이다. 시험용 맵을 지우는 대신 이걸
+   붙인다 — 지우면 다음에 무언가 시험할 때 다시 만들어야 하고, 남겨 두면 심사받는
+   자리에서 조각 하나짜리 판이 목록에 섞인다. setLevel 은 여전히 id 로 불러 준다. */
 function mapListFor(gm){
-  return PENG.order.filter(function(id){
-    var d=PENG.getLevel(id); return d && (!!d.arena === (gm==='versus'));
+  return PUNG.order.filter(function(id){
+    var d=PUNG.getLevel(id); return d && !d.hidden && (!!d.arena === (gm==='versus'));
   });
 }
 function firstMapFor(gm){ var l=mapListFor(gm); return l.length?l[0]:null; }
@@ -3602,7 +3720,7 @@ function browseTarget(){ return CURLEVEL; }
 function pickMap(id){
   if(MP.connected && !mpIsHost()) return;              // 방 맵은 호스트만 정한다
   if(!setLevel(id)) return;
-  setSoloLevel(id);                                    // 다음에 켤 때 그대로 (peng.solomap)
+  setSoloLevel(id);                                    // 다음에 켤 때 그대로 (pung.solomap)
   syncMapPickers();
   if(MAPBROWSE.target==='lobby'){
     applyLevelToPractice();                            // 대기방 연습장을 새 맵으로 교체
@@ -3619,7 +3737,7 @@ function renderMapCards(){
   var cur=browseTarget(), list=mapListFor(GAMEMODE);
   grid.innerHTML=''; grid.classList.toggle('locked', guest);
   list.forEach(function(id){
-    var d=PENG.getLevel(id);
+    var d=PUNG.getLevel(id);
     var card=document.createElement('button'); card.type='button';
     card.className='mapCard'+(id===cur?' on':'');
     var cvv=document.createElement('canvas'); cvv.width=176; cvv.height=112;
@@ -3660,7 +3778,7 @@ function syncMapPickers(){
   // 대기방의 맵 버튼 — 이름 + 작은 썸네일. 카드 격자는 폭 300px 패널에 안 들어간다
   var btn=document.getElementById('lobbyMapBtn');
   if(btn){
-    var d=PENG.getLevel(CURLEVEL);
+    var d=PUNG.getLevel(CURLEVEL);
     var t=btn.querySelector('.lmName'); if(t) t.textContent=(d&&d.name)||CURLEVEL||'—';
     var c=btn.querySelector('canvas'); if(c && CURLEVEL) drawThumb(c, CURLEVEL);
     btn.disabled = MP.connected && !mpIsHost();
@@ -3855,7 +3973,7 @@ function optSync(rows){ rows.forEach(function(r){ r.show(r.get()); }); }
 
 /* ---------- 설정 ----------
    디버그 패널과 달리 여기 값은 localStorage 에 남는다. 물리 파라미터를 여기 섞지
-   않는 이유: 멀티는 전원이 같은 PENG.PHYS 로 돌아야 하는데, 물리를 저장하면
+   않는 이유: 멀티는 전원이 같은 PUNG.PHYS 로 돌아야 하는데, 물리를 저장하면
    사람마다 다른 값으로 시작해 조용히 어긋난다. 그래서 저장 정책이 다른 둘을 나눠 둔다. */
 var SET_ROWS=null;
 var SET_SPEC=[
@@ -3863,7 +3981,9 @@ var SET_SPEC=[
   // 슬라이더에 0.0022 를 보여주면 아무 의미가 없다 → 표시는 ×1000 단위로 하고 여기서 환산
   ['마우스 감도', 0.3, 6, 0.05, function(){ return MOUSE_SENS*1000; },
                                 function(v){ MOUSE_SENS=v/1000; stPut('sens', MOUSE_SENS); }],
-  ['seg','기본 시점', [[1,'3인칭'],[0,'1인칭']],
+  /* 기본은 1인칭이다. 3인칭이 기본이던 건 협동 시절의 선택이었다 — 팀원을 눈으로
+     쫓고 발밑을 받쳐 쏘려면 몸이 보여야 했다. 경쟁만 남은 지금은 조준이 전부라 1인칭이 맞다. */
+  ['seg','기본 시점', [[0,'1인칭'],[1,'3인칭']],
      function(){ return TP_DEFAULT?1:0; },
      function(v){ TP_DEFAULT=!!v; stPut('tp', v?1:0); if(sim) sim.tp=TP_DEFAULT; }],
   ['3인칭 거리', 1, 10, 0.1, function(){ return CAM_DIST; },
@@ -3874,7 +3994,8 @@ var SET_SPEC=[
   ['tog','중력 렌즈(폭발 왜곡)', function(){ return LENS_ON; },
                                  function(v){ LENS_ON=v?1:0; stPut('lens', v?1:0); }],
   ['sec','소리'],
-  ['볼륨', 0, 100, 1, function(){ return Math.round(VOLUME*100); }, function(v){ setVolume(v/100); }],
+  ['효과음', 0, 100, 1, function(){ return Math.round(SFX_VOL*100); }, function(v){ setSfxVol(v/100); }],
+  ['배경음', 0, 100, 1, function(){ return Math.round(BGM_VOL*100); }, function(v){ setBgmVol(v/100); }],
   ['tog','음소거', function(){ return MUTED?1:0; }, function(v){ setMuted(!!v); }],
   ['sec','플레이어'],
   ['txt','이름', function(){ return MP.name; }, function(v){ setMyName(v); }, 12],
@@ -3895,9 +4016,13 @@ SCREEN_ENTER.setScr=settingsSync;
    먼저 부르면 아래쪽 var 선언이 불러온 값을 도로 덮어쓴다. */
 function settingsLoad(){
   MOUSE_SENS = stNum('sens', MOUSE_SENS);
-  VOLUME     = stNum('vol',  VOLUME);
+  /* 볼륨이 하나에서 둘로 갈라졌다. 예전 'vol' 이 남아 있으면 그 값을 효과음이
+     물려받는다 — 안 그러면 소리를 줄여 두고 쓰던 사람이 업데이트 한 번에
+     기본값으로 되돌아가 깜짝 놀란다. */
+  SFX_VOL    = stNum('svol', stNum('vol', SFX_VOL));
+  BGM_VOL    = stNum('bvol', BGM_VOL);
   MUTED      = stGet('mute','0')==='1';
-  TP_DEFAULT = stGet('tp','1')==='1';
+  TP_DEFAULT = stGet('tp','0')==='1';
   CAM_DIST   = stNum('camdist', CAM_DIST);
   LENS_ON    = stNum('lens', LENS_ON) ? 1 : 0;
   var fovDeg = stNum('fov', 0); if(fovDeg>=40 && fovDeg<=130) FOV = fovDeg*Math.PI/180;
@@ -3930,7 +4055,7 @@ function enterLobby(levelId){
 function startGame(levelId){
   // 내게 없는 맵이면 setLevel 이 기본 맵으로 떨군다. 그걸 조용히 넘기면
   // "같은 방인데 서로 다른 맵을 달리는" 상태가 되고, 한참 뒤에야 알아채게 된다.
-  var missing = levelId && !PENG.getLevel(levelId);
+  var missing = levelId && !PUNG.getLevel(levelId);
   if(levelId) setLevel(levelId);
   /* 피어 버퍼는 비우되 '몸통 색'은 살린다. 예전엔 통째로 비워서 대기방에서 고른
      색(사람·AI 모두)이 게임에 들어가는 순간 기본색으로 되돌아갔다 —
@@ -4407,7 +4532,7 @@ fillMapPickers();
   var done=false, to=setTimeout(function(){ if(!done){ done=true; off(); } }, 2500);
   var fin=function(fn){ if(done)return; done=true; clearTimeout(to); fn(); };
   try{
-    fetch(base+'__peng',{cache:'no-store'}).then(function(r){ return r.ok?r.json():Promise.reject(); })
+    fetch(base+'__pung',{cache:'no-store'}).then(function(r){ return r.ok?r.json():Promise.reject(); })
       .then(function(){ fin(function(){ setWarn('ok','ONLINE'); }); })
       .catch(function(){ fin(off); });
   }catch(e){ fin(off); }
@@ -4462,10 +4587,10 @@ if(window.ItemMesh) ItemMesh.init();
 layout(); requestAnimationFrame(loop);
 
 /* ---------- 검증 노출 ---------- */
-window.__peng={ makeSim:makeSim, stepSim:stepSim, doFire:doFire,
+window.__pung={ makeSim:makeSim, stepSim:stepSim, doFire:doFire,
   // LEVEL 은 맵을 바꾸면 교체되므로 값이 아니라 게터로 낸다(예전처럼 고정해두면 낡은 맵을 가리킨다).
   get LEVEL(){ return LEVEL; },
-  setLevel:setLevel, get level(){ return CURLEVEL; }, levels:function(){ return PENG.order.slice(); },
+  setLevel:setLevel, get level(){ return CURLEVEL; }, levels:function(){ return PUNG.order.slice(); },
   get sim(){ return sim; }, get MP(){ return MP; },   // 실시간 검증용(멀티 상호작용 확인)
   // 중력 렌즈 검증용: 이번 프레임에 실제로 화면을 휘게 한 왜곡원 목록
   get lenses(){ return lensList; }, get round(){ return ROUND; },

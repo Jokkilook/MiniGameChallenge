@@ -1,6 +1,6 @@
-/* PENG! 레벨 — editor.html 에서 생성. 손으로 고쳐도 된다.
+/* PUNG! 레벨 — editor.html 에서 생성. 손으로 고쳐도 된다.
    <script src="levels/spire.js"></script> 로 index.html 에 추가하면 목록에 뜬다. */
-PENG.defineLevel('spire', {
+PUNG.defineLevel('spire', {
   name: '첨탑',
   boxes: [
     {cx:15.5, cy:-0.5, cz:0, hx:3, hy:0.5, hz:3, col:'#5a7bb0'},

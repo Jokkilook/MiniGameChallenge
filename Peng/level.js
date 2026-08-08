@@ -1,4 +1,4 @@
-/* PENG! 공용 모듈 — 물리 상수 · 레벨 레지스트리 · 도달 가능성 계산
+/* PUNG! 공용 모듈 — 물리 상수 · 레벨 레지스트리 · 도달 가능성 계산
  *
  *   index.html(게임) 과 editor.html(에디터) 가 이 파일을 함께 쓴다.
  *   에디터가 "이 협곡을 넘을 수 있는가"를 게임과 똑같은 숫자로 판정하려면
@@ -8,12 +8,33 @@
  *     file:// 에서 CORS 로 차단돼 "index.html 더블클릭 = 솔로 플레이"가 깨진다.
  */
 'use strict';
-var PENG = window.PENG || (window.PENG = {});
-PENG.levels = PENG.levels || {};   // id -> 레벨 데이터
-PENG.order  = PENG.order  || [];   // 로드된 순서(선택 목록용). 첫 번째가 기본 맵.
+var PUNG = window.PUNG || (window.PUNG = {});
+PUNG.levels = PUNG.levels || {};   // id -> 레벨 데이터
+PUNG.order  = PUNG.order  || [];   // 로드된 순서(선택 목록용). 첫 번째가 기본 맵.
+
+/* ---------- 저장소 키 이사 (peng.* → pung.*) ----------
+   게임 이름이 PENG! 에서 PUNG! 로 바뀌면서 localStorage 접두사도 따라 바뀌었다.
+   그냥 두면 이름이 바뀐 판을 처음 켠 사람은 저장해 둔 이름·색·볼륨·최고기록·
+   캐릭터 디자인을 전부 잃는다 — 값이 사라진 게 아니라 아무도 안 보는 이름 아래
+   남아 있을 뿐인데, 쓰는 쪽에선 초기화된 것과 구별할 수 없다. 그래서 한 번 옮긴다.
+
+   새 이름에 이미 값이 있으면 건드리지 않는다(이사한 뒤에 바꾼 설정이 옛 값으로
+   되돌아가면 안 된다). 옛 키는 지우지 않는다 — 지우는 건 되돌릴 수 없고,
+   남겨 둬도 아무도 읽지 않으니 해가 없다.
+   게임과 에디터가 함께 쓰는 파일이라 여기 둔다. 둘 다 이 뒤에 저장소를 읽는다. */
+(function(){
+  try{
+    for(var i=0;i<localStorage.length;i++){
+      var k=localStorage.key(i);
+      if(!k || k.indexOf('peng.')!==0) continue;
+      var nk='pung.'+k.slice(5);
+      if(localStorage.getItem(nk)===null) localStorage.setItem(nk, localStorage.getItem(k));
+    }
+  }catch(e){}      // 저장소가 막힌 브라우저(사생활 보호 모드 등)에서는 조용히 넘어간다
+})();
 
 /* ---------- 물리 상수 (게임·에디터 단일 출처) ---------- */
-PENG.PHYS = {
+PUNG.PHYS = {
   RUN:5.3, JUMPV:8.6, GRAV:22, EYE:1.6,
   PH_HX:0.35, PH_HY:0.9, PH_HZ:0.35,
   BLAST_R:4.2, BLAST_F:13.5, BLAST_RANGE:40,
@@ -43,17 +64,17 @@ PENG.PHYS = {
 
 /* ---------- 레벨 등록 ---------- */
 // 레벨 파일(levels/*.js)이 스스로를 등록한다. 잘못된 데이터는 콘솔에 알리고 건너뛴다.
-PENG.defineLevel = function(id, data){
-  var bad = PENG.validateLevel(data);
-  if(bad){ console.error('[peng] 레벨 "'+id+'" 무시됨: '+bad); return; }
-  if(!PENG.levels[id]) PENG.order.push(id);
-  PENG.levels[id] = data;
+PUNG.defineLevel = function(id, data){
+  var bad = PUNG.validateLevel(data);
+  if(bad){ console.error('[pung] 레벨 "'+id+'" 무시됨: '+bad); return; }
+  if(!PUNG.levels[id]) PUNG.order.push(id);
+  PUNG.levels[id] = data;
 };
-PENG.getLevel = function(id){ return PENG.levels[id] || null; };
-PENG.defaultLevel = function(){ return PENG.order[0] || null; };
+PUNG.getLevel = function(id){ return PUNG.levels[id] || null; };
+PUNG.defaultLevel = function(){ return PUNG.order[0] || null; };
 
 // 최소 검증 — 없으면 게임이 조용히 이상해지는 필드만 본다.
-PENG.validateLevel = function(d){
+PUNG.validateLevel = function(d){
   if(!d || typeof d!=='object') return '객체가 아님';
   if(!d.boxes || !d.boxes.length) return 'boxes 가 비어 있음';
   for(var i=0;i<d.boxes.length;i++){ var b=d.boxes[i];
@@ -74,28 +95,28 @@ PENG.validateLevel = function(d){
    모델: 최고 수평속도(RUN)로 달리다 점프. 공중 조작 계수가 0.10 이라 체공 중
    수평속도는 거의 변하지 않으므로 수평 도달거리 ≈ RUN × 체공시간 으로 본다.
    따라서 결과는 "이상적으로 잘 탔을 때의 상한"이다 — 실제로는 약간 짧게 잡는 게 안전하다. */
-PENG.reach = {
+PUNG.reach = {
   // 초기 상승속도 v0 로 뛰어 높이차 dy 인 지점에 닿기까지의 체공시간(0 이면 도달 불가)
   airTime: function(v0, dy){
-    var D = v0*v0 - 2*PENG.PHYS.GRAV*(dy||0);
+    var D = v0*v0 - 2*PUNG.PHYS.GRAV*(dy||0);
     if(D < 0) return 0;                       // 그 높이까지 아예 못 올라감
-    return (v0 + Math.sqrt(D)) / PENG.PHYS.GRAV;
+    return (v0 + Math.sqrt(D)) / PUNG.PHYS.GRAV;
   },
-  apex: function(v0){ return v0*v0 / (2*PENG.PHYS.GRAV); },
+  apex: function(v0){ return v0*v0 / (2*PUNG.PHYS.GRAV); },
 
   // 발밑 자폭 1회가 주는 상승 임펄스.
   // 폭발 중심은 발판 표면, 플레이어 중심은 발에서 PH_HY 위 → 그 거리만큼 감쇠한다.
-  selfBlast: function(){ var P=PENG.PHYS; return P.BLAST_F * (1 - P.PH_HY/P.BLAST_R); },
+  selfBlast: function(){ var P=PUNG.PHYS; return P.BLAST_F * (1 - P.PH_HY/P.BLAST_R); },
   // 팀원이 d 미터 떨어진 곳에서 쏴 주는 보조 임펄스(기본 1.5m — 현실적인 근접 사격).
   // 직격이 아닌 "근처 폭발"은 지금도 방사형이라 이 값이 그대로 쓰인다.
-  teamBlast: function(d){ var P=PENG.PHYS; d=(d==null?1.5:d);
+  teamBlast: function(d){ var P=PUNG.PHYS; d=(d==null?1.5:d);
     return d>=P.BLAST_R ? 0 : P.BLAST_F * (1 - d/P.BLAST_R); },
 
   // 높이차 dy 를 오르면서 넘을 수 있는 최대 수평 간격
-  jump:     function(dy){ var P=PENG.PHYS; return P.RUN * this.airTime(P.JUMPV, dy); },
-  rocket:   function(dy){ var P=PENG.PHYS; return P.RUN * this.airTime(P.JUMPV + this.selfBlast(), dy); },
+  jump:     function(dy){ var P=PUNG.PHYS; return P.RUN * this.airTime(P.JUMPV, dy); },
+  rocket:   function(dy){ var P=PUNG.PHYS; return P.RUN * this.airTime(P.JUMPV + this.selfBlast(), dy); },
   // 팀원이 리프트 샷으로 직격해 준 경우. 거리와 무관한 고정 상승이라 설계값이 흔들리지 않는다.
-  assisted: function(dy){ var P=PENG.PHYS;
+  assisted: function(dy){ var P=PUNG.PHYS;
     return P.RUN * this.airTime(P.JUMPV + this.selfBlast() + P.LIFT_V, dy); },
 
   /* 구간 난이도 분류 — 에디터가 협곡마다 이 라벨을 띄운다.
@@ -114,12 +135,12 @@ PENG.reach = {
   /* 수직 설계용 한계. 수평 이동이 0일 때 한 번에 오를 수 있는 최대 높이다.
      탑처럼 위로 쌓는 코스에서는 협곡 길이가 아니라 이 값이 난이도를 정한다 —
      턱이 soloRise 를 넘으면 판정에 기대지 않고 물리적으로 혼자서는 불가능해진다. */
-  soloRise: function(){ var P=PENG.PHYS; return this.apex(P.JUMPV + this.selfBlast()); },
-  coopRise: function(){ var P=PENG.PHYS; return this.apex(P.JUMPV + this.selfBlast() + P.LIFT_V); }
+  soloRise: function(){ var P=PUNG.PHYS; return this.apex(P.JUMPV + this.selfBlast()); },
+  coopRise: function(){ var P=PUNG.PHYS; return this.apex(P.JUMPV + this.selfBlast() + P.LIFT_V); }
 };
 
 /* 어느 발판 위의 지점인지 찾는다(체크포인트·결승이 어느 발판에 속하는지 판정용). */
-PENG.platformAt = function(boxes, x, y, z){
+PUNG.platformAt = function(boxes, x, y, z){
   var best=null, bd=Infinity;
   for(var i=0;i<boxes.length;i++){ var b=boxes[i]; if(b.deco) continue;
     var dx=Math.max(0, Math.abs(x-b.cx)-b.hx);
@@ -145,31 +166,31 @@ function gapBetween(a, b){
    좌우로 꺾이는 코스에서 엉뚱한 발판끼리 짝지어진다. 체크포인트가 없으면 z 정렬로 폴백. */
 /* 경로 후보가 되는 발판. 장식뿐 아니라 압력판도 뺀다 — 압력판은 밟는 물건이지
    도착지가 아니라서, 경로에 끼면 협곡이 엉뚱한 지점에서 쪼개진다. */
-PENG.isPlatform = function(b){ return !b.deco && !b.plate; };
-PENG.levelRoute = function(d){
-  var pf = d.boxes.filter(PENG.isPlatform);
+PUNG.isPlatform = function(b){ return !b.deco && !b.plate; };
+PUNG.levelRoute = function(d){
+  var pf = d.boxes.filter(PUNG.isPlatform);
   if(!pf.length) return [];
   var route=[];
   if(d.checkpoints && d.checkpoints.length){
     for(var i=0;i<d.checkpoints.length;i++){ var c=d.checkpoints[i];
-      var p=PENG.platformAt(pf, c.x, c.y, c.z); if(p && route[route.length-1]!==p) route.push(p); }
+      var p=PUNG.platformAt(pf, c.x, c.y, c.z); if(p && route[route.length-1]!==p) route.push(p); }
     // 결승 발판을 경로 끝에 붙인다. 단 이미 경로 안에 있으면 붙이지 않는다 —
     // 결승이 아직 코스 중간(또는 시작점)에 있을 때 되돌아가는 가짜 구간이 생기기 때문.
-    if(d.goal){ var g=PENG.platformAt(pf, d.goal.cx, d.goal.cy-0.5, d.goal.cz);
+    if(d.goal){ var g=PUNG.platformAt(pf, d.goal.cx, d.goal.cy-0.5, d.goal.cz);
       if(g && route.indexOf(g)<0) route.push(g); }
   }
   if(route.length<2) route = pf.slice().sort(function(a,b){ return a.cz-b.cz; });
   return route;
 };
 /* 결승이 코스 끝에 있는지. 아니면 마지막 발판까지 갔는데 끝나지 않는 맵이 된다. */
-PENG.goalAtEnd = function(d){
-  var route=PENG.levelRoute(d); if(route.length<2 || !d.goal) return true;
-  var pf=d.boxes.filter(PENG.isPlatform);
-  var g=PENG.platformAt(pf, d.goal.cx, d.goal.cy-0.5, d.goal.cz);
+PUNG.goalAtEnd = function(d){
+  var route=PUNG.levelRoute(d); if(route.length<2 || !d.goal) return true;
+  var pf=d.boxes.filter(PUNG.isPlatform);
+  var g=PUNG.platformAt(pf, d.goal.cx, d.goal.cy-0.5, d.goal.cz);
   return g === route[route.length-1];
 };
-PENG.analyzeLevel = function(d){
-  var route=PENG.levelRoute(d), out=[];
+PUNG.analyzeLevel = function(d){
+  var route=PUNG.levelRoute(d), out=[];
   // 어떤 채널에 압력판이 실제로 존재하는지 — 스위치 없는 다리는 영영 안 열린다.
   var plates={};
   for(var k=0;k<d.boxes.length;k++) if(d.boxes[k].plate) plates[d.boxes[k].plate]=true;
@@ -181,8 +202,8 @@ PENG.analyzeLevel = function(d){
     /* '붙어 있음'은 발판이 겹치고 "높이도 걸어 오를 만할 때"만이다. 수평으로 겹쳤다고
        14m 위로 올라갈 수는 없으므로, 높이가 일반 점프 한계를 넘으면 그대로 분류에 넘긴다. */
     if(b.link) kind = plates[b.link] ? 'gate' : 'noswitch';
-    else if(gap<=0 && dy<=PENG.reach.apex(PENG.PHYS.JUMPV)) kind='touch';
-    else kind = PENG.reach.classify(gap, dy);
+    else if(gap<=0 && dy<=PUNG.reach.apex(PUNG.PHYS.JUMPV)) kind='touch';
+    else kind = PUNG.reach.classify(gap, dy);
     out.push({ from:i, to:i+1, gap:Math.round(gap*100)/100, dy:Math.round(dy*100)/100,
                a:a, b:b, kind:kind });
   }
@@ -190,8 +211,8 @@ PENG.analyzeLevel = function(d){
 };
 /* 난이도를 지정하면 그 구간이 되도록 다음 발판을 놓을 거리를 돌려준다.
    "채점기"를 "창작 도구"로 뒤집는 부분 — 협동 전용 구간을 손으로 계산하지 않아도 된다. */
-PENG.gapFor = function(kind, dy){
-  var R=PENG.reach, lo, hi;
+PUNG.gapFor = function(kind, dy){
+  var R=PUNG.reach, lo, hi;
   if(kind==='jump'){ lo=0; hi=R.jump(dy); }
   else if(kind==='rocket'){ lo=R.jump(dy); hi=R.rocket(dy); }
   else { lo=R.rocket(dy); hi=R.assisted(dy); }     // coop
@@ -206,7 +227,7 @@ PENG.gapFor = function(kind, dy){
    읽고 사라지므로 규칙을 배우게 하지 못한다 — 그래서 코스 자체에 표식을 세운다.
 
    표식은 손으로 놓지 않고 analyzeLevel() 의 판정에서 바로 만든다. 판정이 쓰는 숫자가
-   곧 게임이 쓰는 숫자(PENG.PHYS)이므로, 상수를 고치거나 발판을 옮기면 표식이 저절로
+   곧 게임이 쓰는 숫자(PUNG.PHYS)이므로, 상수를 고치거나 발판을 옮기면 표식이 저절로
    따라온다 — 표식이 물리와 어긋나 거짓말을 하는 상태가 원천적으로 생기지 않는다.
 
    두 가지를 세운다.
@@ -218,9 +239,9 @@ PENG.gapFor = function(kind, dy){
 
    전부 deco:true 라 충돌하지도, 광선에 맞지도 않는다. 레벨 데이터(boxes)에 섞지 말고
    따로 받아서 그리기만 할 것 — 섞으면 에디터가 저장할 때 파일에 딸려 들어간다. */
-PENG.MARK_COL = { rim:'#c05ad0', post:'#7a5a8c', band:'#e8484f' };
-PENG.coopMarkers = function(d){
-  var out=[], C=PENG.MARK_COL, lim=PENG.reach.soloRise(), done=[];
+PUNG.MARK_COL = { rim:'#c05ad0', post:'#7a5a8c', band:'#e8484f' };
+PUNG.coopMarkers = function(d){
+  var out=[], C=PUNG.MARK_COL, lim=PUNG.reach.soloRise(), done=[];
 
   // 발판 표면 가장자리를 두르는 얇은 띠 4개. 모서리에서 겹치지 않게 좌우 막대를 줄인다
   // (같은 높이로 겹치면 윗면이 z파이팅으로 지글거린다).
@@ -252,7 +273,7 @@ PENG.coopMarkers = function(d){
       out.push({cx:px+ux*t, cy:y, cz:pz+uz*t, hx:0.13, hy:0.05, hz:0.13, col:C.band, deco:true}); }
   }
 
-  var segs=PENG.analyzeLevel(d);
+  var segs=PUNG.analyzeLevel(d);
   for(var i=0;i<segs.length;i++){ var s=segs[i];
     if(s.kind!=='coop') continue;     // 압력판 다리(gate)는 청록 발판·노란 판이 이미 말해 준다
     rim(s.a); rim(s.b); post(s.a, s.b);
@@ -264,7 +285,7 @@ PENG.coopMarkers = function(d){
    게임 렌더러는 축 정렬 박스만 그린다. 그래서 나무·바위·풀도 박스 조합으로 만든다.
    덕분에 게임 쪽은 아무것도 고칠 게 없고, 로우폴리 블록 아트와도 그대로 맞는다.
    deco:true 인 박스는 시각 전용이라 충돌하지 않는다(index.html 의 moveAxis 참조). */
-PENG.PROPS = [
+PUNG.PROPS = [
   { id:'platform', name:'발판', deco:false, tag:'코스',
     icon:'<rect x="2" y="9" width="20" height="6" rx="1" fill="#5a7bb0"/>',
     build:function(){ return [{cx:0,cy:-0.5,cz:0,hx:3,hy:0.5,hz:3,col:'#5a7bb0'}]; } },
@@ -322,14 +343,14 @@ PENG.PROPS = [
     icon:'<rect x="1" y="11" width="22" height="4" fill="#20304a"/>',
     build:function(){ return [{cx:0,cy:-24.5,cz:0,hx:60,hy:1,hz:120,col:'#20304a'}]; } }
 ];
-PENG.propById = function(id){
-  for(var i=0;i<PENG.PROPS.length;i++) if(PENG.PROPS[i].id===id) return PENG.PROPS[i];
+PUNG.propById = function(id){
+  for(var i=0;i<PUNG.PROPS.length;i++) if(PUNG.PROPS[i].id===id) return PUNG.PROPS[i];
   return null;
 };
 /* 프롭을 (x,y,z) 에 놓아 박스 배열로 편다. 여러 박스짜리는 같은 그룹 id 를 달아
    에디터에서 하나처럼 선택·이동·삭제된다(게임은 g 필드를 무시한다). */
-PENG.placeProp = function(id, x, y, z, gid, ch){
-  var p=PENG.propById(id); if(!p) return [];
+PUNG.placeProp = function(id, x, y, z, gid, ch){
+  var p=PUNG.propById(id); if(!p) return [];
   var parts=p.build(), out=[];
   for(var i=0;i<parts.length;i++){
     var b=parts[i];
@@ -346,7 +367,7 @@ PENG.placeProp = function(id, x, y, z, gid, ch){
 /* ---------- 직렬화 (에디터 저장용) ----------
    editor.html 이 편집 결과를 levels/<id>.js 파일 내용으로 뽑아낼 때 쓴다.
    출력은 손으로 읽고 고칠 수 있는 형태를 유지한다. */
-PENG.serialize = function(id, d){
+PUNG.serialize = function(id, d){
   function n(v){ return (Math.round(v*1000)/1000).toString(); }
   function bx(b){
     var s = '    {cx:'+n(b.cx)+', cy:'+n(b.cy)+', cz:'+n(b.cz)+
@@ -360,9 +381,9 @@ PENG.serialize = function(id, d){
     return s + (b.note ? '  // '+b.note : '');
   }
   var L=[];
-  L.push('/* PENG! 레벨 — editor.html 에서 생성. 손으로 고쳐도 된다.');
+  L.push('/* PUNG! 레벨 — editor.html 에서 생성. 손으로 고쳐도 된다.');
   L.push('   <script src="levels/'+id+'.js"></script> 로 index.html 에 추가하면 목록에 뜬다. */');
-  L.push("PENG.defineLevel('"+id+"', {");
+  L.push("PUNG.defineLevel('"+id+"', {");
   L.push("  name: '"+String(d.name||id).replace(/'/g,"\\'")+"',");
   L.push('  boxes: [');
   L.push(d.boxes.map(bx).join(',\n'));
@@ -393,7 +414,7 @@ PENG.serialize = function(id, d){
  * 밀어 떨어뜨리는 경기에서 비대칭은 곧 불공정이다(한쪽 스폰만 낭떠러지 옆이면 게임이
  * 망가진다). 대칭으로 만들면 공정성이 공짜로 따라오고, 모양은 여전히 유기적으로 나온다.
  */
-PENG.rng32 = function(seed){          // mulberry32 — 짧고 분포가 고르다
+PUNG.rng32 = function(seed){          // mulberry32 — 짧고 분포가 고르다
   var a = seed >>> 0;
   return function(){
     a = (a + 0x6D2B79F5) >>> 0;
@@ -408,7 +429,7 @@ PENG.rng32 = function(seed){          // mulberry32 — 짧고 분포가 고르�
  *   slabs      — 같은 고리·같은 높이의 칸을 직사각형으로 합친 바닥(월드 좌표)
  *   structures — 탑·계단탑·아치 등. {ring, boxes:[...]} 로 통째로 한 고리에 속한다
  * 좌표는 타일 인덱스다 — 월드 변환은 부르는 쪽이 한다(size 를 곱하면 된다). */
-PENG.genArena = function(C, seed){
+PUNG.genArena = function(C, seed){
   /* 너무 휑한 판이 나오면 다시 굴린다. 연산자가 겹치면(해자+협곡+침식) 발판이 20장까지
      줄어드는데, 그건 아레나가 아니라 징검다리다. 시드를 파생시켜 다시 굴리므로
      결정론은 유지된다 — 전원이 같은 순서로 같은 판에 도달한다. */
@@ -416,16 +437,16 @@ PENG.genArena = function(C, seed){
   var minCells = (C.minCells == null) ? Math.round(Math.PI*Rt*Rt*0.45) : C.minCells;
   var best = null;
   for(var att = 0; att < 6; att++){
-    var g = PENG.genArenaOnce(C, (seed + Math.imul(att, 0x85EBCA6B)) >>> 0);
+    var g = PUNG.genArenaOnce(C, (seed + Math.imul(att, 0x85EBCA6B)) >>> 0);
     if(!best || g.cells.length > best.cells.length) best = g;
     if(g.cells.length >= minCells){ g.tries = att + 1; return g; }
   }
   best.tries = 6; return best;
 };
-PENG.genArenaOnce = function(C, seed){
+PUNG.genArenaOnce = function(C, seed){
   var size = C.size, R = C.radius / size, n = Math.ceil(R);
   var PLAT_H = (C.platH == null) ? 1.3 : C.platH;   // 고지대 단 높이(점프 도달 1.68m 이내)
-  var rnd = PENG.rng32(seed);
+  var rnd = PUNG.rng32(seed);
   var ri = function(a, b){ return a + Math.floor(rnd() * (b - a + 1)); };
 
   var K = function(i, j){ return i + ',' + j; };
@@ -509,7 +530,7 @@ PENG.genArenaOnce = function(C, seed){
     for(var t = 0; t < liveList.length; t++){
       var tc = liveList[t]; if(ok[K(tc.i,tc.j)]) continue;
       var gap = Math.hypot(tc.i - cur.i, tc.j - cur.j) * size - size;   // 표면 사이 대략 간격
-      var span = PENG.reach.rocket(tc.h - cur.h);
+      var span = PUNG.reach.rocket(tc.h - cur.h);
       if(span > 0 && gap <= span * 0.8){ ok[K(tc.i,tc.j)] = 1; q.push(tc); }
     }
   }
@@ -694,8 +715,8 @@ PENG.genArenaOnce = function(C, seed){
    배율: 1킷유닛 = 3m(collapse.size). 나무 4.2~5.1m · 천막 1.7m · 울타리 1.56m 로
    실측 크기가 맞고, 울타리가 점프 정점(1.68m)보다 낮아 넘어 다닐 수 있는 엄폐물이 된다.
    공정성: 소품·발판 모두 사분면 하나에 놓고 (i,j)->(j,-i) 로 네 번 찍는다. */
-PENG.genPeak = function(seed){
-  var rnd  = PENG.rng32(seed >>> 0);
+PUNG.genPeak = function(seed){
+  var rnd  = PUNG.rng32(seed >>> 0);
   var ri   = function(a,b){ return a + Math.floor(rnd()*(b-a+1)); };
   var pick = function(a){ return a[Math.floor(rnd()*a.length)]; };
 
@@ -874,8 +895,8 @@ PENG.genPeak = function(seed){
            info:'데크지름'+(DECK_OUT*6).toFixed(0)+'m 조각'+pieces.length+'개' };
 };
 
-PENG.genStation = function(seed){
-  var rnd = PENG.rng32(seed);
+PUNG.genStation = function(seed){
+  var rnd = PUNG.rng32(seed);
   var ri = function(a,b){ return a + Math.floor(rnd()*(b-a+1)); };
   var pick = function(a){ return a[Math.floor(rnd()*a.length)]; };
 

@@ -1,7 +1,7 @@
 <!doctype html>
 <html lang="ko"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>PENG! 킷 배치 에디터</title>
+<title>PUNG! 킷 배치 에디터</title>
 <style>
   *{box-sizing:border-box}
   html,body{margin:0;height:100%;overflow:hidden;background:#0d1220;color:#dbe4f5;
@@ -146,7 +146,7 @@
 <script>
 "use strict";
 /* =========================================================================
-   PENG! 킷 배치 에디터 — Kenney Survival Kit 조각을 손으로 놓아 맵을 만든다.
+   PUNG! 킷 배치 에디터 — Kenney Survival Kit 조각을 손으로 놓아 맵을 만든다.
 
    좌표계는 게임과 똑같이 맞춘다. 조각의 위치는 '킷유닛'이고 월드 미터 = 유닛 * UNIT
    (기본 3m). 화면에는 미터로 보여 주고 저장할 때 유닛으로 돌린다 — 게임의
@@ -1085,14 +1085,14 @@ document.getElementById('btnDeco').onclick=function(){
 
 /* ---------- 맵 목록 ----------
    levels/_all.js 는 server.js 가 levels/ 폴더를 훑어 자동으로 만든 이어붙인 파일이다.
-   레벨은 PENG.defineLevel 만 부르므로, 그 함수 하나짜리 가짜 PENG 에 태워 돌리면
+   레벨은 PUNG.defineLevel 만 부르므로, 그 함수 하나짜리 가짜 PUNG 에 태워 돌리면
    목록과 내용을 한 번에 얻는다(게임을 띄우지 않아도 된다).
    저장 뒤에는 서버가 _all.js 를 다시 만들므로 그때 새로 읽는다. */
 var LEVELS={}, LORDER=[];
 function readAll(txt){
   var L={}, O=[];
   var P={ defineLevel:function(id,d){ if(!L[id]) O.push(id); L[id]=d; } };
-  try{ new Function('PENG', txt)(P); }catch(e){ return null; }
+  try{ new Function('PUNG', txt)(P); }catch(e){ return null; }
   LEVELS=L; LORDER=O; return O.length;
 }
 function fillMapPick(keep){
@@ -1125,9 +1125,9 @@ function serialize(){
   var id=(document.getElementById('mapId').value||'mymap').trim();
   var nm=(document.getElementById('mapName').value||id).trim();
   var L=[];
-  L.push("/* PENG! 레벨 — kiteditor.html 에서 만듦. 손으로 고쳐도 된다.");
+  L.push("/* PUNG! 레벨 — kiteditor.html 에서 만듦. 손으로 고쳐도 된다.");
   L.push("   pieces 의 좌표는 '킷유닛'이고 월드 미터 = 유닛 * unit 이다. */");
-  L.push("PENG.defineLevel('"+id+"', {");
+  L.push("PUNG.defineLevel('"+id+"', {");
   L.push("  name: '"+nm.replace(/'/g,"\\'")+"',");
   L.push("  unit: "+UNIT+",");
   L.push("  boxes: [");

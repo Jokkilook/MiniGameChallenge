@@ -3,9 +3,9 @@
    맵을 고치려면 levels/<이름>.js 를 고치거나 editor.html 을 쓰세요. */
 
 /* ---------- levels/TESTR.js ---------- */
-/* PENG! 레벨 — kiteditor.html 에서 만듦. 손으로 고쳐도 된다.
+/* PUNG! 레벨 — kiteditor.html 에서 만듦. 손으로 고쳐도 된다.
    pieces 의 좌표는 '킷유닛'이고 월드 미터 = 유닛 * unit 이다. */
-PENG.defineLevel('TESTR', {
+PUNG.defineLevel('TESTR', {
   name: 'TT',
   unit: 3,
   boxes: [
@@ -25,9 +25,9 @@ PENG.defineLevel('TESTR', {
 
 
 /* ---------- levels/Test.js ---------- */
-/* PENG! 레벨 — kiteditor.html 에서 만듦. 손으로 고쳐도 된다.
+/* PUNG! 레벨 — kiteditor.html 에서 만듦. 손으로 고쳐도 된다.
    pieces 의 좌표는 '킷유닛'이고 월드 미터 = 유닛 * unit 이다. */
-PENG.defineLevel('TEST', {
+PUNG.defineLevel('TEST', {
   name: 'TEST',
   unit: 3,
   boxes: [
@@ -38,6 +38,9 @@ PENG.defineLevel('TEST', {
     {t:'proto/weapon-shield', i:0.118, j:-1.424, y:-0.943, sx:12.414, sy:12.414, sz:12.414}
   ],
   arena: true,
+  // 시험용 판이다 — 맵 고르기 목록에서 뺀다(index.html 의 mapListFor).
+  // 지운 게 아니라 숨긴 것이므로 setLevel('TEST') 로는 그대로 들어갈 수 있다.
+  hidden: true,
   goal: {cx:0, cy:-999, cz:0, r:0.1},
   checkpoints: [ {x:2.921, y:1.789, z:-4.181} ],
   killY: -30,
@@ -48,9 +51,9 @@ PENG.defineLevel('TEST', {
 
 
 /* ---------- levels/Testmap1.js ---------- */
-/* PENG! 레벨 — editor.html 에서 생성. 손으로 고쳐도 된다.
+/* PUNG! 레벨 — editor.html 에서 생성. 손으로 고쳐도 된다.
    <script src="levels/Testmap1.js"></script> 로 index.html 에 추가하면 목록에 뜬다. */
-PENG.defineLevel('Testmap1', {
+PUNG.defineLevel('Testmap1', {
   name: '테스트맵1',
   boxes: [
     {cx:0, cy:-0.5, cz:3.5, hx:3, hy:0.5, hz:3, col:'#5a7bb0'},
@@ -75,12 +78,12 @@ PENG.defineLevel('Testmap1', {
 
 
 /* ---------- levels/arena.js ---------- */
-PENG.defineLevel('arena', {
+PUNG.defineLevel('arena', {
   name: '우주 정거장 (경쟁)',
   arena: true,
   space: true,          // 배경을 검은 우주 + 흰 별로
   collapse: {
-    /* 판을 Kenney Space Station Kit 조각으로 조립한다(PENG.genStation).
+    /* 판을 Kenney Space Station Kit 조각으로 조립한다(PUNG.genStation).
        예전의 '원판을 깔고 파내는' 방식과 달리 코어 → 복도 → 포드 순으로 붙여
        허브+스포크 실루엣이 나온다. 라운드마다 시드가 바뀐다.
        size 는 킷 1칸의 미터 크기(index.html 의 STATION.unit 과 맞춰야 한다). */
@@ -114,9 +117,9 @@ PENG.defineLevel('arena', {
 
 
 /* ---------- levels/camp.js ---------- */
-/* PENG! 레벨 — kiteditor.html 에서 만듦. 손으로 고쳐도 된다.
+/* PUNG! 레벨 — kiteditor.html 에서 만듦. 손으로 고쳐도 된다.
    pieces 의 좌표는 '킷유닛'이고 월드 미터 = 유닛 * unit 이다. */
-PENG.defineLevel('camp', {
+PUNG.defineLevel('camp', {
   name: '야영지 (경쟁)',
   unit: 3,
   boxes: [
@@ -282,7 +285,7 @@ PENG.defineLevel('camp', {
 
 
 /* ---------- levels/canyon.js ---------- */
-/* PENG! 레벨 — 협곡 (기본 코스)
+/* PUNG! 레벨 — 협곡 (기본 코스)
    기존 index.html 에 하드코딩돼 있던 코스를 그대로 옮긴 것. 좌표·색 모두 동일하다.
 
    코스 구성 — 발판 반경 3m 이므로 두 발판 사이 실제 협곡 = (거리 - 6)m.
@@ -291,7 +294,7 @@ PENG.defineLevel('camp', {
 
    ※ deco:true 는 에디터의 협곡 분석에서 제외하라는 표시일 뿐이다.
      게임 물리는 예전과 똑같이 모든 박스와 충돌한다(장식 기둥도 밟힌다). */
-PENG.defineLevel('canyon', {
+PUNG.defineLevel('canyon', {
   name: '협곡',
   boxes: [
     {cx:0, cy:-25, cz:40, hx:60, hy:1, hz:140, col:'#20304a', deco:true},  // 시각용 먼 바닥
@@ -328,7 +331,7 @@ PENG.defineLevel('canyon', {
 
 
 /* ---------- levels/duo.js ---------- */
-/* PENG! 레벨 — 2인 시험장 (템플릿)
+/* PUNG! 레벨 — 2인 시험장 (템플릿)
    완성된 코스가 아니라, "협동 강제 구간"이 실제로 어떤 숫자인지 보여주는 최소 예시다.
    맵 동기화 테스트용으로도 쓴다(맵이 하나뿐이면 동기화가 깨져도 티가 안 난다).
 
@@ -337,7 +340,7 @@ PENG.defineLevel('canyon', {
        로켓점프  10.83m  ✗   ← 혼자서는 어떻게 해도 못 넘는다
        팀원 보조 15.72m  ✓   ← 팀원이 밀어줘야만 넘어간다
    editor.html 에서 이 협곡이 'coop' 으로 표시되는지 확인하는 기준점으로 쓰면 된다. */
-PENG.defineLevel('duo', {
+PUNG.defineLevel('duo', {
   name: '2인 시험장',
   boxes: [
     {cx:0, cy:-25, cz:15, hx:60, hy:1, hz:120, col:'#20304a', deco:true},  // 시각용 먼 바닥
@@ -358,9 +361,9 @@ PENG.defineLevel('duo', {
 
 
 /* ---------- levels/grove.js ---------- */
-/* PENG! 레벨 — kiteditor.html 에서 만듦. 손으로 고쳐도 된다.
+/* PUNG! 레벨 — kiteditor.html 에서 만듦. 손으로 고쳐도 된다.
    pieces 의 좌표는 '킷유닛'이고 월드 미터 = 유닛 * unit 이다. */
-PENG.defineLevel('grove', {
+PUNG.defineLevel('grove', {
   name: '숲 공터 (경쟁)',
   unit: 3,
   boxes: [
@@ -484,9 +487,9 @@ PENG.defineLevel('grove', {
 
 
 /* ---------- levels/hangar.js ---------- */
-/* PENG! 레벨 — kiteditor.html 에서 만듦. 손으로 고쳐도 된다.
+/* PUNG! 레벨 — kiteditor.html 에서 만듦. 손으로 고쳐도 된다.
    pieces 의 좌표는 '킷유닛'이고 월드 미터 = 유닛 * unit 이다. */
-PENG.defineLevel('hangar', {
+PUNG.defineLevel('hangar', {
   name: '정거장 격납고 (경쟁)',
   unit: 2.95,
   boxes: [
@@ -653,14 +656,14 @@ PENG.defineLevel('hangar', {
 
 
 /* ---------- levels/peak.js ---------- */
-/* PENG! 레벨 — 피크 (절벽 위의 평지)
+/* PUNG! 레벨 — 피크 (절벽 위의 평지)
    Kenney Survival Kit(CC0) 로 만든 두 번째 경쟁 아레나. 우주 정거장이 '실내 통로'라면
    여기는 '탁 트인 벼랑 끝'이다 — 벽이 거의 없어 밀려나면 바로 허공이고, 엄폐물은
    뛰어넘을 수 있는 바위·울타리뿐이라 서로 붙어서 싸우게 된다.
 
-   지형은 PENG.genPeak 이 시드로 만든다(라운드마다 새 봉우리). 판 자체는 여기 없고
+   지형은 PUNG.genPeak 이 시드로 만든다(라운드마다 새 봉우리). 판 자체는 여기 없고
    collapse 스펙만 있다 — 자세한 규칙은 level.js 의 genPeak 주석 참고. */
-PENG.defineLevel('peak', {
+PUNG.defineLevel('peak', {
   name: '피크 (경쟁)',
   arena: true,
   collapse: {
@@ -701,9 +704,9 @@ PENG.defineLevel('peak', {
 
 
 /* ---------- levels/plant.js ---------- */
-/* PENG! 레벨 — kiteditor.html 에서 만듦. 손으로 고쳐도 된다.
+/* PUNG! 레벨 — kiteditor.html 에서 만듦. 손으로 고쳐도 된다.
    pieces 의 좌표는 '킷유닛'이고 월드 미터 = 유닛 * unit 이다. */
-PENG.defineLevel('plant', {
+PUNG.defineLevel('plant', {
   name: '조립 라인 (경쟁)',
   unit: 1.2,
   boxes: [
@@ -961,9 +964,9 @@ PENG.defineLevel('plant', {
 
 
 /* ---------- levels/protoring.js ---------- */
-/* PENG! 레벨 — kiteditor.html 에서 만듦. 손으로 고쳐도 된다.
+/* PUNG! 레벨 — kiteditor.html 에서 만듦. 손으로 고쳐도 된다.
    pieces 의 좌표는 '킷유닛'이고 월드 미터 = 유닛 * unit 이다. */
-PENG.defineLevel('protoring', {
+PUNG.defineLevel('protoring', {
   name: '프로토타입 링 (경쟁)',
   unit: 2,
   boxes: [
@@ -1293,9 +1296,9 @@ PENG.defineLevel('protoring', {
 
 
 /* ---------- levels/spire.js ---------- */
-/* PENG! 레벨 — editor.html 에서 생성. 손으로 고쳐도 된다.
+/* PUNG! 레벨 — editor.html 에서 생성. 손으로 고쳐도 된다.
    <script src="levels/spire.js"></script> 로 index.html 에 추가하면 목록에 뜬다. */
-PENG.defineLevel('spire', {
+PUNG.defineLevel('spire', {
   name: '첨탑',
   boxes: [
     {cx:15.5, cy:-0.5, cz:0, hx:3, hy:0.5, hz:3, col:'#5a7bb0'},
