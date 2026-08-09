@@ -1614,7 +1614,7 @@ var KB_TIME=_P.KB_TIME;   // 폭발 후 조작 권한이 약해지는 시간(초
 /* 3인칭 카메라 상수(CAM_DIST·AIM_SIDE·AIM_PULL·AIM_RISE)와 수렴 조준의 CONV_MIN 은
    3인칭을 없애면서 함께 지웠다. 남은 카메라 상수는 아래 CAM_RAD·CAM_MIN 인데,
    그건 타이틀 배경 궤도(titleCamera)가 지형에 파고들지 않게 쓰는 것이다. */
-var COYOTE=_P.COYOTE, JUMP_BUF=_P.JUMP_BUF, PITCH_LIM=_P.PITCH_LIM, FUSE_R=_P.FUSE_R, LIFT_V=_P.LIFT_V;
+var COYOTE=_P.COYOTE, JUMP_BUF=_P.JUMP_BUF, FIRE_BUF=_P.FIRE_BUF, PITCH_LIM=_P.PITCH_LIM, FUSE_R=_P.FUSE_R, LIFT_V=_P.LIFT_V;
 var BJ_GRACE=_P.BLAST_JUMP_GRACE;
 
 function makeSim(){  // practice 를 켜면 기록/승리 없이 자유 연습
@@ -4911,7 +4911,7 @@ function openChat(){
   if(chatting) return; chatting=true;
   // 채팅 중에는 keyup 을 무시하므로, 누른 채로 들어오면 그 키가 계속 눌린 상태로
   // 남아 채팅을 닫은 뒤 저절로 움직인다 → 열 때 입력 상태를 비운다.
-  keys={}; jumpEdge=false; jumpBuf=0;
+  keys={}; jumpEdge=false; jumpBuf=0; fireBuf=0;
   var el=document.getElementById('chatInput');
   el.value=''; el.classList.add('on');
   fadeChat();                                        // 열자마자 지난 대화가 또렷해지게
@@ -5834,7 +5834,7 @@ function openPause(){
   // 포인터락이 곧바로 일시정지로 이어져 시트 위에 메뉴가 겹친다.
   if(PAUSED || OVERLAY || !inWorld()) return;
   var lobby=(mode==='lobbyScr');
-  PAUSED=true; keys={}; jumpEdge=false; jumpBuf=0;
+  PAUSED=true; keys={}; jumpEdge=false; jumpBuf=0; fireBuf=0;
   buildKeyHelp(); uiSnd('swap',0.3);
   // 대기방에서는 같은 카드가 방 설정판이 된다 — 제목부터 바뀐다
   document.getElementById('pauseTitle').textContent = lobby ? 'LOBBY' : 'PAUSED';
@@ -5860,7 +5860,7 @@ function closePause(relock){
   PAUSED=false;
   document.getElementById('pause').classList.add('off');
   // 오래 멈춰 있었으면 그동안 쌓인 시간을 버린다 — 안 그러면 재개 순간 한꺼번에 돈다
-  keys={}; jumpEdge=false; jumpBuf=0; acc=0; last=0;
+  keys={}; jumpEdge=false; jumpBuf=0; fireBuf=0; acc=0; last=0;
   if(relock) requestLock();
 }
 document.getElementById('pauseResume').addEventListener('click',function(){ closePause(true); });
@@ -5888,7 +5888,15 @@ window.addEventListener('mousedown',function(e){
   // 디버그 패널·버튼을 누른 건 조작이 아니다(잠금 중이면 발사로 새어나간다)
   if(e.target && e.target.closest && e.target.closest('.asSheet')) return;
   if(e.button===0 && locked && !OVERLAY && (mode==='play'||mode==='lobbyScr')){
-    ensureAudio(); doFire(sim); }
+    ensureAudio();
+    /* 쿨다운 중에 누른 클릭은 버리지 않고 기억해 둔다(FIRE_BUF) — 풀리는 첫 서브스텝에
+       대신 나간다. 버리던 때는 탄창 3발을 빠르게 쏟아부을 때 0.12초 안에 겹친 클릭이
+       소리도 반동도 없이 사라져서, 눌렀는데 안 나가는 것으로 보였다.
+       쏠 수 있는 클릭은 여기서 바로 쏜다. 전부 버퍼를 거치게 하면 서브스텝이 한 번도
+       안 도는 프레임에서 최대 8ms 가 늦는데, 그건 대부분의 클릭이 치를 이유가 없는
+       값이다. 늦춰도 되는 건 어차피 지금 못 나가는 클릭뿐이다. */
+    if(sim._fireCd>0) fireBuf=FIRE_BUF; else doFire(sim);
+  }
 });
 // 창 밖으로 나가면 버튼을 놓친다 → 조준이 걸린 채 남지 않게
 document.addEventListener('pointerlockchange',function(){
@@ -5974,7 +5982,7 @@ function colWire(b){
   for(var i=0;i<E.length;i+=2){ var a=P8[E[i]], d=P8[E[i+1]];
     LINE.push(a[0],a[1],a[2],c[0],c[1],c[2], d[0],d[1],d[2],c[0],c[1],c[2]); }
 }
-var last=0, acc=0, STEP=1/120, jumpBuf=0;
+var last=0, acc=0, STEP=1/120, jumpBuf=0, fireBuf=0;
 /* dt 는 0 아래로 내려가면 안 된다. 음수가 들어오면 쿨다운·재장전·타이머가 전부
    거꾸로 흘러 상태가 조용히 망가진다(실측: 봇 사격 쿨다운이 34초까지 자라고 탄약이
    영영 0 이 됐다). 시계가 되감기는 일은 없어야 하지만, 검증용 __pung.frame 으로
@@ -6017,7 +6025,7 @@ function loop(now){ if(!last)last=now; var dt=Math.max(0, Math.min(0.05,(now-las
     if(!frozen) padTick(dt);               // 정산·일시정지 중에는 패드를 안 먹는다
     var inp = frozen ? {mf:false,mb:false,ml:false,mr:false,jump:false}
                      : { mf:keys['w'], mb:keys['s'], ml:keys['a'], mr:keys['d'], jump:false };
-    if(frozen) jumpBuf=0;
+    if(frozen){ jumpBuf=0; fireBuf=0; }
     acc+=dt; var guard=0;
     // 솔로에서만 시간까지 멈춘다. 멀티는 다른 사람이 계속 뛰고 있어서 나 혼자
     // 시간을 세울 수 없다 — 메뉴를 열어둔 채로도 물리는 돌아간다(가만히 서 있는 셈).
@@ -6026,9 +6034,14 @@ function loop(now){ if(!last)last=now; var dt=Math.max(0, Math.min(0.05,(now-las
       inp.jump = jumpBuf>0;
       stepSim(sim,STEP, inp);
       if(sim.jumped) jumpBuf=0;             // 실제로 소비됐을 때만 비운다
+      /* 기억해 둔 클릭 — stepSim 이 쿨다운을 깎은 뒤에 본다. 앞에서 보면 이번 스텝에
+         풀린 쿨다운을 한 스텝 늦게 알아채는데, 점프와 달리 사격은 그 한 스텝이 곧
+         연사 간격에 얹힌다. 점프처럼 실제로 나갔을 때만 비운다. */
+      if(fireBuf>0 && doFire(sim)) fireBuf=0;
       acc-=STEP; guard++;
     }
     if(jumpBuf>0) jumpBuf=Math.max(0, jumpBuf-dt);
+    if(fireBuf>0) fireBuf=Math.max(0, fireBuf-dt);
     // 멀티: 내 상태 ~22Hz 전송 + 끊긴 피어 정리
     if(MP.connected && now-MP.lastSend>45){ MP.lastSend=now;
       /* iv = 리스폰 무적. 쏘는 쪽에 이걸 안 알리면 "왜 안 밀리지" 만 남는다 —
