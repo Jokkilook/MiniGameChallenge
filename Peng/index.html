@@ -66,6 +66,10 @@
   #scoreRow .sc.me{border-color:var(--you);color:#fff}
   #scoreRow .sc s{width:7px;height:7px;background:var(--c);flex:none}
   #scoreRow .sc b{font-family:var(--mono);font-weight:700;color:#fff}
+  /* 목표 점수 칩 — 사람 칩과 같은 줄 끝에 붙지만 사람이 아니다. 색 조각을 빼고
+     한 톤 죽여서, 숫자를 읽을 때 '이건 누구 점수가 아니다'가 먼저 보이게 한다. */
+  #scoreRow .sc.goal{background:none;border-style:dashed;color:#7d8ba3;font-weight:700}
+  #scoreRow .sc.goal b{color:#c7d2e4}
   /* 아이템 상태 — 화면 아래 가운데. 작동 중은 실선 + 남은 시간 바, 보유 중은 점선 + 사용 키.
      오른쪽 아래 구석에 작게 세워 뒀었는데, 남은 초는 "지금 이 힘이 언제 끊기나" 라
      싸우는 도중에 봐야 하는 값이다. 눈을 화면 끝으로 보내면 그 사이에 밀려 떨어진다.
@@ -544,7 +548,12 @@
     <p class="netline mpwarn"></p>
     <div class="menu row">
       <button class="go" id="mapHostBtn">방 만들기</button>
-      <button class="go alt" id="mapSoloBtn">혼자 둘러보기</button>
+      <!-- '혼자 둘러보기'가 여기 있었다. 상대 없이 정식 경기로 들어가는 버튼이라,
+           누른 사람은 "상대를 밀어 떨어뜨리세요" 안내를 읽으면서 아무도 없는 판에서
+           절대 오르지 않는 0/5 점수를 보고 발밑이 무너지는 화면을 봤다 — 처음 온
+           사람에게는 고장 난 게임으로 읽힌다.
+           둘러볼 자리는 이미 대기방이 맡고 있다. 방을 만들면 곧바로 그 맵의 연습장에
+           서게 되고(enterLobby), 거기서는 점수도 붕괴도 돌지 않는다. -->
       <button class="go alt" id="mapBack">뒤로</button>
     </div>
   </div>
@@ -2063,8 +2072,9 @@ function botBroadcastShot(bot){
 function botStep(dt, now){
   /* AI 는 '방장이 대신 굴리는 참가자'다. 방을 벗어난 순간 굴릴 이유가 사라지므로
      여기서 한 번 더 막는다 — mpDisconnect 가 비우지만, 끊기는 경로가 여럿이라
-     한 곳만 믿지 않는다(실측: 방에서 AI 를 넣고 메인으로 나갔다가 혼자 둘러보기를
-     하면 AI 가 같이 따라 들어왔다). */
+     한 곳만 믿지 않는다(실측: 방에서 AI 를 넣고 메인으로 나갔다가 혼자 도는 판으로
+     들어가면 AI 가 같이 따라 들어왔다 — 그때의 '혼자 둘러보기'는 없앴지만
+     튜토리얼이 여전히 방 없이 도는 같은 자리다). */
   if(!BOTS.length) return;
   if(!mpIsHost()){ BOTS.length=0; return; }
   for(var i=0;i<BOTS.length;i++){
@@ -2091,14 +2101,50 @@ function botStep(dt, now){
   }
 }
 // 봇 명단을 로스터에 맞춘다(서버가 슬롯의 주인이다)
-/* AI 몸통 색 — 서로, 그리고 사람과 구별돼야 한다. 무작위 색상(HSL)에서 뽑되
-   채도·명도를 묶어 배경(어두운 남색)에 묻히지 않게 한다. */
-function randBotColor(){
-  var h=Math.random()*360, sat=0.62, lig=0.58;
+/* AI 몸통 색 — 서로, 그리고 사람과 구별돼야 한다. 채도·명도는 묶어서 배경(어두운
+   남색)에 묻히지 않게 하고, 색상(hue)만 고른다.
+
+   예전에는 색상을 그냥 무작위로 뽑았다. 주석은 지금과 같은 말을 하고 있었지만
+   구현에는 '떨어뜨린다'가 없어서, 실제로는 사람 색 바로 옆이 예사로 나왔다
+   (실측: 사람 #34c759 hue 145° 옆에 봇 #51d699 hue 150° — 5° 차이라 점수 칩·
+   이름표·킬 로그에서 둘이 같은 색이다). 무작위 7개가 30° 안에서 겹칠 확률은
+   1000회 시뮬에서 99.4% 였다 — 여섯이 뛰는 방은 사실상 항상 걸린다.
+
+   그래서 이미 쓰인 색상들에서 '제일 멀리 떨어진 자리'를 고른다. 24칸(15°)을 훑어
+   가장 가까운 이웃까지의 거리가 최대인 칸을 고르고, 같은 값이 여럿이면 그중
+   무작위로 — 방마다 배치가 똑같아 보이지 않게. 색은 이 게임에서 사람을 가르는
+   1차 수단이라(이름표·점수 칩·킬 로그가 전부 같은 값을 쓴다) 여기서 겹치면
+   그 셋이 한꺼번에 못 읽힌다. */
+function hexHue(hex){
+  if(!/^#[0-9a-fA-F]{6}$/.test(hex||'')) return null;
+  var r=parseInt(hex.substr(1,2),16)/255, g=parseInt(hex.substr(3,2),16)/255, b=parseInt(hex.substr(5,2),16)/255;
+  var mx=Math.max(r,g,b), mn=Math.min(r,g,b), d=mx-mn;
+  if(d<1e-6) return null;                       // 무채색 — 색상이라 할 것이 없다
+  var h;
+  if(mx===r) h=((g-b)/d)%6; else if(mx===g) h=(b-r)/d+2; else h=(r-g)/d+4;
+  return (h*60+360)%360;
+}
+function hslHex(h){
+  var sat=0.62, lig=0.58;
   function f(n){ var k=(n+h/30)%12, a=sat*Math.min(lig,1-lig);
     var v=lig-a*Math.max(-1,Math.min(k-3,Math.min(9-k,1)));
     return ('0'+Math.round(v*255).toString(16)).slice(-2); }
   return '#'+f(0)+f(8)+f(4);
+}
+function hueGap(a,b){ var d=Math.abs(a-b)%360; return Math.min(d, 360-d); }
+function pickBotColor(usedHex){
+  var used=[];
+  (usedHex||[]).forEach(function(c){ var h=hexHue(c); if(h!=null) used.push(h); });
+  if(!used.length) return hslHex(Math.random()*360);
+  var best=[], bestGap=-1;
+  for(var i=0;i<24;i++){
+    var h=i*15, gap=360;
+    for(var j=0;j<used.length;j++) gap=Math.min(gap, hueGap(h, used[j]));
+    if(gap>bestGap+0.001){ bestGap=gap; best=[h]; }
+    else if(Math.abs(gap-bestGap)<=0.001) best.push(h);
+  }
+  // 칸 안에서 한 번 더 흔든다 — 24칸에 딱 맞아떨어지면 방마다 같은 색이 반복된다
+  return hslHex((best[(Math.random()*best.length)|0] + (Math.random()*10-5) + 360) % 360);
 }
 function syncBots(){
   if(!mpIsHost()){ BOTS.length=0; return; }
@@ -2111,7 +2157,13 @@ function syncBots(){
        자신을 밀어내고 있었다. 봇은 계속 걸어다녀서 '밀린 것'과 '스스로 간 것'이
        구분되지 않아 그동안 드러나지 않았을 뿐이다. */
     s.peerId=p.id;
-    var col=randBotColor();
+    /* 이미 쓰인 색을 전부 넘긴다 — 내 색과, 먼저 들어온 봇들의 색.
+       사람 게스트의 색(MP.peers[*].col)까지 넣으면 좋겠지만 봇을 넣는 시점에는
+       아직 안 왔을 수 있어서, 있는 것만 센다. */
+    var used=[PLAYER_COL];
+    BOTS.forEach(function(b){ if(b.col) used.push(b.col); });
+    for(var _pk in MP.peers){ var _pc=MP.peers[_pk].col; if(_pc) used.push(_pc); }
+    var col=pickBotColor(used);
     BOTS.push({ id:p.id, name:p.name, sim:s, cd:0, lastFell:0, lastSend:0, col:col });
     // 내 화면과 팀원 화면 양쪽에 같은 색이 적용되게
     var pc=MP.peers[p.id]||(MP.peers[p.id]={buf:[]}); pc.col=col;
@@ -3961,6 +4013,15 @@ function scoreFall(fallerId, byId){
   // 승리 판정
   var best=null;
   var need=vsWin();
+  /* 매치 포인트 — 한 점 남은 순간을 말해 준다. 점수 칩은 숫자가 하나 올랐을 뿐이라
+     "다음 한 방이 끝"이라는 것이 그 자리에서는 안 읽힌다. 배너는 새 아레나가 쓰는
+     그 장치를 그대로 쓴다(arenaMsgT 가 지운다).
+     사람마다 처음 닿는 순간에만 뜬다 — 그 뒤로 점수가 안 오르면 다시 뜰 일이 없고,
+     여럿이 동시에 매치 포인트가 되는 판에서는 각자 한 번씩 뜨는 게 맞다. */
+  if(who!=null && mode==='play' && need>1 && SCORES[who]===need-1){
+    arenaMsgT=2.2;
+    roundBanner(who===MP.id ? '매치 포인트 — 한 번만 더' : nameOf(who)+' 매치 포인트');
+  }
   ids.forEach(function(id){ if((SCORES[id]||0)>=need && (best===null||SCORES[id]>SCORES[best])) best=id; });
   if(best!==null && mode==='play'){
     // 예전엔 협동 클리어 화면(#win)을 그대로 썼다 — 상대를 절벽으로 밀어 이겨 놓고
@@ -4133,7 +4194,7 @@ function mpConnect(room, onOk, onFail, asJoin){
 }
 function mpDisconnect(){ if(MP.ws){ try{ MP.ws.onclose=null; MP.ws.close(); }catch(e){} }
   MP.ws=null; MP.connected=false; MP.peers={}; MP.players=[]; MP.host=null; MP.id=null; MP.room=null;
-  BOTS.length=0;                 // 방을 나가면 AI 도 같이 나간다(안 비우면 혼자 둘러보기까지 따라온다)
+  BOTS.length=0;                 // 방을 나가면 AI 도 같이 나간다(안 비우면 튜토리얼까지 따라온다)
   if(chatting) closeChat(false); CHAT.length=0; renderChat(); }
 function mpSend(o){ if(MP.ws&&MP.connected){ try{ MP.ws.send(JSON.stringify(o)); }catch(e){} } }
 function mpHandle(m){
@@ -4595,16 +4656,14 @@ function renderMapCards(){
     e.textContent = (GAMEMODE==='versus') ? '경쟁용 아레나 맵이 없습니다.' : '협동용 코스 맵이 없습니다.';
     grid.appendChild(e);
   }
-  /* 호스트·솔로에게는 아무 말도 안 한다 — 버튼에 '방 만들기'와 '혼자 둘러보기'라고
-     적혀 있는데 그 밑에서 같은 말을 문장으로 또 하면 설명서가 된다.
-     게스트에게만 격자가 왜 흐린지 한 마디. */
+  /* 호스트에게는 아무 말도 안 한다 — 버튼에 '방 만들기'라고 적혀 있는데 그 밑에서
+     같은 말을 문장으로 또 하면 설명서가 된다. 게스트에게만 격자가 왜 흐린지 한 마디. */
   var lb=document.getElementById('mapScrNote');
   if(lb) lb.textContent = guest ? '호스트가 고르는 중' : '';
   // 대기방 오버레이일 땐 시작 버튼이 필요 없다(이미 방 안이다)
   var inLobby=(MAPBROWSE.target==='lobby');
-  var hb=document.getElementById('mapHostBtn'), sb=document.getElementById('mapSoloBtn');
+  var hb=document.getElementById('mapHostBtn');
   if(hb) hb.style.display=inLobby?'none':'';
-  if(sb) sb.style.display=inLobby?'none':'';
 }
 SCREEN_ENTER.mapScr=renderMapCards;
 
@@ -4713,7 +4772,8 @@ document.getElementById('tutorBtn').addEventListener('click',function(){ startTu
 function noServerMsg(){
   return '멀티 서버 없음'+(location.protocol==='file:' ? ' (파일 직접 열기)' : ' ('+location.host+')')
     + '<br><b>node server.js</b> 실행 후 <b>localhost:8090</b> 으로 열기'
-    + '<br>혼자 둘러보기는 그대로 가능';
+    // 서버 없이 되는 건 튜토리얼뿐이다 — 경쟁은 AI 조차 방(WebSocket)이 있어야 붙는다
+    + '<br>서버 없이도 <b>튜토리얼</b>은 그대로 가능';
 }
 document.getElementById('joinBtn').addEventListener('click',function(){ ensureAudio();
   setErr('joinErr',''); document.getElementById('codeInput').value='';
@@ -4724,13 +4784,6 @@ document.getElementById('setBtn').addEventListener('click',function(){ ensureAud
    오버레이를 닫아야 한다 — 그래서 둘을 구분한다. */
 document.getElementById('mapBack').addEventListener('click',function(){
   if(OVERLAY) closeOverlay(false); else backScreen(); });
-/* 혼자 둘러보기 — 상대 없이 아레나를 걸어 본다. 점수는 안 나지만 맵을 만들면서
-   "실제로 어떻게 생겼나"를 확인할 때 필요하고, 서버 없이(file://) 열었을 때
-   유일하게 되는 경로이기도 하다. */
-document.getElementById('mapSoloBtn').addEventListener('click',function(){
-  ensureAudio(); mpDisconnect(); ensureArenaLevel();
-  MATCH_SEED=newSeed();                       // 켤 때마다 새 지형
-  startGame(CURLEVEL); });
 document.getElementById('mapHostBtn').addEventListener('click',function(){
   ensureAudio(); ensureArenaLevel(); setErr('mapErr',''); setWarn('wait','연결 중');
   mpConnect(mpCode(), function(){ setWarn(''); enterLobby(); mpSend({t:'lvl', level:CURLEVEL}); },
@@ -5351,8 +5404,11 @@ function renderHud(s, vsLive){
   var row=document.getElementById('scoreRow');
   if(!vsLive || s.practice){ if(HUD_SIG.scoreRow!==''){ HUD_SIG.scoreRow=''; row.innerHTML=''; } return; }
   var ps = MP.players.length ? MP.players : [{id:MP.id, name:MP.name}];
+  /* 목표 점수도 서명에 넣는다 — 인원에 비례하므로(vsWin) 대기방에서 AI 를 넣고 빼면
+     경기 중에도 바뀔 수 있고, 그때 칩이 안 따라가면 숫자 하나가 조용히 거짓말을 한다. */
+  var goal = vsWin();
   // 색도 서명에 넣는다 — 늦게 도착한 색이 칩에 반영되려면 다시 그려야 한다
-  var sig = 'R'+ROUND.n+'|'+ps.map(function(p){ return p.id+':'+(SCORES[p.id]||0)+':'+(p.name||'')+':'+peerCol(p.id); }).join(',');
+  var sig = 'R'+ROUND.n+'|G'+goal+'|'+ps.map(function(p){ return p.id+':'+(SCORES[p.id]||0)+':'+(p.name||'')+':'+peerCol(p.id); }).join(',');
   if(HUD_SIG.scoreRow===sig) return;
   HUD_SIG.scoreRow=sig;
   row.innerHTML='';
@@ -5362,6 +5418,11 @@ function renderHud(s, vsLive){
     d.innerHTML='<s></s>'+esc(p.name||nameOf(p.id))+' <b>'+(SCORES[p.id]||0)+'</b>';
     row.appendChild(d);
   });
+  /* 몇 점이 끝인지. 예전엔 결과 화면에만 있어서, 3점을 먹고도 목표가 5인지 15인지
+     모른 채 싸웠다 — 인원마다 다른 값이라 외워 둘 수도 없다. 점수 옆이 그 자리다. */
+  var g=document.createElement('div'); g.className='sc goal';
+  g.innerHTML='선취 <b>'+goal+'</b>';
+  row.appendChild(g);
 }
 // 그 사람 몸 색 — 나는 내가 고른 색, 남은 서버가 알려준 색(없으면 회색)
 function peerCol(id){
@@ -5713,6 +5774,9 @@ window.__pung={ makeSim:makeSim, stepSim:stepSim, doFire:doFire,
   // 판 갈아엎기 — 그리는 것과 부딪히는 것이 같이 갱신되는지 밖에서 재려면 필요하다
   newArena:newArena, rebuildFloor:rebuildFloor,
   get bots(){ return BOTS; },        // AI 검증용
+  /* 봇 색 분리 검증용 — '이미 쓰인 색에서 얼마나 떨어뜨렸나'는 밖에서 재야 한다.
+     눈으로는 두 초록이 다른 색으로 보이기도 해서, 색상 간격을 숫자로 봐야 안다. */
+  pickBotColor:pickBotColor, hexHue:hexHue,
   // 튜토리얼 검증용 — 허수아비가 실제로 밀리고 제자리로 돌아오는지, 구역 판정이 맞는지
   get dummies(){ return DUMMIES; }, applyLocalBlast:applyLocalBlast,
   // 봇이 '앞에 설 곳이 있나' 를 묻는 함수 — 여기서 틀리면 봇이 그 자리에 굳거나 헛짓을 한다
