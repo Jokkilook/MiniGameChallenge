@@ -42,34 +42,49 @@ function draw(id){
   (d.pieces||[]).forEach(function(p){
     if(p.deco) return;
     var x=(p.i||0)*u, z=(p.j||0)*u, y=(p.y||0)*u;
-    items.push({x:x, z:z, y:y, c:'#', hx:u, hz:u});
-    R=Math.max(R, Math.abs(x)+u, Math.abs(z)+u);
+    /* 반크기다 — 조각 한 장이 격자 한 칸(u)이므로 절반이 u/2 다. 여기에 u 를 넣던
+       때는 모든 조각이 두 배로 그려져 이웃끼리 겹쳤고, 그래서 바닥에 뚫린 구멍이
+       작아 보이거나 아예 메워져 보였다(관제탑 승강기 구멍이 그랬다). */
+    var hs=u*(p.s||1)/2;
+    items.push({x:x, z:z, y:y, c:'#', hx:hs, hz:hs});
+    R=Math.max(R, Math.abs(x)+hs, Math.abs(z)+hs);
   });
   (d.boxes||[]).forEach(function(b){
     if(b.deco && !b.phase) return;             // 배경 바닥은 뺀다(점멸은 꺼진 상태로 적혀 있을 수 있다)
     if(Math.abs(b.cy) > 500) return;
     var c = b.belt ? '~' : b.boost ? '^' : b.move ? 'M' : b.phase ? 'O' : '=';
+    var dyn = !!(b.move||b.phase||b.belt||b.boost);
     var hx=b.hx, hz=b.hz, x=b.cx, z=b.cz, y=b.cy+b.hy;
-    // 움직이는 발판은 '왕복하는 범위 전체'를 칠한다 — 어디까지 가는지가 설계의 핵심이다
-    if(b.move){
-      var a=b.move.amp||0;
-      if(b.move.ax==='x') hx+=a; else if(b.move.ax==='z') hz+=a;
+    var a=(b.move&&b.move.amp)||0;
+    /* 세로로 움직이는 발판은 '어느 층에 닿는가' 가 전부다. 그래서 양 끝 높이에 각각
+       찍는다. 정지 높이 한 곳에만 찍던 때는 그 높이에 다른 것이 없어 아래 잡동사니
+       필터에 걸려 그림에서 통째로 사라졌고, 관제탑 승강기가 2층 갑판 밑면에 막힌
+       것을 이 그림이 못 잡았다 — 정작 그런 것을 잡으라고 있는 도구인데. */
+    if(b.move && b.move.ax==='y'){
+      items.push({x:x, z:z, y:y-a, c:c, hx:hx, hz:hz, dyn:dyn});
+      items.push({x:x, z:z, y:y+a, c:c, hx:hx, hz:hz, dyn:dyn});
+    }else{
+      // 가로로 움직이는 것은 '왕복하는 범위 전체'를 칠한다 — 어디까지 가는지가 설계의 핵심이다
+      if(b.move && b.move.ax==='x') hx+=a; else if(b.move && b.move.ax==='z') hz+=a;
+      items.push({x:x, z:z, y:y, c:c, hx:hx, hz:hz, dyn:dyn});
     }
-    items.push({x:x, z:z, y:y, c:c, hx:hx, hz:hz});
     R=Math.max(R, Math.abs(x)+hx, Math.abs(z)+hz);
   });
   if(!items.length){ console.log('  (런타임 생성기가 만드는 맵 — 데이터에 발판이 없습니다)'); return; }
   R = Math.ceil(R)+1;
 
   // 층 나누기 — 0.6m 안쪽이면 같은 층으로 본다
-  var ys = items.map(function(t){ return t.y; }).sort(function(a,b){ return a-b; });
   var tiers=[];
-  ys.forEach(function(y){
-    for(var i=0;i<tiers.length;i++) if(Math.abs(tiers[i].y-y)<0.6){ tiers[i].n++; return; }
-    tiers.push({y:y, n:1});
+  items.slice().sort(function(a,b){ return a.y-b.y; }).forEach(function(t){
+    for(var i=0;i<tiers.length;i++) if(Math.abs(tiers[i].y-t.y)<0.6){
+      tiers[i].n++; if(t.dyn) tiers[i].dyn=true; return;
+    }
+    tiers.push({y:t.y, n:1, dyn:!!t.dyn});
   });
   tiers.sort(function(a,b){ return b.y-a.y; });                 // 높은 층부터
-  tiers = tiers.filter(function(t){ return t.n>=3; });          // 조각 몇 개짜리 잡동사니는 뺀다
+  /* 조각 몇 개짜리 잡동사니는 뺀다. 움직이는 발판은 수가 적어도 남긴다 — 승강기는
+     둘뿐이라 이 필터에 걸려 사라졌고, 그게 이 도구가 놓친 오류의 절반이었다. */
+  tiers = tiers.filter(function(t){ return t.n>=3 || t.dyn; });
 
   /* 조각은 '원점' 높이로 묶는다 — 윗면이 어디인지는 메시를 봐야 알 수 있고 여기엔
      메시가 없다. 그래서 층 숫자는 상자만 정확하고 조각은 원점이다(바위 슬래브처럼

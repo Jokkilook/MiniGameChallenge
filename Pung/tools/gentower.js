@@ -45,8 +45,31 @@ function ext(name){
    같은 킷을 다른 배율로 쓰면 나란히 놓았을 때 같은 조각이 다른 크기로 보인다. */
 var UNIT=2.95;
 var FLOOR_TOP=ext('floor').top;            // 바닥 조각 윗면(로컬 유닛)
+var CELL_M=ext('floor').w*UNIT;            // 바닥 조각 한 장의 월드 크기
 var R1=8.5, R2_IN=3.5, R2_OUT=6.5, R3=3.0; // 층별 반지름(킷유닛)
 var Y2=4.5, Y3=9.0;
+
+/* ---------- 승강기 자리 ----------
+   승강기는 2층 고리의 한가운데 반지름을 오르내린다. 그러니 고리에 그만큼 구멍을
+   내지 않으면 승강기가 사람을 갑판 밑면에 밀어붙인다 — 실제로 그랬다. 발판은
+   4.5m 까지 올라가는데 갑판 밑면이 3.61m 라, 키 1.8m 인 사람은 발판이 1.81m 일 때
+   이미 천장에 닿아 절반도 못 올라갔다.
+   그래서 자리를 여기 한 번만 적고, 구멍과 발판 상자가 같은 값에서 나오게 한다.
+   따로 적으면 한쪽만 옮겼을 때 다시 막힌다.
+
+   자리는 각도가 아니라 칸으로 적는다. 아래 CELLS 의 칸 중심이 정수라, 발판(2×2칸)을
+   정수 자리에 두면 아홉 칸에 반씩 걸쳐 어느 칸을 빼도 구멍이 안 맞는다. 반 칸 어긋난
+   자리에 두어야 네 칸에 딱 떨어진다.
+   구멍은 고리 바깥쪽에 붙인다(안쪽 j=4 줄이 통로로 남는다). 안쪽에 붙이면 남는 통로가
+   바깥 줄이 되고, 구멍이 가운데 빈 공간과 이어져 헛디디면 1층도 없이 그대로 떨어진다. */
+var LIFT_HALF=CELL_M/UNIT;                 // 발판 반크기(킷유닛) — 조각 한 장
+var LIFT_R=(R2_IN+R2_OUT)/2;               // 2층 패드를 놓는 반지름(고리 한가운데)
+var LIFTS=[{i:0.5, j:5.5}, {i:-0.5, j:-5.5}];   // 원점 대칭 — 밀어내는 경기에서 비대칭은 불공정이다
+function inLiftShaft(i,j){
+  for(var k=0;k<LIFTS.length;k++)
+    if(Math.abs(i-LIFTS[k].i)<LIFT_HALF && Math.abs(j-LIFTS[k].j)<LIFT_HALF) return true;
+  return false;
+}
 
 var P=[], BOX=[];
 function put(t,i,j,y,extra){
@@ -76,10 +99,13 @@ CELLS.forEach(function(i){ CELLS.forEach(function(j){
   put(t, i, j, atTop(0));
 }); });
 
-/* ---------- 2층 : 가운데가 뚫린 고리 ---------- */
+/* ---------- 2층 : 가운데가 뚫린 고리 ----------
+   승강기가 올라오는 자리는 뚫어 둔다. 고리는 여기서 안쪽 한 칸(2.95m)으로 좁아지지만
+   끊기지는 않는다 — 승강기 구멍을 안쪽으로 돌아 지나갈 수 있다. */
 CELLS.forEach(function(i){ CELLS.forEach(function(j){
   var r=Math.hypot(i,j);
   if(r>R2_OUT || r<R2_IN) return;
+  if(inLiftShaft(i,j)) return;
   put(((Math.round(i-0.5)+Math.round(j-0.5))&1)===0 ? 'floor-panel' : 'floor', i, j, atTop(Y2));
 }); });
 
@@ -117,10 +143,8 @@ ring(R3-0.2,   Y3, Math.round(2*Math.PI*(R3-0.2)),   'rail');
    네 장을 깔아 주므로 조각이 원래 크기 그대로다.
    주기 8초 · 진폭 2.25m → 최대 1.77m/s. 느린 이유는 위에 탄 사람이 발판보다
    늦으면 미끄러지기 때문이다. */
-var CELL_M=ext('floor').w*UNIT;                     // 바닥 조각 한 장의 월드 크기
-[0,1].forEach(function(k){
-  var a=Math.PI/2 + k*Math.PI, r=u2m((R2_IN+R2_OUT)/2);
-  box({ cx:+(Math.cos(a)*r).toFixed(2), cy:+(Y2/2-0.15).toFixed(2), cz:+(Math.sin(a)*r).toFixed(2),
+LIFTS.forEach(function(L,k){
+  box({ cx:+u2m(L.i).toFixed(2), cy:+(Y2/2-0.15).toFixed(2), cz:+u2m(L.j).toFixed(2),
         hx:CELL_M, hy:0.15, hz:CELL_M, col:'#5a7bb0',
         skin:'station/floor-panel', skinTile:true,
         move:{ax:'y', amp:Y2/2, t:8, ph:k*0.5} });   // 윗면 0 ↔ Y2
@@ -165,8 +189,10 @@ for(var q=0;q<6;q++){
 /* 높은 자리일수록 좋은 것을 둔다 — 올라가는 값이 있어야 층이 살아난다.
    3층 하나 · 2층 둘 · 1층 둘. */
 PADS.push({x:0, y:Y3+0.2, z:0});
+/* 2층 패드는 승강기와 90° 어긋나게 둔다. 승강기 자리는 이제 구멍이라, 예전처럼
+   같은 각도에 두면 패드가 허공에 뜬다. */
 [0,1].forEach(function(k){
-  var a=k*Math.PI + Math.PI/2, r=u2m((R2_IN+R2_OUT)/2);
+  var a=k*Math.PI, r=u2m(LIFT_R);
   PADS.push({x:+(Math.cos(a)*r).toFixed(2), y:Y2+0.2, z:+(Math.sin(a)*r).toFixed(2)});
 });
 [0,1].forEach(function(k){

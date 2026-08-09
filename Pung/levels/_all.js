@@ -1482,8 +1482,8 @@ PUNG.defineLevel('tower', {
   boxes: [
     // 저 아래 배경 바닥(deco = 밟히지 않는다)
     {cx:0, cy:-72, cz:0, hx:220, hy:1, hz:220, col:'#0d1420', deco:true},
-    {cx:0, cy:2.1, cz:14.75, hx:2.95, hy:0.15, hz:2.95, col:"#5a7bb0", skin:"station/floor-panel", skinTile:true, move:{ax:"y", amp:2.25, t:8, ph:0}},
-    {cx:0, cy:2.1, cz:-14.75, hx:2.95, hy:0.15, hz:2.95, col:"#5a7bb0", skin:"station/floor-panel", skinTile:true, move:{ax:"y", amp:2.25, t:8, ph:0.5}},
+    {cx:1.48, cy:2.1, cz:16.23, hx:2.95, hy:0.15, hz:2.95, col:"#5a7bb0", skin:"station/floor-panel", skinTile:true, move:{ax:"y", amp:2.25, t:8, ph:0}},
+    {cx:-1.48, cy:2.1, cz:-16.23, hx:2.95, hy:0.15, hz:2.95, col:"#5a7bb0", skin:"station/floor-panel", skinTile:true, move:{ax:"y", amp:2.25, t:8, ph:0.5}},
     {cx:9.32, cy:6.6, cz:5.38, hx:1.475, hy:0.15, hz:1.475, col:"#5a7bb0", skin:"station/floor", skinTile:true, phase:{on:3, off:1.5, at:0}},
     {cx:-9.32, cy:6.6, cz:5.38, hx:1.475, hy:0.15, hz:1.475, col:"#5a7bb0", skin:"station/floor", skinTile:true, phase:{on:3, off:1.5, at:1}},
     {cx:0, cy:6.6, cz:-10.77, hx:1.475, hy:0.15, hz:1.475, col:"#5a7bb0", skin:"station/floor", skinTile:true, phase:{on:3, off:1.5, at:2}}
@@ -1718,24 +1718,16 @@ PUNG.defineLevel('tower', {
     {t:"station/floor-panel", i:-2, j:4, y:1.225},
     {t:"station/floor", i:-2, j:5, y:1.225},
     {t:"station/floor-panel", i:-2, j:6, y:1.225},
-    {t:"station/floor", i:-1, j:-6, y:1.225},
-    {t:"station/floor-panel", i:-1, j:-5, y:1.225},
     {t:"station/floor", i:-1, j:-4, y:1.225},
     {t:"station/floor", i:-1, j:4, y:1.225},
     {t:"station/floor-panel", i:-1, j:5, y:1.225},
     {t:"station/floor", i:-1, j:6, y:1.225},
-    {t:"station/floor-panel", i:0, j:-6, y:1.225},
-    {t:"station/floor", i:0, j:-5, y:1.225},
     {t:"station/floor-panel", i:0, j:-4, y:1.225},
     {t:"station/floor-panel", i:0, j:4, y:1.225},
-    {t:"station/floor", i:0, j:5, y:1.225},
-    {t:"station/floor-panel", i:0, j:6, y:1.225},
     {t:"station/floor", i:1, j:-6, y:1.225},
     {t:"station/floor-panel", i:1, j:-5, y:1.225},
     {t:"station/floor", i:1, j:-4, y:1.225},
     {t:"station/floor", i:1, j:4, y:1.225},
-    {t:"station/floor-panel", i:1, j:5, y:1.225},
-    {t:"station/floor", i:1, j:6, y:1.225},
     {t:"station/floor-panel", i:2, j:-6, y:1.225},
     {t:"station/floor", i:2, j:-5, y:1.225},
     {t:"station/floor-panel", i:2, j:-4, y:1.225},
@@ -1941,7 +1933,7 @@ PUNG.defineLevel('tower', {
   killY: -30,
   start: {x:17.63, y:0.2, z:10.18},
   spawns: [ {x:17.63, y:0.2, z:10.18}, {x:0, y:0.2, z:20.36}, {x:-17.63, y:0.2, z:10.18}, {x:-17.63, y:0.2, z:-10.18}, {x:0, y:0.2, z:-20.36}, {x:17.63, y:0.2, z:-10.18} ],
-  pads: [ {x:0, y:9.2, z:0}, {x:0, y:4.7, z:14.75}, {x:0, y:4.7, z:-14.75}, {x:16.23, y:0.2, z:0}, {x:-16.23, y:0.2, z:0} ],
+  pads: [ {x:0, y:9.2, z:0}, {x:14.75, y:4.7, z:0}, {x:-14.75, y:4.7, z:0}, {x:16.23, y:0.2, z:0}, {x:-16.23, y:0.2, z:0} ],
   hints: [ '세 층입니다 — <b>로켓점프</b>로 한 층씩 오르고, 꼭대기는 2층을 거치거나 <b>팀원이 올려</b> 줘야 닿습니다.' ]
 });
 
