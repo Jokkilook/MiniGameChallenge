@@ -4092,8 +4092,8 @@ var GUN=[
 ];
 // 남의 몸에 붙여 그릴 때의 어긋냄 — 내 총은 1인칭이라 안 쓰고, 다른 사람 것만 이 값을 쓴다
 var GUN_TP=[0.15,0,-0.05];
-/* 위 박스 5개는 이제 폴백이다. Mesh/ShockWave_Gun.glb 가 읽히면 그 메시로 그린다
-   (gunmesh.js). 못 읽으면(file:// 직접 열기 등) 박스가 그대로 나온다. */
+/* 위 박스 5개는 이제 폴백이다. 구운 총(gunbaked.js — Kenney Blaster Kit 의 blaster-h)이
+   실리면 그 메시로 그린다(gunmesh.js). 못 읽으면(file:// 직접 열기 등) 박스가 그대로 나온다. */
 var GUNMESH_ON=1;
 function gunMeshOK(){ return GUNMESH_ON && window.GunMesh && GunMesh.ready; }
 /* 아이템 표식도 같은 스위치를 둔다 — 끄면 ITEMS 의 glyph(큐브)로 돌아간다.
@@ -5719,7 +5719,11 @@ try{
 }
 // 총 3D 메시 — gunbaked.js 가 있으면 즉시, 없으면 원본 .glb 를 받아 그 자리에서 굽는다.
 // 둘 다 안 되면(예: file:// 로 열었고 구운 파일도 없을 때) 박스 총이 그려진다.
-if(window.GunMesh) GunMesh.init('Mesh/ShockWave_Gun.glb');
+/* 폴백 경로가 예전 총(Mesh/ShockWave_Gun.glb)을 가리킨 채로 남아 있었다. 실제로 쓰이는
+   총은 오래전부터 gunbaked.js(Kenney Blaster Kit 의 blaster-h)인데, 구운 파일을 못 쓰게
+   되는 날에만 그 줄이 살아나므로 아무도 못 알아챈다 — 그날 받아오는 것이 지금 화면의
+   총과 다른 모델이면, 폴백은 폴백이 아니라 다른 게임이 된다. 원본을 지운 김에 맞춘다. */
+if(window.GunMesh) GunMesh.init('Mesh/blaster-h.glb');
 // 아이템 표식 — 구운 데이터(itembaked.js)만 쓴다. 없으면 큐브 표식으로 남는다.
 if(window.ItemMesh) ItemMesh.init();
 /* 구운 UI 에셋을 CSS 로 붙인다. 없으면 조용히 건너뛰고 글자·기본 커서로 남는다.

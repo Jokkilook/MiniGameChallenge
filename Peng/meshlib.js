@@ -394,7 +394,7 @@ Res.prototype.load=function(url, done){
 };
 
 var AXIS_FLIP_Z=[[0,1],[1,1],[2,-1]];     // local = ( x, y, -z) — 방향성 없는 모델의 기본
-var AXIS_GUN   =[[2,-1],[1,1],[0,-1]];    // local = (-z, y, -x) — 총구가 -X 인 ShockWave_Gun
+var AXIS_GUN   =[[2,-1],[1,1],[0,-1]];    // local = (-z, y, -x) — 총구가 -X 인 모델용(지금 쓰는 총은 아니다)
 
 /* 파서 부품은 밖에도 내준다 — 캐릭터(charmesh.js)는 스킨·애니메이션까지 읽어야 해서
    Res 로는 안 되지만, glTF 를 읽는 부분만큼은 두 벌로 두지 않는다. */
