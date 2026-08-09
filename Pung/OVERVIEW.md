@@ -153,4 +153,4 @@ Kenney CC0 킷을 GLB에서 굽고, 텍스처를 **정점 색으로 구워** 넣
 node server.js
 ```
 
-`http://localhost:8090/` — 혼자 할 거면 `index.html` 을 그냥 열어도 된다.
+`http://localhost:27015/` — 혼자 할 거면 `index.html` 을 그냥 열어도 된다.

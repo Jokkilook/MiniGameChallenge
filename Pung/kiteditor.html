@@ -1277,7 +1277,7 @@ refreshMaps();
 // 저장이 안 될 상황이면 눌러 보기 전에 알려 준다
 if(location.protocol==='file:')
   saveMsg('파일을 직접 연 상태(file://)라 저장이 안 됩니다 — 서버를 켜고 '+
-          '<b>localhost:8090/kiteditor.html</b> 로 여세요.', true);
+          '<b>localhost:27015/kiteditor.html</b> 로 여세요.', true);
 else if(!isLoopback())
   saveMsg('<b>'+location.hostname+'</b> 로 열려 있습니다. 서버는 자기 PC(localhost)에서만 '+
           '저장을 받습니다 — <a href="'+localUrl()+'" style="color:#8fc0ff">localhost 로 열기</a>', true);

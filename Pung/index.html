@@ -5398,7 +5398,7 @@ function noServerMsg(){
     + playLinkHTML()
     // 서버 없이 되는 건 튜토리얼뿐이다 — 경쟁은 AI 조차 방(WebSocket)이 있어야 붙는다
     + '<br>인터넷이 없다면 메인 화면의 <b>튜토리얼</b>은 그대로 됩니다.'
-    + '<br><span style="opacity:.62">직접 띄우려면 <b>node server.js</b> 실행 후 <b>localhost:8090</b>'
+    + '<br><span style="opacity:.62">직접 띄우려면 <b>node server.js</b> 실행 후 <b>localhost:27015</b>'
     + ' (지금 주소: '+esc(location.protocol==='file:' ? '파일 직접 열기' : location.host)+')</span>';
 }
 /* 타이틀의 링크 — 서버가 없다고 판명됐을 때만 세운다. 있으면 아무 말도 안 한다. */
@@ -5523,7 +5523,7 @@ function execCopy(t){
 }
 /* 클립보드 — 세 단계로 떨어진다. execCommand 를 먼저 쓰는 건 흔히 권장되는 순서의
    반대인데, 이 버튼이 서는 자리에서는 이쪽이 확실하기 때문이다:
-     - 친구를 LAN 으로 부르면 주소가 http://192.168.x.x:8090 이다. 보안 컨텍스트가
+     - 친구를 LAN 으로 부르면 주소가 http://192.168.x.x:27015 이다. 보안 컨텍스트가
        아니라서 navigator.clipboard 가 아예 없다 — 최신 API 를 먼저 둬도 어차피 못 쓴다.
      - writeText 는 안 될 때 거절하지 않고 영영 멈춰 있기도 하다(여기서 실측했다:
        focus 도 있고 보안 컨텍스트인데 프라미스가 끝내 안 끝났다). 거절만 기다리면

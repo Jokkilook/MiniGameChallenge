@@ -1,7 +1,7 @@
 /* PUNG! 멀티플레이 서버 — 의존성 0 (Node 내장 모듈만)
- *   실행:  node server.js       (기본 포트 8090, 환경변수 PORT 로 변경)
- *   접속:  http://localhost:8090/         (같은 방)
- *          http://localhost:8090/?room=abc (특정 방 — 친구와 링크 공유)
+ *   실행:  node server.js       (기본 포트 27015, 환경변수 PORT 로 변경)
+ *   접속:  http://localhost:27015/         (같은 방)
+ *          http://localhost:27015/?room=abc (특정 방 — 친구와 링크 공유)
  * 정적 파일(index.html 등)을 서빙하고, /ws 로 오는 WebSocket을 방 단위로 중계한다.
  * 릴레이 모델: 각 클라이언트가 자기 물리를 로컬에서 돌리고 상태/폭발만 주고받는다.
  */
@@ -11,7 +11,10 @@ var fs   = require('fs');
 var path = require('path');
 var crypto = require('crypto');
 
-var PORT = process.env.PORT || 8090;
+/* 기본값이 8090 이 아닌 이유: SK 인터넷이 8080 라인을 막고 있어서, 그 대역은 공유기에
+ * 포트포워딩을 넣어도 밖에서 열리지 않는다(다른 포트는 정상적으로 포워딩된다).
+ * 친구를 인터넷 너머로 부르려면 이 대역을 피해야 한다. */
+var PORT = process.env.PORT || 27015;
 var ROOT = __dirname;
 var MIME = { '.html':'text/html; charset=utf-8', '.js':'text/javascript', '.css':'text/css',
              '.json':'application/json', '.png':'image/png', '.jpg':'image/jpeg', '.svg':'image/svg+xml',

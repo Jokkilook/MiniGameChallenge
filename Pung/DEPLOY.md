@@ -48,7 +48,7 @@ itch.io·GitHub Pages 같은 곳에 `index.html` 만 올리면 **심사위원은
 > 메뉴)과 `waiting`(대기방)이 있습니다. 앞의 둘은 심사위원이 **가장 먼저 듣는 소리**라,
 > 빠지면 첫인상이 통째로 조용해집니다.
 
-`server.js` 는 `process.env.PORT` 를 읽고(기본 8090) `0.0.0.0` 에 바인딩하므로
+`server.js` 는 `process.env.PORT` 를 읽고(기본 27015) `0.0.0.0` 에 바인딩하므로
 **게임 코드는 한 줄도 고치지 않았습니다.**
 
 HTTPS 도 그대로 동작합니다 — `index.html:3133` 이 `location.protocol` 을 보고 `wss:` 로 붙습니다.

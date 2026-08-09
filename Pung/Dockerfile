@@ -7,7 +7,7 @@ FROM node:22-alpine
 WORKDIR /app
 COPY . .
 
-# server.js 는 process.env.PORT 를 읽습니다(기본 8090).
+# server.js 는 process.env.PORT 를 읽습니다(기본 27015).
 # fly.toml 의 internal_port 와 반드시 같아야 합니다.
 ENV PORT=8080
 EXPOSE 8080
