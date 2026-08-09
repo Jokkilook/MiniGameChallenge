@@ -235,6 +235,9 @@ function ownsBot(room, ownerId, botId){
   for(var i=0;i<b.length;i++) if(b[i].id === botId && b[i].owner === ownerId) return b[i];
   return null;
 }
+/* 한 방의 정원 — 사람과 AI 를 합친 수다. 클라이언트의 '대기방 N/6' 과 같은 값이어야 하고,
+   목표 점수(5 × 인원-1)도 이 수를 넘지 않는다는 전제로 잡혀 있다. */
+var MAX_PLAYERS = 6;
 var nextId = 1;
 
 function roomOf(url){ var m = /[?&]room=([^&]+)/.exec(url || ''); return m ? decodeURIComponent(m[1]).slice(0,40) : 'lobby'; }
@@ -254,6 +257,27 @@ server.on('upgrade', function(req, socket){
     log('reject', 'no such room='+room);
     setTimeout(function(){ try{ socket.destroy(); }catch(e){} }, 50);
     return;
+  }
+  /* 정원은 사람과 AI 를 합쳐서 센다. 예전에는 사람 수에 상한이 아예 없었고 AI 만
+     6으로 막혀 있어서, 사람 둘이 든 방에 AI 를 여섯 더 넣으면 8인이 됐다 —
+     화면에는 계속 '대기방 2/6' 이라고 적혀 있었다. 목표 점수도 인원에 비례하므로
+     (5 × 인원-1) 정원이 새면 그 숫자까지 같이 샌다.
+
+     사람이 오면 AI 를 먼저 내보낸다. AI 는 사람이 없을 때 자리를 채우라고 있는 것이라,
+     그 둘이 부딪히면 사람이 이겨야 한다 — 안 그러면 방장이 AI 를 채워 둔 방에
+     친구가 못 들어온다. 밀려난 AI 는 명단에서 사라지므로 '퇴장' 으로 보인다. */
+  var humans = Object.keys(rooms[room] || {}).length;
+  if(humans >= MAX_PLAYERS){                       // 사람만으로 이미 꽉 찼다
+    send(socket, JSON.stringify({ t:'full', room:room, max:MAX_PLAYERS }));
+    log('reject', 'room full room='+room, 'humans='+humans);
+    setTimeout(function(){ try{ socket.destroy(); }catch(e){} }, 50);
+    return;
+  }
+  while(humans + 1 + botsOf(room).length > MAX_PLAYERS){   // AI 가 자리를 비켜 준다
+    var kicked = botsOf(room).pop();
+    if(!kicked) break;
+    broadcast(room, -1, JSON.stringify({ t:'left', id:kicked.id }));
+    log('bot', 'room='+room, 'AI 가 자리를 내줌 id='+kicked.id);
   }
   var id = nextId++;
   var client = { id:id, socket:socket, room:room, name:('P'+id) };
@@ -391,7 +415,9 @@ server.on('upgrade', function(req, socket){
       if(id !== hostOf(room)) return;
       var list = botsOf(room);
       if(m.add){
-        if(list.length >= 6) return;                 // 한 방에 봇 6까지
+        // 정원은 사람 + AI 합계다(위 upgrade 주석). AI 만 세면 8인 방이 만들어진다
+        var now = Object.keys(rooms[room] || {}).length + list.length;
+        if(now >= MAX_PLAYERS) return;
         list.push({ id: nextBotId++, name: botName(list), owner: id });
       } else {
         var gone = list.pop();

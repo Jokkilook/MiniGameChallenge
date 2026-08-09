@@ -2090,7 +2090,7 @@ function botStep(dt, now){
     }
     // 봇 상태를 '피어'로 넣어 두면 렌더·충돌·근접신관이 전부 그대로 동작한다
     var pe=MP.peers[bot.id] || (MP.peers[bot.id]={buf:[]});
-    pe.seen=now; pe.name=bot.name; if(bot.col) pe.col=bot.col; pe.inv=(s.inv>0);
+    pe.seen=now; pe.name=bot.name; if(bot.col) MP.cols[bot.id]=bot.col; pe.inv=(s.inv>0);
     pe.buf.push({t:now, x:s.p.x, y:s.p.y, z:s.p.z, yaw:s.yaw, pitch:s.pitch, rc:s.recoil||0});
     if(pe.buf.length>16) pe.buf.shift();
     if(MP.connected && now-(bot.lastSend||0)>45){ bot.lastSend=now;
@@ -2157,18 +2157,21 @@ function syncBots(){
        자신을 밀어내고 있었다. 봇은 계속 걸어다녀서 '밀린 것'과 '스스로 간 것'이
        구분되지 않아 그동안 드러나지 않았을 뿐이다. */
     s.peerId=p.id;
-    /* 이미 쓰인 색을 전부 넘긴다 — 내 색과, 먼저 들어온 봇들의 색.
-       사람 게스트의 색(MP.peers[*].col)까지 넣으면 좋겠지만 봇을 넣는 시점에는
-       아직 안 왔을 수 있어서, 있는 것만 센다. */
+    /* 이미 쓰인 색을 전부 넘긴다 — 내 색과, 먼저 들어온 봇들의 색, 도착한 사람들의 색.
+       아직 안 온 색은 셀 수 없으므로 있는 것만 센다. */
     var used=[PLAYER_COL];
     BOTS.forEach(function(b){ if(b.col) used.push(b.col); });
-    for(var _pk in MP.peers){ var _pc=MP.peers[_pk].col; if(_pc) used.push(_pc); }
+    for(var _pk in MP.cols){ if(MP.cols[_pk]) used.push(MP.cols[_pk]); }
     var col=pickBotColor(used);
     BOTS.push({ id:p.id, name:p.name, sim:s, cd:0, lastFell:0, lastSend:0, col:col });
-    // 내 화면과 팀원 화면 양쪽에 같은 색이 적용되게
-    var pc=MP.peers[p.id]||(MP.peers[p.id]={buf:[]}); pc.col=col;
-    if(MP.connected) mpSend({t:'col', bot:p.id, c:col});
+    MP.cols[p.id]=col;                        // 내 화면
   });
+  /* 봇 색을 '새로 만든 것만' 이 아니라 매번 전부 다시 알린다.
+     서버는 봇 슬롯을 먼저 만들고 색은 방장이 나중에 보고한다. 그 사이에 누가 들어오면
+     서버가 join 때 넘겨줄 색이 아직 없어서, 그 사람만 영영 그 봇을 못 알아본다.
+     syncBots 는 명단이 바뀔 때마다 도는데 '누가 들어왔다' 도 명단 변화다 — 여기서
+     한 번 더 보내면 그 구멍이 닫힌다. 봇 여섯이라도 한 줄씩, 사람이 들어올 때만이다. */
+  if(MP.connected) BOTS.forEach(function(b){ if(b.col) mpSend({t:'col', bot:b.id, c:b.col}); });
 }
 function botsRespawn(){
   BOTS.forEach(function(b, i){
@@ -2242,7 +2245,7 @@ function dummyStep(dt, now){
     if(off>D.leash || s.p.y < LEVEL.killY+1 || D.restT>DUMMY_SETTLE) dummyHome(D);
     // 봇과 같은 자리에 실어 둔다 — 그리기·근접신관이 여기서부터는 공짜다
     var pe=MP.peers[D.id] || (MP.peers[D.id]={buf:[]});
-    pe.seen=now; pe.name=D.name; pe.col=D.col;
+    pe.seen=now; pe.name=D.name; MP.cols[D.id]=D.col;
     pe.buf.push({t:now, x:s.p.x, y:s.p.y, z:s.p.z, yaw:s.yaw, pitch:s.pitch, rc:0});
     if(pe.buf.length>16) pe.buf.shift();
   }
@@ -3738,7 +3741,7 @@ function render(dt){
     /* 리스폰 무적은 깜빡임으로 보인다. 색을 바꾸지 않는 이유는 몸 색이 곧 사람의
        이름표라서다 — 잠깐이라도 다른 색이 되면 누구인지가 흔들린다. */
     if(pe.inv && (Math.floor(pnow/110)&1)) continue;
-    emitCharacter(ps.x, ps.y, ps.z, ps.yaw, ps.pitch, ps.rc, (pe.col||PEER_COL)); }
+    emitCharacter(ps.x, ps.y, ps.z, ps.yaw, ps.pitch, ps.rc, (MP.cols[pid]||PEER_COL)); }
   /* tp 는 이제 '내 몸을 그릴지' 하나만 뜻하고, 참인 곳은 타이틀 배경뿐이다.
      예전에는 여기에 '카메라가 몸 바로 뒤까지 당겨졌으면 안 그린다'(CAM_LEN<1.05) 는
      단서가 붙어 있었는데, 그건 3인칭 궤도가 지형에 막혔을 때를 위한 것이라 함께 지웠다. */
@@ -3977,6 +3980,9 @@ function setMyColor(c){ if(!/^#[0-9a-fA-F]{6}$/.test(c)) return;
 /* 지금 출시 대상은 경쟁뿐이다. 협동(coop) 코드는 그대로 살아 있고 GAMEMODE 만
    바꾸면 다시 돌아가지만, 화면에서 그리로 가는 길은 없다. */
 var GAMEMODE='versus', SCORES={};
+/* 한 방의 정원 — 사람과 AI 를 합친 수다. server.js 의 MAX_PLAYERS 와 같아야 한다.
+   서버가 실제로 막는 쪽이고 여기는 화면 표시·버튼 잠금용이다. */
+var MAX_PLAYERS=6;
 /* 목표 점수는 인원에 따라 오른다. 2인에 5점은 적당한데, 인원이 늘면 표적도 같이
    늘어 한 사람이 점수를 쌓는 속도가 빨라진다 — 여섯이 뛰면 5점은 순식간이고,
    붙어 볼 새도 없이 판이 끝난다.
@@ -4163,7 +4169,16 @@ function emitCharacter(px,py,pz,yaw,pitch,recoil,col){
 
 /* ---------- 멀티플레이(릴레이) ---------- */
 var mode='title';  // 현재 화면/상태
-var MP={ ws:null, id:null, connected:false, peers:{}, room:null, host:null, players:[],
+/* cols 를 peers 와 따로 두는 이유 —
+   peers 의 항목은 '지금 그릴 수 있는 몸' 이라 5초 무소식이면 지운다(아래 정리 루프).
+   색을 그 안에 담아 두었더니 몸이 지워질 때 색도 같이 사라졌고, st 가 다시 오면
+   항목만 색 없이 되살아났다. 색을 다시 보내는 쪽은 아무도 없으므로 그 사람은
+   그때부터 영영 폴백 민트로 보인다 — 설정에서 색을 다시 고르면 고쳐지던 게 그 증거다
+   (그 순간 col 이 다시 나간다).
+   호스트 탭이 백그라운드로 가면 봇 st 가 끊기므로, 게스트에게 봇이 전부 민트로
+   보이던 것도 같은 경로였다.
+   색은 '누구인가' 이지 '지금 보이는가' 가 아니다. 그래서 몸의 수명과 분리한다. */
+var MP={ ws:null, id:null, connected:false, peers:{}, cols:{}, room:null, host:null, players:[],
   name:'플레이어'+(100+Math.floor(Math.random()*900)), lastSend:0 };
 function mpCode(){ var C='ABCDEFGHJKLMNPQRSTUVWXYZ23456789', s=''; for(var i=0;i<6;i++)s+=C[Math.floor(Math.random()*C.length)]; return s; }
 function mpIsHost(){ return MP.connected && MP.id!=null && MP.host===MP.id; }
@@ -4182,18 +4197,21 @@ function mpConnect(room, onOk, onFail, asJoin){
   // 성공 판정은 'welcome' 수신 시(방 없음 거부 'nosuch' 보다 먼저 성공 처리되지 않도록)
   ws.onopen=function(){ MP.connected=true; mpSend({t:'join',name:MP.name}); mpSend({t:'col',c:PLAYER_COL}); };
   ws.onclose=function(){ var wasSettled=settled; settled=true; clearTimeout(timer);
-    MP.connected=false; MP.ws=null; MP.peers={}; MP.players=[]; MP.host=null;
+    MP.connected=false; MP.ws=null; MP.peers={}; MP.cols={}; MP.players=[]; MP.host=null;
     if(!wasSettled && onFail) onFail();
     else if(wasSettled && mode==='lobbyScr'){ showScreen('title'); setWarn('bad','연결 끊김'); } };
   ws.onerror=function(){ /* onclose 에서 처리 */ };
   ws.onmessage=function(ev){ var m; try{m=JSON.parse(ev.data);}catch(e){return;}
     if(m.t==='nosuch'){ settled=true; clearTimeout(timer); MP.noSuchRoom=true; try{ws.onclose=null;ws.close();}catch(e){}
       MP.ws=null; MP.connected=false; MP.room=null; if(onFail)onFail('nosuch'); return; }
+    // 정원 초과 — 서버가 사람과 AI 를 합쳐 세고 거절했다
+    if(m.t==='full'){ settled=true; clearTimeout(timer); try{ws.onclose=null;ws.close();}catch(e){}
+      MP.ws=null; MP.connected=false; MP.room=null; if(onFail)onFail('full', m.max); return; }
     if(m.t==='welcome' && !settled){ settled=true; clearTimeout(timer); mpHandle(m); if(onOk)onOk(); return; }
     mpHandle(m); };
 }
 function mpDisconnect(){ if(MP.ws){ try{ MP.ws.onclose=null; MP.ws.close(); }catch(e){} }
-  MP.ws=null; MP.connected=false; MP.peers={}; MP.players=[]; MP.host=null; MP.id=null; MP.room=null;
+  MP.ws=null; MP.connected=false; MP.peers={}; MP.cols={}; MP.players=[]; MP.host=null; MP.id=null; MP.room=null;
   BOTS.length=0;                 // 방을 나가면 AI 도 같이 나간다(안 비우면 튜토리얼까지 따라온다)
   if(chatting) closeChat(false); CHAT.length=0; renderChat(); }
 function mpSend(o){ if(MP.ws&&MP.connected){ try{ MP.ws.send(JSON.stringify(o)); }catch(e){} } }
@@ -4214,9 +4232,8 @@ function mpHandle(m){
   // 호스트가 대기방에서 고른 맵 — 기다리는 동안에도 같은 코스를 보도록 즉시 반영
   // 팀원 몸통 색
   else if(m.t==='col'){ if(m.id===MP.id) return;
-    var pc=MP.peers[m.id]||(MP.peers[m.id]={buf:[]});
     if(!/^#[0-9a-fA-F]{6}$/.test(m.c||'')) return;
-    pc.col=m.c;
+    MP.cols[m.id]=m.c;                       // 몸(peers)과 따로 — 위 MP 선언의 주석 참고
     /* 색이 늦게 오면 명단을 다시 그린다. 색은 명단(roster)과 따로, 그 뒤에 도착한다 —
        그런데 명단은 roster 를 받을 때만 그려졌다. 그래서 방에 들어온 사람은 색이
        도착하기 전에 그려진 화면을 계속 보게 되고, 모두가 폴백 회색으로 남았다.
@@ -4261,7 +4278,7 @@ function mpHandle(m){
       spawnRemoteShot(BOTS[_b].sim, m, _judged || !!_bh);
       if(_bh) applyRemoteImpulse(BOTS[_b].sim, _bh, m.id, !!m.rv); } }
   else if(m.t==='ch'){ pushChat(m.name, m.text, m.id===MP.id); }
-  else if(m.t==='left'){ delete MP.peers[m.id]; }
+  else if(m.t==='left'){ delete MP.peers[m.id]; delete MP.cols[m.id]; }
 }
 
 /* ---------- 킬 로그 ----------
@@ -4748,12 +4765,14 @@ function renderLobby(){
   // AI 는 방장만 넣고 뺀다(서버가 슬롯의 주인이라 게스트가 눌러도 거절된다)
   var nbot=MP.players.filter(function(p){return p.bot;}).length;
   var ab=document.getElementById('botAddBtn'), db=document.getElementById('botDelBtn');
-  if(ab){ ab.disabled=!mpIsHost()||nbot>=6; ab.textContent='+ AI'; }
+  /* '+ AI' 는 AI 수가 아니라 '방 인원'으로 막는다. AI 만 6으로 막고 있었더니 사람 둘에
+     AI 여섯을 더한 8인 방이 만들어졌고, 그 와중에도 아래 표시는 '2/6' 이었다. */
+  if(ab){ ab.disabled=!mpIsHost()||MP.players.length>=MAX_PLAYERS; ab.textContent='+ AI'; }
   if(db){ db.disabled=!mpIsHost()||nbot<=0; db.textContent='− AI'+(nbot?' ('+nbot+')':''); }
   /* 인원은 카드의 부제 자리에 쓴다 — 대기방일 때 그 줄의 주인은 renderLobby 다
      (openPause 는 게임 중일 때만 거기에 맵 이름·경과 시간을 쓴다). */
   var w=document.getElementById('pauseWhere');
-  if(w && mode==='lobbyScr') w.innerHTML='대기방 <em>'+Math.max(1,MP.players.length)+'/6</em>';
+  if(w && mode==='lobbyScr') w.innerHTML='대기방 <em>'+Math.max(1,MP.players.length)+'/'+MAX_PLAYERS+'</em>';
   /* 안내문은 '지금 왜 시작을 못 하나' 한 마디로 끝낸다. 예전엔 여기에 세 줄이 있었고
      그중 두 줄은 조작 설명이었다 — 조작은 아래 조작표가 맡는다. */
   if(mpIsHost()){ btn.disabled=!enough; btn.textContent='시작';
@@ -4810,7 +4829,8 @@ function doJoin(){ ensureAudio();
   if(code.length<4){ setErr('joinErr','코드 6자리'); return; }
   setErr('joinErr','접속 중…');
   mpConnect(code, function(){ setErr('joinErr',''); enterLobby(); },
-    function(why){ if(why==='nosuch') setErr('joinErr','<b>'+code+'</b> 그런 방 없음');
+    function(why, max){ if(why==='nosuch') setErr('joinErr','<b>'+code+'</b> 그런 방 없음');
+      else if(why==='full') setErr('joinErr','<b>'+code+'</b> 방이 가득 찼습니다 ('+(max||6)+'명)');
       else setErr('joinErr', noServerMsg()); }, true);
 }
 document.getElementById('lobbyStartBtn').addEventListener('click',function(){
@@ -5052,13 +5072,9 @@ function startGame(levelId){
   // "같은 방인데 서로 다른 맵을 달리는" 상태가 되고, 한참 뒤에야 알아채게 된다.
   var missing = levelId && !PUNG.getLevel(levelId);
   if(levelId) setLevel(levelId);
-  /* 피어 버퍼는 비우되 '몸통 색'은 살린다. 예전엔 통째로 비워서 대기방에서 고른
-     색(사람·AI 모두)이 게임에 들어가는 순간 기본색으로 되돌아갔다 —
-     색을 다시 보내는 쪽은 아무도 없다(서버는 join 때만 알려준다). */
-  var _keepCol={};
-  for(var _pk in MP.peers) if(MP.peers[_pk].col) _keepCol[_pk]=MP.peers[_pk].col;
+  /* 피어 버퍼는 통째로 비운다. 색을 따로 챙기던 코드가 여기 있었는데(MP.cols 이전),
+     색이 peers 안에 살던 시절의 임시 방편이었다 — 지금은 색이 몸의 수명과 무관하다. */
   MP.peers={};
-  for(var _ck in _keepCol) MP.peers[_ck]={buf:[], col:_keepCol[_ck]};
   sim=makeSim(); resetScores(); resetRound(); lastFell=0;
   // 경쟁은 1라운드부터 각자 다른 스폰에서 시작한다(둘 다 LEVEL.start 면 겹쳐서 시작한다)
   if(GAMEMODE==='versus' && !sim.practice) newArena();
@@ -5427,7 +5443,7 @@ function renderHud(s, vsLive){
 // 그 사람 몸 색 — 나는 내가 고른 색, 남은 서버가 알려준 색(없으면 회색)
 function peerCol(id){
   if(id===MP.id) return PLAYER_COL;
-  var pr=MP.peers[id]; return (pr&&pr.col) || '#8492ad';
+  return MP.cols[id] || '#8492ad';
 }
 function esc(t){ return String(t==null?'':t).replace(/[&<>"]/g,function(c){
   return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]; }); }
