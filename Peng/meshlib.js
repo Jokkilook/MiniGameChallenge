@@ -396,8 +396,9 @@ Res.prototype.load=function(url, done){
 var AXIS_FLIP_Z=[[0,1],[1,1],[2,-1]];     // local = ( x, y, -z) — 방향성 없는 모델의 기본
 var AXIS_GUN   =[[2,-1],[1,1],[0,-1]];    // local = (-z, y, -x) — 총구가 -X 인 모델용(지금 쓰는 총은 아니다)
 
-/* 파서 부품은 밖에도 내준다 — 캐릭터(charmesh.js)는 스킨·애니메이션까지 읽어야 해서
-   Res 로는 안 되지만, glTF 를 읽는 부분만큼은 두 벌로 두지 않는다. */
+/* 파서 부품은 밖에도 내준다 — Res 하나로는 안 되는 읽기(스킨·애니메이션 등)를 하는 쪽이
+   생겨도, glTF 를 읽는 부분만큼은 두 벌로 두지 않으려는 것이다.
+   (예전에 캐릭터 메시 로더가 이 자리를 썼다. 그 모델을 걷어내면서 같이 없앴다.) */
 global.MeshLib={ Res:Res, mul:mul, BAKE_VER:BAKE_VER,
   AXIS_FLIP_Z:AXIS_FLIP_Z, AXIS_GUN:AXIS_GUN,
   parseGLB:parseGLB, readAccessor:readAccessor, nodeMatrix:nodeMatrix,
