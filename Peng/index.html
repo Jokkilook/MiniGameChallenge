@@ -5510,7 +5510,11 @@ var TAG_MAX=70;     // 이보다 멀면 안 띄운다(m)
 function renderTags(){
   var host=document.getElementById('tags'); if(!host) return;
   var live={};
-  if(mode==='play' && sim && !sim.practice && !sim.tutorial){
+  /* 대기방의 자유 연습에서도 띄운다. 거기가 오히려 '누가 누구인지' 를 익히는 자리다 —
+     경기 전에 서로 뛰어다니는 동안 이름과 색을 붙여 두면, 시작하자마자 이름표를
+     처음 읽는 일이 없어진다. 예전엔 practice 라는 이유만으로 통째로 꺼져 있었다.
+     튜토리얼만 뺀다 — 허수아비 열셋에 이름표가 붙으면 정작 읽어야 할 설명판을 가린다. */
+  if((mode==='play' || mode==='lobbyScr') && sim && !sim.tutorial){
     var now=performance.now();
     var offX=(window.innerWidth - W*SC)/2, offY=(window.innerHeight - H*SC)/2;
     for(var pid in MP.peers){
