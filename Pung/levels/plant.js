@@ -5,7 +5,17 @@ PUNG.defineLevel('plant', {
   unit: 1.2,
   boxes: [
     // 저 아래 배경 바닥(deco = 밟히지 않는다). 발판은 전부 pieces 다
-    {cx:0, cy:-72, cz:0, hx:220, hy:1, hz:220, col:'#241a12', deco:true}
+    {cx:0, cy:-72, cz:0, hx:220, hy:1, hz:220, col:'#241a12', deco:true},
+    /* ===== 여기부터 tools/adddyn.js 가 넣은 것 — 직접 고치지 마세요 =====
+       조립 라인에 더한 것 — 원본 조각도 보이는 것도 하나도 안 바뀐다.
+         · 벨트 4 : 이미 깔려 있던 컨베이어 루프를 진짜로 움직이게 했다(반시계 2.2m/s).
+                    판정 상자는 안 그린다(_hide) — 보이는 것은 원래의 컨베이어다.
+       ===================================================================== */
+    {cx:0, cy:0.3648000071525574, cz:-6.6, hx:4.8, hy:0.12, hz:1.2, col:"#8a6a3a", _hide:true, belt:{vx:2.2, vz:0}},
+    {cx:6.6, cy:0.3648000071525574, cz:0, hx:1.2, hy:0.12, hz:4.8, col:"#8a6a3a", _hide:true, belt:{vx:0, vz:2.2}},
+    {cx:0, cy:0.3648000071525574, cz:6.6, hx:4.8, hy:0.12, hz:1.2, col:"#8a6a3a", _hide:true, belt:{vx:-2.2, vz:0}},
+    {cx:-6.6, cy:0.3648000071525574, cz:0, hx:1.2, hy:0.12, hz:4.8, col:"#8a6a3a", _hide:true, belt:{vx:0, vz:-2.2}}
+    /* ===== 여기까지 adddyn ===== */
   ],
   pieces: [
     {t:'factory/top-large-checkerboard', i:-9, j:-5, y:0},

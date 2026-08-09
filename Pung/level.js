@@ -73,6 +73,63 @@ PUNG.defineLevel = function(id, data){
 PUNG.getLevel = function(id){ return PUNG.levels[id] || null; };
 PUNG.defaultLevel = function(){ return PUNG.order[0] || null; };
 
+/* ---------- 동적 속성 검증 ----------
+   상자에 붙일 수 있는 것 넷. 잘못 적으면 '그냥 안 움직이는 발판'이 되는데, 그건
+   화면에서 고장으로 안 보이므로 여기서 잡아 준다.
+
+     move :{ax:'x'|'y'|'z', amp:<m>, t:<초>, ph:<0~1>}   사인파로 왕복
+     phase:{on:<초>, off:<초>, at:<초>}                  주기적으로 꺼진다
+     belt :{vx:<m/s>, vz:<m/s>}                          밟고 있으면 밀린다
+     boost:<m/s>                                         올라서면 튀어오른다 */
+function dynNum(v, name, min, max){
+  if(typeof v!=='number' || !isFinite(v)) return name+' 가 숫자가 아님';
+  if(min!=null && v<min) return name+' 가 '+min+' 보다 작음';
+  if(max!=null && v>max) return name+' 가 '+max+' 보다 큼';
+  return null;
+}
+function dynBad(b, at){
+  var e;
+  if(b.move!=null){
+    var m=b.move;
+    if(typeof m!=='object') return at+'.move 가 객체가 아님';
+    if(m.ax!=null && m.ax!=='x' && m.ax!=='y' && m.ax!=='z')
+      return at+".move.ax 는 'x'·'y'·'z' 중 하나여야 함";
+    if((e=dynNum(m.amp, at+'.move.amp', 0.05, 200))) return e;
+    /* 주기가 너무 짧으면 발판이 순간이동에 가까워진다 — 위에 탄 몸이 한 프레임에
+       실려 가는 거리가 몸 반폭(0.35m)을 넘으면 벽을 뚫는 것과 같은 상태가 된다.
+       진폭 amp 의 최대 속도는 2π·amp/t 이므로 그 값으로 하한을 잡는다. */
+    if((e=dynNum(m.t, at+'.move.t', 0.5, 600))) return e;
+    var vmax=6.283185307*m.amp/m.t;
+    if(vmax>8) return at+'.move 가 너무 빠름(최대 '+vmax.toFixed(1)+'m/s) — t 를 늘리거나 amp 를 줄이세요';
+    if(m.ph!=null && (e=dynNum(m.ph, at+'.move.ph', -1, 1))) return e;
+  }
+  if(b.phase!=null){
+    var p=b.phase;
+    if(typeof p!=='object') return at+'.phase 가 객체가 아님';
+    // 꺼져 있는 시간이 예고보다 짧으면 깜빡임이 끊기지 않아 무슨 상태인지 안 읽힌다
+    if((e=dynNum(p.on, at+'.phase.on', 1.0, 600))) return e;
+    if((e=dynNum(p.off, at+'.phase.off', 0.4, 600))) return e;
+    if(p.at!=null && (e=dynNum(p.at, at+'.phase.at', 0, 600))) return e;
+  }
+  if(b.belt!=null){
+    var t=b.belt;
+    if(typeof t!=='object') return at+'.belt 가 객체가 아님';
+    var vx=t.vx||0, vz=t.vz||0;
+    if((e=dynNum(vx, at+'.belt.vx'))) return e;
+    if((e=dynNum(vz, at+'.belt.vz'))) return e;
+    /* 달리기(RUN)보다 빠른 벨트는 거스를 수가 없다 — 밟는 순간 결과가 정해지므로
+       발판이 아니라 함정이 된다. 넉넉히 잡아도 RUN 의 3분의 2 가 상한이다. */
+    var sp=Math.sqrt(vx*vx+vz*vz);
+    if(sp>PUNG.PHYS.RUN*0.67) return at+'.belt 가 너무 빠름('+sp.toFixed(1)+'m/s) — 걸어서 거스를 수 없음';
+    if(sp<0.05) return at+'.belt 가 사실상 멈춰 있음';
+  }
+  if(b.boost!=null){
+    if((e=dynNum(b.boost, at+'.boost', 1, 40))) return e;
+    // 점프대가 맨몸 점프보다 약하면 '밟으면 오히려 덜 뛰는' 물건이 된다
+    if(b.boost<=PUNG.PHYS.JUMPV) return at+'.boost 가 맨몸 점프('+PUNG.PHYS.JUMPV+')보다 약함';
+  }
+  return null;
+}
 // 최소 검증 — 없으면 게임이 조용히 이상해지는 필드만 본다.
 PUNG.validateLevel = function(d){
   if(!d || typeof d!=='object') return '객체가 아님';
@@ -82,6 +139,10 @@ PUNG.validateLevel = function(d){
     for(var j=0;j<k.length;j++) if(typeof b[k[j]]!=='number' || !isFinite(b[k[j]]))
       return 'boxes['+i+'].'+k[j]+' 가 숫자가 아님';
     if(b.hx<=0||b.hy<=0||b.hz<=0) return 'boxes['+i+'] 의 반경이 0 이하';
+    /* 동적 속성 — 형식이 틀리면 조용히 안 움직이는 발판이 된다(그게 제일 찾기 어렵다).
+       숫자만 확인한다. '설계로서 말이 되는가'(로켓점프로 닿는 층인가 등)는 아래
+       reach 로 각자 재는 것이고, 여기서 막을 일이 아니다. */
+    var e=dynBad(b, 'boxes['+i+']'); if(e) return e;
   }
   if(!d.goal || typeof d.goal.cx!=='number') return 'goal 이 없음';
   if(!d.checkpoints || !d.checkpoints.length) return 'checkpoints 가 비어 있음';
@@ -731,8 +792,14 @@ PUNG.genPeak = function(seed){
   var SUMMIT_Y = 0.45;                             // 정상 소봉 = +1.35m, 점프로 오른다
   /* 고리를 하나 더 둘러 데크 반지름을 18m → 21.6m 로 넓혔다. 넉백 한 번이 3m
      남짓이라, 넷이 붙으면 예전 판에서는 서로 밀 자리가 안 나왔다. 붕괴가 한 겹
-     늘어나므로 peak.js 의 every 를 9.5 → 8.5 로 줄여 한 판 길이를 맞췄다. */
-  var RINGS    = [0, 1.2, 2.4, 3.6, 4.8, 6.0];     // 데크 고리 반지름(킷유닛)
+     늘어나므로 peak.js 의 every 를 9.5 → 8.5 로 줄여 한 판 길이를 맞췄다.
+
+     다시 두 겹을 더 둘러 지름 36m → 50.4m 가 됐다. 이유는 사거리다: 폭발이 40m 를
+     날아가는데 판이 36m 면 어디에 서 있든 누구든 쏠 수 있어서, '자리를 잡는다' 는
+     것이 아예 성립하지 않았다. 판이 사거리보다 커야 사거리 밖이라는 게 생긴다.
+     붕괴가 두 겹 더 떨어지므로 peak.js 의 every 를 8.5 → 6.0 으로 줄여 한 판
+     길이를 맞춘다(26 + 6*6.0 = 62초, 예전 60초). */
+  var RINGS    = [0, 1.2, 2.4, 3.6, 4.8, 6.0, 7.2, 8.4];   // 데크 고리 반지름(킷유닛)
   var DECK_R   = RINGS[RINGS.length-1];
   var SLAB_S   = 1.35;                             // 슬래브 배율 → 지름 7.2m
   var DECK_OUT = DECK_R + 1.79*SLAB_S*0.5;         // 데크 바깥 끝 ≈ 6.0유닛 = 18m

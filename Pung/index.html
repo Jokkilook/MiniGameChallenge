@@ -287,6 +287,28 @@
   #playerList li .dot{display:none}
   #playerList li .tag{margin-left:auto;font-size:10px;font-weight:900;letter-spacing:1.4px;color:#9dabc4;
     border:1px solid var(--line2);padding:2px 6px}
+  /* .tag 의 margin-left:auto 는 '첫 번째 것'만 남긴다 — HOST 와 AI 가 같이 붙는 줄에서
+     둘 다 auto 면 사이가 벌어져 한 줄에 세 덩어리가 흩어진다. */
+  #playerList li .tag~.tag{margin-left:0}
+  /* 팀 스위치 — 레드/블루 두 칸. 누를 수 없을 때(남의 줄)는 표시로만 남는다 */
+  #playerList li .tsw{margin-left:auto;display:flex;gap:2px;flex:0 0 auto}
+  #playerList li .tsw button{font:inherit;font-size:10px;font-weight:900;letter-spacing:1.2px;
+    padding:3px 8px;background:transparent;color:#7c89a0;border:1px solid var(--line2);cursor:pointer}
+  #playerList li .tsw button:disabled{cursor:default}
+  /* 고른 칸만 그 팀 색으로 찬다. 색은 --tc 로 받는다(TEAM_COL 과 같은 값) */
+  #playerList li .tsw button.on{background:var(--tc);border-color:var(--tc);color:#0b0f16}
+  #playerList li .tsw button.full:not(.on){opacity:.32}
+  /* 모드 토글(개인전/팀전) — 맵 줄과 같은 폭에 두 칸 */
+  #modeRow{margin-top:12px;display:flex;gap:2px;width:100%}
+  #modeRow button{flex:1;font:inherit;font-size:11.5px;font-weight:900;letter-spacing:1.6px;
+    padding:9px 6px;background:transparent;color:#7c89a0;border:1px solid var(--line2);cursor:pointer}
+  #modeRow button.on{background:rgba(255,255,255,.07);color:#fff;border-color:var(--acc)}
+  #modeRow button:disabled{cursor:default;opacity:.55}
+  /* 팀 인원 요약 — 시작을 막는 이유가 여기서 먼저 보여야 한다(버튼을 눌러 보기 전에) */
+  #teamTally{margin-top:7px;font-size:11px;font-weight:800;letter-spacing:.6px;color:#8492ad;
+    display:flex;align-items:center;justify-content:center;gap:8px}
+  #teamTally.off{display:none}
+  #teamTally b{font-size:13px}
   /* 순위표 — 대기방 명단(#playerList)과 같은 행 스타일에 등수·점수만 얹는다 */
   ul.rank{list-style:none;margin:18px 0 0;padding:0;width:min(340px,86vw);display:flex;flex-direction:column;gap:1px}
   ul.rank li{background:rgba(255,255,255,.04);border-left:3px solid var(--line2);padding:10px 13px;
@@ -648,7 +670,14 @@
         <span id="codeVal">------</span>
         <span id="copyCode">복사</span>
       </button>
+      <!-- 개인전 / 팀전. 명단 위에 둔다 — 팀 스위치가 명단 안에 생기고 없어지므로,
+           그것을 켜는 스위치가 그 바로 위에 있어야 무엇이 바뀐 것인지 읽힌다. -->
+      <div id="modeRow">
+        <button type="button" data-team="0">개인전</button>
+        <button type="button" data-team="1">팀전</button>
+      </div>
       <ul id="playerList"></ul>
+      <div id="teamTally" class="off"></div>
       <div class="pick"><span id="mapPickLabel">맵</span>
         <button type="button" id="lobbyMapBtn" class="mapBtn">
           <canvas width="88" height="56"></canvas><span class="lmName">—</span>
@@ -1399,6 +1428,127 @@ function dropRing(r){
 /* 라운드 시계에 맞춰 고리를 떨어뜨리고, 떨어지는 중인 타일을 아래로 흘린다.
    ROUND.phase 가 'live' 일 때만 새로 무너뜨린다 — 라운드 정산 중에 판이 계속
    사라지면 다음 라운드 시작 위치가 이미 없어져 있다. */
+/* ---------- 판이 움직인다 ----------
+   맵이 상자 하나하나에 붙여 선언한다. 네 가지뿐이고, 전부 '상자의 속성'이다 —
+   따로 배열을 만들지 않은 이유가 있다. 붕괴가 다 무너진 발판을 목록에서 걷어내므로
+   (collapseTick 의 filter) 번호로 가리키면 그때 전부 어긋난다. 속성이면 상자와
+   같이 사라지고 같이 남는다.
+
+     move:{ax:'x'|'y'|'z', amp:<m>, t:<초>, ph:<0~1>}  왕복한다
+     phase:{on:<초>, off:<초>, at:<초>}                주기적으로 꺼진다
+     belt:{vx:<m/s>, vz:<m/s>}                         밟고 있으면 밀린다
+     boost:<m/s>                                       올라서면 튀어오른다
+
+   시계는 ROUND.t 다 — 붕괴가 이미 쓰는 그 시계이고, 방장의 start 한 줄에서 모두가
+   같이 출발한다. 각자 제 dt 를 더하므로 완벽히 같지는 않지만, 이 게임은 상태를
+   22Hz 로 주고받으며 일부러 110ms 과거를 그리는 판이라 그 안에서는 안 보인다.
+   대기방 연습에서는 ROUND.t 가 안 도는데(vsLive 아님), 그때는 판이 멈춰 있으면
+   무엇을 만들었는지 확인할 수가 없으므로 제자리 시계를 따로 돌린다. */
+var DYNT=0;
+var PHASE_WARN=0.8, PHASE_WARN_COL='#e0713a';   // 꺼지기 몇 초 전부터 깜빡이나 / 그 색
+function dynClock(dt, live){ DYNT = live ? ROUND.t : (DYNT+dt); return DYNT; }
+/* 몸이 이 상자 위에 서 있는가 — belt·boost·carry 가 공통으로 묻는 질문이라 한 곳에 둔다.
+   발바닥이 윗면에서 STAND_EPS 안이고 발 사각형이 상자 위에 걸쳐 있으면 서 있는 것이다.
+   s.onGround 를 같이 보는 이유는 '스쳐 지나가는 중'을 빼기 위해서다. */
+var STAND_EPS=0.18;
+function standingOn(s, b){
+  if(!s.onGround) return false;
+  var top=b.cy+b.hy;
+  if(s.p.y > top+STAND_EPS || s.p.y < top-STAND_EPS) return false;
+  return Math.abs(s.p.x-b.cx) <= b.hx+PH_HX && Math.abs(s.p.z-b.cz) <= b.hz+PH_HZ;
+}
+/* 이 화면에서 도는 몸 전부 — 나·봇·허수아비. 발판이 움직이면 셋 다 같이 실려야 한다.
+   원격 피어는 각자 제 화면에서 같은 계산을 하므로 여기서 건드리지 않는다(넉백과 같은 규칙). */
+function localBodies(out){
+  out.length=0;
+  if(sim) out.push(sim);
+  for(var i=0;i<BOTS.length;i++) out.push(BOTS[i].sim);
+  for(var j=0;j<DUMMIES.length;j++) out.push(DUMMIES[j].sim);
+  return out;
+}
+var _DYNB=[];
+function dynTick(dt, live){
+  if(!LEVEL || !LEVEL.boxes) return;
+  var T=dynClock(dt, live), i, b, bodies=null;
+  for(i=0;i<LEVEL.boxes.length;i++){
+    b=LEVEL.boxes[i];
+    /* 점멸 — 켜졌다 꺼졌다 한다. deco 를 뒤집는 것이라 충돌·광선·봇의 바닥 판단이
+       전부 같이 꺼진다(붕괴가 발판을 내리는 것과 같은 손잡이다).
+       꺼진 동안 색을 남겨 두면 '있는데 안 밟히는' 것이 되므로 그리기도 같이 끈다. */
+    if(b.phase){
+      var ph=b.phase, cyc=(ph.on||2)+(ph.off||1);
+      var u=((T-(ph.at||0))%cyc+cyc)%cyc;
+      var on=u<(ph.on||2);
+      b.deco=!on;
+      /* 꺼지기 직전을 깜빡여 예고한다 — 붕괴가 그러듯이(collapseTick). 발밑이 예고
+         없이 사라지는 것은 어려운 게 아니라 그냥 사고다.
+         상태는 두 플래그로만 남기고 '어떻게 보일지'는 그리는 쪽이 정한다 —
+         킷 조각으로 그리는 발판(skin)은 색을 갈아끼울 수가 없어 물들여야 하기 때문이다. */
+      b._dim   = !on;                                                    // 꺼져 있다
+      b._flash = on && (u > (ph.on||2)-PHASE_WARN) && (Math.floor(T*7)%2===0);
+    }
+    /* 왕복 이동 — 사인파라 양 끝에서 저절로 느려진다. 등속으로 왕복시키면 끝에서
+       방향이 툭 꺾이고, 그 순간 위에 탄 사람만 미끄러진다. */
+    if(b.move){
+      var m=b.move, ax=m.ax||'x', per=m.t||6;
+      var pos=Math.sin(((T/per)+(m.ph||0))*6.283185307)*(m.amp||0);
+      /* 기준 위치는 '상자 사본' 에 적는다. cloneLevel 이 상자를 얕게 복사하므로
+         b.move 는 원본 레벨 데이터와 같은 객체다 — 거기에 적으면 등록된 원본을
+         건드리게 되고, 그건 이 파일이 처음부터 하지 말자고 정해 둔 일이다. */
+      if(b._mbase==null) b._mbase=b['c'+ax];
+      var was=b['c'+ax];
+      b['c'+ax]=b._mbase+pos;
+      var d=b['c'+ax]-was;
+      if(d!==0){
+        // 발판이 간 만큼 위에 선 몸도 간다 — 이게 없으면 발판이 발밑에서 빠져나간다
+        if(!bodies) bodies=localBodies(_DYNB);
+        for(var k=0;k<bodies.length;k++){
+          var s=bodies[k];
+          if(!standingOn(s, b)) continue;
+          if(ax==='y'){
+            /* 세로는 위치만 옮기고 속도는 안 준다. 속도를 실으면 발판이 내려갈 때
+               몸이 같이 가속돼 발판보다 먼저 떨어지고, 올라갈 때는 발판을 뚫는다. */
+            s.p.y+=d;
+          } else s.p[ax]+=d;
+          /* 속도(v)에는 아무것도 안 싣는다. 발판에서 뛰어내릴 때 그 속도가 따라붙는
+             '관성'은 없는 셈인데, 발판이 가장 빨라야 2~3m/s 이고 달리기가 5.3m/s 라
+             그 차이는 눈에 안 띈다. 반대로 속도에 실으면 발판 위에 가만히 서 있기만
+             해도 매 프레임 더해져 끝없이 빨라진다. */
+        }
+      }
+    }
+  }
+  /* 컨베이어·점프대는 상자를 안 움직이므로 몸 쪽에서 한 번에 훑는다.
+     상자마다 몸을 도는 것보다, 몸마다 상자를 도는 편이 값이 싸다(몸은 많아야 여섯). */
+  var any=false;
+  for(i=0;i<LEVEL.boxes.length;i++){ if(LEVEL.boxes[i].belt||LEVEL.boxes[i].boost){ any=true; break; } }
+  if(any){
+    if(!bodies) bodies=localBodies(_DYNB);
+    for(var q=0;q<bodies.length;q++){
+      var sb=bodies[q]; if(!sb.onGround) continue;
+      for(i=0;i<LEVEL.boxes.length;i++){
+        b=LEVEL.boxes[i];
+        if((!b.belt && !b.boost) || !boxSolid(b)) continue;
+        if(!standingOn(sb, b)) continue;
+        /* 컨베이어 — 서 있기만 해도 밀린다. 속도를 '더하는' 게 아니라 위치를 옮기는
+           이유는, 속도에 더하면 벨트 위에서 가만히 서 있어도 무한히 빨라지기 때문이다.
+           걸어서 거스를 수 있어야 하므로 달리기 속도(5.3)보다 확실히 느리게 잡는다. */
+        if(b.belt){ sb.p.x+=(b.belt.vx||0)*dt; sb.p.z+=(b.belt.vz||0)*dt; }
+        /* 점프대 — 밟는 순간 한 번. 매 프레임 주면 그 위에서 영원히 튀어오른다.
+           속도를 '더하지' 않고 '정한다' — 로켓점프로 내려찍으며 밟으면 아래로 가던
+           속도가 상쇄돼 오히려 덜 뜨는데, 점프대는 늘 같은 높이로 보내야 읽힌다. */
+        /* 새 판이 서면 ROUND.t 가 0 으로 돌아간다(newArena) — 그때 마지막으로 밟은
+           시각이 미래가 되어 버리므로 뒤로 뛴 경우도 같이 푼다. */
+        if(b.boost && (sb._boostT==null || T-sb._boostT>0.25 || T<sb._boostT)){
+          sb._boostT=T; sb.v.y=b.boost; sb.onGround=false; sb.coyote=0;
+          // 소리는 내 몸일 때만 — 봇 여섯이 점프대를 밟으면 그게 전부 내 귀에서 난다
+          if(sb===sim) sndJump();
+        }
+        break;
+      }
+    }
+  }
+}
 function collapseTick(dt){
   var C=LEVEL&&LEVEL.collapse; if(!C) return;
   if(ROUND.phase==='live' && LEVEL._maxRing){
@@ -1507,19 +1657,31 @@ function eyePos(s){ return {x:s.p.x, y:s.p.y+EYE, z:s.p.z}; }
    기준은 "내 화면에 보이는 팀원 위치"(보간된 위치) — 조준한 대로 맞는 게 맞다.
    out 을 넘기면 out.hit 에 "지형이 아니라 팀원에게서 터졌는가"(=직격)를 담아 준다.
    리프트 샷이 이 값으로 갈린다. */
+/* '직격이란 무엇인가' 를 한 군데서만 정한다 — 광선 위 최근접 지점이 몸 중심에서
+   FUSE_R 안이면 그 몸에서 터진다. 쓰는 곳이 둘이라 함수로 뺐다(아래 peerFuse 와,
+   doFire 가 방장 자신을 확인하는 자리). 맞으면 t, 아니면 -1. */
+function bodyFuseT(o, d, px, py, pz, maxT){
+  var cx=px, cy=py+PH_HY, cz=pz;                                  // 몸 중심
+  var t = (cx-o.x)*d.x + (cy-o.y)*d.y + (cz-o.z)*d.z;             // 광선 위 최근접 지점
+  if(t < 0.6 || t >= maxT) return -1;                             // 코앞이거나 더 가까운 게 이미 있다
+  var qx=o.x+d.x*t, qy=o.y+d.y*t, qz=o.z+d.z*t;
+  return (Math.hypot(qx-cx, qy-cy, qz-cz) < FUSE_R) ? t : -1;
+}
+/* out.hit = 팀원(사람·봇)에게서 터졌는가, out.id = 그게 누구인가.
+   id 까지 돌려주는 것은 팀전 때문이다 — 협동은 전원이 아군이라 '맞았다'만 알면
+   됐지만, 팀전에서는 맞은 사람이 같은 편일 때만 리프트 샷이 된다.
+   여기서 보는 것은 MP.peers 뿐이다. 이 화면의 내 몸은 거기 없으므로, 봇이 방장을
+   겨눈 경우는 doFire 가 따로 확인한다(그 주석 참고). */
 function peerFuse(o, d, maxT, out){
-  if(out) out.hit=false;
+  if(out){ out.hit=false; out.id=null; }
   if(typeof MP==='undefined' || !MP || !MP.peers) return maxT;   // 솔로·검증 하네스에선 그대로
   var now = (typeof performance!=='undefined') ? performance.now() : 0;
   var best = maxT;
   for(var id in MP.peers){
     var ps = (typeof peerSample==='function') ? peerSample(MP.peers[id], now) : null;
     if(!ps) continue;
-    var cx=ps.x, cy=ps.y+PH_HY, cz=ps.z;                          // 팀원 몸 중심
-    var t = (cx-o.x)*d.x + (cy-o.y)*d.y + (cz-o.z)*d.z;           // 광선 위 최근접 지점
-    if(t < 0.6 || t >= best) continue;                            // 코앞이거나 이미 더 가까운 게 있으면 무시
-    var px=o.x+d.x*t, py=o.y+d.y*t, pz=o.z+d.z*t;
-    if(Math.hypot(px-cx, py-cy, pz-cz) < FUSE_R){ best = t; if(out) out.hit=true; }
+    var t = bodyFuseT(o, d, ps.x, ps.y, ps.z, best);
+    if(t>=0){ best = t; if(out){ out.hit=true; out.id=(id|0); } }
   }
   return best;
 }
@@ -1893,6 +2055,75 @@ var BOT_BACK=3.2;            // 등 뒤 이만큼이 허공이면 밀려서 죽�
    똑똑한 게 아니라 딴짓이고, 실제로 그것 때문에 봇이 아예 안 싸운 적이 있다. */
 var BOT_PAD_R=16;
 var BOT_PULSE_D=4.5;         // 이보다 붙으면 펄스로 떼어낸다(그러라고 있는 물건이다)
+/* ---- 구조 사격(팀전) ----
+   떨어지는 아군을 쏴 올린다. 아군 직격은 리프트 샷이라 그 한 발이 곧 도움이다.
+   봇이 이미 자기 자신에게 하는 '복귀 사격'(아래 botThink)의 아군판이라고 보면 된다.
+
+   숫자는 리프트가 실제로 값어치가 있는 범위로 잡았다. LIFT_V(9.0)는 점프(8.6)보다
+   크고 정점이 1.84m 라, 한 발로 되돌려 놓는 것이 아니라 '스스로 복귀할 시간을 번다'.
+   그래서 이미 한참 아래로 간 사람에게 쏘는 것은 탄과 시간을 버리는 짓이다. */
+/* 팀전에서 공격에 쓰지 않고 남겨 두는 탄. 실측으로 나온 값이다 — 이게 없을 때
+   '구할 아군이 보이는' 프레임의 73%에서 봇의 탄창이 비어 있었다. 탄창을 적에게
+   다 비우고 나면 정작 편이 떨어질 때 쏠 것이 없어서, 구조 사격이 있으나 마나였다.
+   비용은 생각보다 작다: 재장전이 1.1초에 한 발이라 붙어 싸우는 중에는 어차피
+   재장전에 묶여 있고, 줄어드는 것은 순간 연사 3발이 2발이 되는 것뿐이다.
+   자기 자신을 구하는 복귀 사격에는 적용하지 않는다 — 남을 구하려다 내가 떨어지면
+   그건 도움이 아니다. */
+var BOT_SAVE_RESERVE=1;
+/* 구조는 급하다 — 공격의 박자를 그대로 쓰면 대부분 늦는다. 실측으로 '구할 아군이
+   보이는' 프레임의 76%는 아직 그쪽으로 돌아보는 중이었고 57%는 사격 쿨다운이었다.
+   떨어지는 사람에게 "방금 쐈으니 0.5초 기다려"는 말이 안 되고, 사람도 급하면
+   마우스를 평소보다 확 돌린다. 그래서 구조 중에만 두 값을 따로 쓴다.
+   평소 조준까지 빨라지는 것은 아니다 — 이 둘은 save 가 잡힌 프레임에서만 쓰인다. */
+var BOT_SAVE_TURN=8.5;       // 구조 중 돌아보는 속도(rad/초) — 평소 4.5
+var BOT_SAVE_CD=0.22;        // 구조 사격 간격(초) — 평소 0.55
+var BOT_SAVE_R=17;           // 이 수평거리 안의 아군만 구한다(사격 범위보다 조금 넓다)
+var BOT_SAVE_DROP=9;         // 나보다 이만큼 아래면 이미 늦었다 — 안 쏜다
+var BOT_SAVE_VY=-3;          // 이보다 빠르게 내려가면 '떨어지는 중'으로 본다
+/* 팀원이 초당 몇 m 로 내려가고 있나(음수가 낙하).
+   상태는 22Hz 로 오고 도착 간격이 들쭉날쭉해서, 바로 이웃한 두 표본으로 기울기를
+   내면 값이 튄다 — 0.12초 이상 벌어진 짝을 찾아 그 구간으로 잰다. */
+function peerVy(pe){
+  var b=pe&&pe.buf; if(!b||b.length<2) return 0;
+  var last=b[b.length-1];
+  for(var i=b.length-2;i>=0;i--){
+    var dt=(last.t-b[i].t)/1000;
+    if(dt>=0.12) return (last.y-b[i].y)/dt;
+  }
+  var dt0=(last.t-b[0].t)/1000;
+  return dt0>0.02 ? (last.y-b[0].y)/dt0 : 0;
+}
+/* 지금 구해야 할 아군 — 떨어지는 중이고, 발밑에 바닥이 없고, 아직 늦지 않은 사람.
+   셋을 다 보는 이유는 하나만 빠져도 엉뚱한 데 쏘기 때문이다. 낙하 속도만 보면
+   그냥 점프해서 내려오는 아군에게 쏘고, 바닥만 보면 가만히 서 있는 아군에게 쏜다. */
+function botSaveTarget(bot){
+  if(!VSTEAM) return null;
+  var bs=bot.sim, now=(typeof performance!=='undefined')?performance.now():0;
+  var best=null, bd=1e9;
+  for(var id in MP.peers){
+    var pid=id|0;
+    if(pid===bot.id || !sameTeam(bot.id, pid)) continue;
+    var pe=MP.peers[id], ps=peerSample(pe, now); if(!ps) continue;
+    /* 싼 검사부터. groundAt 은 맵의 상자를 훑으므로 매 프레임 · 아군마다 돌리기엔
+       제일 비싸다 — 앞의 셋에서 대부분 걸러진다(보통은 아무도 안 떨어지고 있다). */
+    if(peerVy(pe) > BOT_SAVE_VY) continue;                  // 안 떨어지고 있다
+    if(bs.p.y-ps.y > BOT_SAVE_DROP) continue;                // 이미 늦었다
+    var d=Math.hypot(ps.x-bs.p.x, ps.z-bs.p.z);
+    if(d>BOT_SAVE_R || d>=bd) continue;
+    if(groundAt(ps.x, ps.z, ps.y)!==null) continue;          // 발밑에 밟을 것이 있다
+    bd=d; best={x:ps.x, y:ps.y, z:ps.z, d:d};
+  }
+  /* 방장 자신도 후보다. MP.peers 에 내 몸은 없으므로 여기서 따로 본다 —
+     이게 없으면 AI 는 서로만 구하고 사람은 혼자 떨어진다.
+     내 몸은 이 화면에서 도는 시뮬이라 속도를 추정할 것 없이 v.y 를 그대로 읽는다. */
+  if(sim && !sim.practice && MP.id!=null && sameTeam(bot.id, MP.id) &&
+     sim.v.y<=BOT_SAVE_VY && !sim.onGround &&
+     groundAt(sim.p.x, sim.p.z, sim.p.y)===null && bs.p.y-sim.p.y<=BOT_SAVE_DROP){
+    var dm=Math.hypot(sim.p.x-bs.p.x, sim.p.z-bs.p.z);
+    if(dm<=BOT_SAVE_R && dm<bd) best={x:sim.p.x, y:sim.p.y, z:sim.p.z, d:dm};
+  }
+  return best;
+}
 /* 발밑에 설 곳이 있는지 — 봇이 스스로 떨어지지 않게 하는 가장 중요한 판정.
    이게 없으면 봇은 상대를 쫓다가 그대로 낭떠러지로 걸어 들어간다. */
 function groundAt(x, z, y){
@@ -1927,10 +2158,13 @@ function botTarget(bot){
   var now=(typeof performance!=='undefined')?performance.now():0;
   for(var id in MP.peers){
     if(+id===bot.id) continue;                                   // 나 자신
+    /* 아군은 표적이 아니다. 이게 없으면 팀전에서 AI 가 제 편을 쫓아다니며 쏘는데,
+       아군은 넉백 면역이라 아무 일도 안 일어난다 — 그냥 멈춰 선 것처럼 보인다. */
+    if(sameTeam(bot.id, +id)) continue;
     var ps=peerSample(MP.peers[id], now); if(!ps) continue;
     var d=Math.hypot(ps.x-bs.p.x, ps.z-bs.p.z); if(d<bd){ bd=d; best={x:ps.x,y:ps.y,z:ps.z,d:d}; } }
-  // 방장 자신
-  if(sim && !sim.practice){
+  // 방장 자신 — 같은 편이면 여기서도 뺀다(위 아군 규칙과 같다)
+  if(sim && !sim.practice && !sameTeam(bot.id, MP.id)){
     var d2=Math.hypot(sim.p.x-bs.p.x, sim.p.z-bs.p.z);
     if(d2<bd){ bd=d2; best={x:sim.p.x, y:sim.p.y, z:sim.p.z, d:d2}; } }
   return best;
@@ -1941,7 +2175,12 @@ function botThink(bot, dt){
   FIRING_BOT=true;
   var s=bot.sim, inp={mf:false,mb:false,ml:false,mr:false,jump:false};
   bot.cd=Math.max(0,(bot.cd||0)-dt);
+  bot.saveCd=Math.max(0,(bot.saveCd||0)-dt);   // 구조 사격은 박자가 따로다(BOT_SAVE_CD)
   var tgt=botTarget(bot);
+  /* 떨어지는 아군이 있으면 그쪽이 먼저다 — 표적은 다음에도 있지만 떨어지는 사람은
+     지금뿐이다. 몸이 가는 방향(mx·mz)은 안 건드리고 시선과 사격만 가져간다:
+     구하겠다고 가장자리로 달려가면 둘이 같이 떨어진다. */
+  var save=botSaveTarget(bot);
   var gx=tgt?tgt.x:0, gz=tgt?tgt.z:0;
   var dx=gx-s.p.x, dz=gz-s.p.z, dist=Math.hypot(dx,dz)||1;
 
@@ -1952,7 +2191,9 @@ function botThink(bot, dt){
      붙어 있을 때(4m 안)는 그냥 발밑을 노린다. 그 거리에서 지점을 틀면 내 폭발 반경
      (4.2m)에 내가 걸린다. */
   var aimX=gx, aimZ=gz;
-  if(tgt && tgt.d>4.0){
+  // 구조 중에는 아군 몸을 그대로 겨눈다 — 직격이어야 리프트가 된다(빗나가면 그냥 폭발이다)
+  if(save){ aimX=save.x; aimZ=save.z; }
+  else if(tgt && tgt.d>4.0){
     var tc=Math.hypot(gx,gz)||1;
     aimX=gx-(gx/tc)*BOT_PUSH; aimZ=gz-(gz/tc)*BOT_PUSH;
   }
@@ -1968,9 +2209,12 @@ function botThink(bot, dt){
   }
   // 시선은 표적 쪽으로 '돌아간다' — 즉시 스냅하지 않는다(BOT_TURN 참고)
   if(bot.aimYaw==null) bot.aimYaw=s.yaw;
-  var yawErr=angDiff(wantYaw, bot.aimYaw), step=BOT_TURN*dt;
+  var yawErr=angDiff(wantYaw, bot.aimYaw), step=(save?BOT_SAVE_TURN:BOT_TURN)*dt;
   bot.aimYaw += Math.max(-step, Math.min(step, yawErr));
-  s.yaw = bot.aimYaw + bot.errY;
+  /* 구조 사격에는 조준 오차를 안 얹는다. 오차는 '사람처럼 보이라고' 있는 것인데,
+     빗나간 구조는 도움이 아니라 방해다 — 아군 옆에서 터지면 리프트가 아니라 넉백이
+     되어 오히려 더 밀어낸다. 돌아보는 속도(BOT_TURN)는 그대로라 여전히 사람처럼 휙 돈다. */
+  s.yaw = bot.aimYaw + (save ? 0 : bot.errY);
 
   /* 가고 싶은 '월드 방향'을 먼저 정하고 마지막에 입력으로 바꾼다.
      예전엔 정면만 짚어 봐서 옆걸음(strafe) 중에는 낭떠러지를 그대로 밟았다 —
@@ -1995,7 +2239,10 @@ function botThink(bot, dt){
   }
   /* 빈손이면 붙어 있을 이유가 없다 — 재장전될 때까지 거리를 벌린다.
      탄 없이 상대 얼굴 앞에서 서성이는 것이 '멍청해 보이는' 대표적인 장면이다. */
-  if(tgt && s.ammo===0 && tgt.d<9){ mx=-dx/dist; mz=-dz/dist; }
+  /* 팀전에서는 '아군 몫으로 남긴 한 발'만 남았을 때도 물러난다 — 쏘지 못하는 채로
+     상대 얼굴 앞에 서 있는 것은 빈손일 때와 똑같이 멍청해 보인다. 물러나 재장전하는
+     동안 싸움에서 한 발 빠져 있게 되는데, 그 자리가 아군을 구하기에도 좋은 자리다. */
+  if(tgt && s.ammo<=(VSTEAM?BOT_SAVE_RESERVE:0) && tgt.d<9){ mx=-dx/dist; mz=-dz/dist; }
 
   /* 아이템은 '지금 싸울 상대가 없을 때' 만 주우러 간다. 조건이 셋인 이유는 하나만
      빠져도 봇이 싸우지 않게 되기 때문이다.
@@ -2043,6 +2290,25 @@ function botThink(bot, dt){
     if(s.ammo>0 && bot.cd<=0){
       s.pitch=-PITCH_LIM; doFire(s); bot.cd=BOT_FIRE_CD*0.4; botBroadcastShot(bot);
     }
+  } else if(save){
+    /* 구조 사격 — 아군 몸 중심을 겨눈다. 발밑이 아니라 중심인 이유는 리프트가
+       '직격'(FUSE_R 안) 판정이기 때문이다. 조준 오차(errP)는 일부러 안 얹는다:
+       빗나간 구조는 도움이 아니라 방해다(아군 옆에서 터지면 넉백만 준다).
+       간격도 공격보다 짧게 둔다 — 떨어지는 사람에게 두 번째 기회는 없다. */
+    var sEye=s.p.y+EYE, sD=Math.max(0.6, save.d);
+    s.pitch=Math.atan2((save.y+PH_HY)-sEye, sD);
+    /* 조준이 잡혔는가를 거리로 환산해서 본다. 공격의 고정값(BOT_AIM_OK=0.14rad)은
+       17m 에서 옆으로 2.4m 인데 직격 판정은 1.3m 라, 그 기준으로 쏘면 구조 사격의
+       절반이 빗나간다 — 몸 크기를 각도로 바꿔야 거리와 무관하게 맞는다. */
+    var sNeed=Math.min(BOT_AIM_OK, Math.atan2(FUSE_R*0.6, sD));
+    var sLined=Math.abs(angDiff(wantYaw, bot.aimYaw))<sNeed;
+    /* 공격 쿨다운(bot.cd)이 아니라 구조 전용 쿨다운을 본다. 방금 적을 쏘고 남은
+       0.55초를 여기서 기다리면 그 사이에 아군이 판정 범위 밖으로 떨어진다. */
+    if(sLined && s.ammo>0 && (bot.saveCd||0)<=0 && ROUND.phase==='live'){
+      doFire(s); botBroadcastShot(bot);
+      bot.saveCd=BOT_SAVE_CD;
+      bot.cd=Math.max(bot.cd, BOT_SAVE_CD);   // 구조로 쏜 탄도 공격 박자에는 반영한다
+    }
   } else if(tgt){
     /* 펄스는 '붙은 상대를 떼어내는' 물건이다. 가진 채로 안 쓰면 없는 것과 같고,
        이 거리에서는 총으로 쏴 봐야 자기도 같이 날아간다. 있으면 여기서 쓴다. */
@@ -2060,7 +2326,9 @@ function botThink(bot, dt){
        기다렸다 쏘면 발수는 줄지만 맞는 비율이 올라, 사람이 겨누는 것처럼 보인다. */
     var lined=Math.abs(angDiff(wantYaw, bot.aimYaw))<BOT_AIM_OK;
     if(clear < BOT_MIN_CLEAR){ bot.strafe=!bot.strafe; }
-    else if(lined && tgt.d<BOT_RANGE && s.ammo>0 && bot.cd<=0 && ROUND.phase==='live'){
+    // 팀전이면 마지막 한 발은 아군 몫으로 남긴다(BOT_SAVE_RESERVE 주석 참고)
+    else if(lined && tgt.d<BOT_RANGE && s.ammo>(VSTEAM?BOT_SAVE_RESERVE:0) &&
+            bot.cd<=0 && ROUND.phase==='live'){
       doFire(s); botBroadcastShot(bot);
       // 간격을 흔든다 — 고정이면 박자가 읽혀서 사람은 그 사이에만 움직이면 된다
       bot.cd=BOT_FIRE_CD*(0.8+Math.random()*0.5);
@@ -2531,10 +2799,35 @@ function simOwner(s){
   for(var i=0;i<BOTS.length;i++) if(BOTS[i].sim===s) return BOTS[i].id;
   return null;
 }
+/* 리프트만 따로 먹인다 — 팀전은 '누구를 띄울지'를 쏜 쪽이 지목하므로, 받는 쪽이
+   제 위치로 FUSE_R 을 다시 재면 안 된다(그 위치는 이미 0.5초쯤 늦다).
+   깃털·닻은 여기서도 곱한다 — 그건 맞는 사람 몸에 걸린 로컬 값이라 어느 경로로 오든
+   같아야 한다. 리스폰 무적은 보지 않는다: 리프트는 공격이 아니라 도움이다. */
+function applyLift(s){
+  if(!s || s.win) return false;
+  var take=1;
+  if(s.items){ if(s.items.feather) take*=IT_FEATHER_KB; if(s.items.anchor) take*=IT_ANCHOR_KB; }
+  s.v.y+=LIFT_V*take;
+  if(s.onGround || s.coyote>0) s.bjGrace=BJ_GRACE;
+  s.onGround=false; s.coyote=0; s.kb=KB_TIME;
+  return true;
+}
 function applyLocalBlast(shooter, cx, cy, cz, lift, opt){
   var rev=!!(opt&&opt.rev);
+  var by=(opt&&opt.by!=null)?opt.by:null;
+  var liftId=(opt&&opt.liftId!=null)?opt.liftId:null;
   // 맞은 몸에서 피격음이 난다 — 그 자리에서 나므로 거리만큼 작게 들린다(sfxNode)
-  function hit(s){ if(s!==shooter && applyBlast(s, cx, cy, cz, lift, opt)) sndHit(s.p, rev); }
+  function hit(s){
+    if(s===shooter) return;
+    var oid=simOwner(s);
+    /* 팀전에서 지목된 아군이면 띄우고 끝. 아군이면 아무것도 안 받는다.
+       이 화면에서 도는 몸(봇·방장 자신)이 원격 피어와 같은 규칙을 받아야 한다 —
+       한쪽만 면역이면 "봇 아군은 안 밀리는데 사람 아군은 밀린다"가 된다. */
+    if(liftId!=null && oid!=null && oid===liftId){ applyLift(s); return; }
+    if(sameTeam(by, oid)) return;
+    // 팀전의 리프트는 지목제라, 그 외의 몸에게는 방사형 폭발 그대로다
+    if(applyBlast(s, cx, cy, cz, (liftId!=null?false:lift), opt)) sndHit(s.p, rev);
+  }
   if(sim) hit(sim);
   for(var i=0;i<BOTS.length;i++) hit(BOTS[i].sim);
   // 허수아비도 같은 폭발을 받는다 — 이게 없으면 체험존에서 아이템 효과가 눈에 안 보인다
@@ -2551,13 +2844,27 @@ function doFire(s){
     var t=rayBox(o,d,LEVEL.boxes[i]); if(t<tHit)tHit=t; }
   var fz={};
   tHit = peerFuse(o, d, tHit, fz);                 // 지형보다 팀원이 가까우면 팀원에게서 폭발
-  // 팀원 직격 = 리프트 샷. 경쟁에서는 끈다(밖으로 밀어내는 게 목적인데 수직으로만 띄우면 넉백이 죽는다).
-  var lift = fz.hit && GAMEMODE!=='versus';
+  var byId=simOwner(s);
+  /* 봇이 방장을 띄우려는 경우 — peerFuse 는 MP.peers 만 보는데 이 화면의 내 몸은
+     거기 없다. 그래서 AI 아군은 사람을 겨눠도 직격으로 안 잡혔고, 사람이 제일
+     구조받고 싶은 순간에 AI 만 그걸 못 했다.
+     팀전에서 아군일 때로만 좁힌다 — 개인전·협동의 조준 판정을 건드리면 지금까지
+     맞춰 둔 사격 거리·명중률이 통째로 달라진다. */
+  if(VSTEAM && s!==sim && sim && !sim.practice && sameTeam(byId, MP.id)){
+    var _mt=bodyFuseT(o, d, sim.p.x, sim.p.y, sim.p.z, tHit);
+    if(_mt>=0){ tHit=_mt; fz.hit=true; fz.id=MP.id; }
+  }
+  /* 리프트 샷 — 방사형 대신 정확히 위로만 띄운다.
+     · 협동: 전원이 아군이라 직격이면 곧 리프트다(예전 그대로).
+     · 개인전: 끈다. 밖으로 밀어내는 게 목적인데 수직으로만 띄우면 넉백이 죽는다.
+     · 팀전: 맞은 사람이 같은 편일 때만. 이것이 "아군을 쏘면 도와준다"의 전부다 —
+       같은 동작이 상대에게는 밀어내기이고 아군에게는 띄우기가 된다. */
+  var mateId = (VSTEAM && fz.hit && sameTeam(byId, fz.id)) ? fz.id : null;
+  var lift = fz.hit && (GAMEMODE!=='versus' || mateId!=null);
   var center={x:o.x+d.x*tHit, y:o.y+d.y*tHit, z:o.z+d.z*tHit};
   // 이 탄에 실리는 아이템 성질 — 쏘는 순간 도장을 찍는다. 날아가는 도중에
   // 아이템이 끝나도 이미 나간 탄은 원래 성질대로 터져야 한다.
   var rev=!!(s.items&&s.items.reverse), pw=!!(s.items&&s.items.power);
-  var byId=simOwner(s);
   applyBlast(s, center.x, center.y, center.z, false, {rev:rev, pw:pw});   // 자기 넉백
   // 즉시: 총 반동/작은 흔들림. 폭발 연출은 발사체가 착탄할 때.
   s.recoil=1; s.shake=Math.min(0.4,s.shake+0.12);
@@ -2569,7 +2876,7 @@ function doFire(s){
   // 팀원에게 브로드캐스트: 폭발 지점 + 총구 원점(상대 화면에서 탄환이 날아가 보이도록)
   // 같은 화면에서 도는 봇(과 방장 자신)에게도 폭발이 닿아야 한다.
   // 원격 피어는 자기 화면에서 bl 을 받아 스스로 처리한다.
-  applyLocalBlast(s, center.x, center.y, center.z, lift, {rev:rev, pw:pw, by:byId});
+  applyLocalBlast(s, center.x, center.y, center.z, lift, {rev:rev, pw:pw, by:byId, liftId:mateId});
   /* 원격에게 실릴 넉백은 '쏜 쪽이 본 위치'로 여기서 계산해 실어 보낸다.
      예전에는 폭발 지점만 보내고 맞는 쪽이 제 위치로 다시 판정했는데, 그때까지
      쌓이는 지연이 컸다: 상태 22Hz(45ms) + 왕복 ping + 일부러 과거를 그리는
@@ -2581,10 +2888,17 @@ function doFire(s){
 
      리프트 샷(협동)만 예외다. 순수 상승은 방향이 아니라 규칙이라 임펄스 하나로
      실어 보낼 수 없다 — hit 을 안 실으면 받는 쪽이 lf 를 보고 제 몸에 적용한다. */
-  var _hits = lift ? null : peerHits(center, {rev:rev, pw:pw, by:byId});
+  /* 팀전의 리프트 샷은 협동의 그것과 실어 보내는 방식이 다르다.
+     협동은 hit 을 안 싣고 lf 만 보낸다 — 전원이 아군이라 '받는 쪽이 알아서 뜬다' 가
+     성립한다. 팀전에서 그렇게 하면 근처의 적까지 각자 제 위치로 다시 판정하게 되어,
+     바로 위에서 없앤 0.5~0.7초 어긋남이 되살아난다.
+     그래서 팀전은 hit 을 그대로 싣고(아군은 peerHits 가 이미 뺀다), 띄울 사람만
+     li 로 지목한다. 판정은 여전히 쏜 쪽에 있다. */
+  var _hits = (lift && mateId==null) ? null : peerHits(center, {rev:rev, pw:pw, by:byId});
   if(typeof mpSend==='function'){
     var _bl={t:'bl', x:center.x, y:center.y, z:center.z,
       ox:o.x, oy:o.y, oz:o.z, lf:lift?1:0, rv:rev?1:0, pw:pw?1:0, hit:_hits};
+    if(mateId!=null) _bl.li=mateId;
     if(FIRING_BOT) BOT_SHOT=_bl; else mpSend(_bl);   // 봇 사격은 봇 id 로 따로 나간다
   }
   return true;
@@ -2601,6 +2915,11 @@ function peerHits(c, opt){
   var now=performance.now(), out=[];
   for(var pid in MP.peers){
     if(opt.by!=null && (pid|0)===opt.by) continue;
+    /* 아군은 넉백 목록에 아예 안 넣는다 — 팀전에서 아군이 받는 것은 리프트뿐이다.
+       감쇠가 아니라 면역인 이유: 실수로 편을 떨어뜨리는 순간이 남아 있으면 붙어 싸우는
+       것 자체가 손해가 되어, 셋이 뭉쳐 다니는 수가 통째로 죽는다. 되살리고 싶으면
+       여기서 0 대신 배율을 곱하면 된다. */
+    if(sameTeam(opt.by, pid|0)) continue;
     var ps=peerSample(MP.peers[pid], now); if(!ps) continue;
     var hx=ps.x-c.x, hy=(ps.y+PH_HY)-c.y, hz=ps.z-c.z;
     var d=Math.hypot(hx,hy,hz); if(d>=R) continue;
@@ -3734,6 +4053,23 @@ function render(dt){
     }
     if(bx.link && !LINK_ON[bx.link])      bcol=dimCol(bx.col, 0.34);
     else if(bx.plate && LINK_ON[bx.plate]) bcol='#ffe066';   // 밟히는 중 — 발광
+    /* 점멸 발판의 두 상태. 꺼졌을 때 그대로 그리면 '있는데 통과되는' 발판이 되어
+       그게 제일 나쁘다 — 어둡게 남겨 "여기에 돌아온다" 를 알리되 밟을 것으로는 안
+       보이게 한다(연동 발판 link 가 이미 쓰는 방식이다). */
+    var tint=null;
+    if(bx._dim){        tint=[0.34,0.36,0.44]; bcol=dimCol(bx.col, 0.34); }
+    else if(bx._flash){ tint=[1.6,1.05,0.7];   bcol=PHASE_WARN_COL; }
+    /* skin = 이 상자를 킷 조각으로 그린다. 움직이는 발판·점멸 발판이 쓴다 —
+       판이 킷으로 지어져 있는데 이것들만 민무늬 상자면 확실히 튄다.
+       조각은 상자 윗면에 얹는다(킷 바닥 조각은 원점이 윗면 근처다).
+       못 그리면(구운 데이터가 없으면) 조용히 상자로 떨어진다 — 조각 이름을 잘못
+       적었다고 발판이 통째로 안 보이면 그게 더 나쁘다. */
+    if(bx.skin){
+      var o2={fit:bx};                       // 조각 배율은 상자에 맞춰 자동으로 낸다
+      if(tint) o2.tint=tint;
+      var so=bx.skinOpt; if(so) for(var sk in so) o2[sk]=so[sk];
+      if(pieceGL(bx.skin, bx.cx, bx.cy+bx.hy, bx.cz, o2)) continue;
+    }
     meshGL(boxFaces(bx), bcol, true); }
   if(SHOW_COL) colTris(CAMPOS.x, CAMPOS.y, CAMPOS.z);
   // 협동 관문 표식(한계 기둥·가장자리 테두리). 순수 장식이라 충돌·광선 훑기에는 없다.
@@ -3769,12 +4105,14 @@ function render(dt){
     /* 리스폰 무적은 깜빡임으로 보인다. 색을 바꾸지 않는 이유는 몸 색이 곧 사람의
        이름표라서다 — 잠깐이라도 다른 색이 되면 누구인지가 흔들린다. */
     if(pe.inv && (Math.floor(pnow/110)&1)) continue;
-    emitCharacter(ps.x, ps.y, ps.z, ps.yaw, ps.pitch, ps.rc, (MP.cols[pid]||PEER_COL)); }
+    /* 색은 peerCol 한 곳에서만 낸다. 예전엔 여기만 MP.cols 를 직접 읽었는데, 팀전이
+       붙으면 그 한 줄 때문에 몸만 개인 색이고 이름표·점수 칩은 팀 색인 화면이 된다. */
+    emitCharacter(ps.x, ps.y, ps.z, ps.yaw, ps.pitch, ps.rc, peerCol(pid|0)); }
   /* tp 는 이제 '내 몸을 그릴지' 하나만 뜻하고, 참인 곳은 타이틀 배경뿐이다.
      예전에는 여기에 '카메라가 몸 바로 뒤까지 당겨졌으면 안 그린다'(CAM_LEN<1.05) 는
      단서가 붙어 있었는데, 그건 3인칭 궤도가 지형에 막혔을 때를 위한 것이라 함께 지웠다. */
   if(sim.tp){
-    emitCharacter(sim.p.x, sim.p.y, sim.p.z, sim.yaw, sim.pitch, sim.recoil||0, PLAYER_COL);
+    emitCharacter(sim.p.x, sim.p.y, sim.p.z, sim.yaw, sim.pitch, sim.recoil||0, myCol());
   } else { // 1인칭: 총만
     var eye={x:sim.p.x,y:sim.p.y+EYE,z:sim.p.z}, kick=(sim.recoil||0)*(sim.recoil||0);
     emitGun(eye, AIMR, AIMU, AIMF, kick, null);
@@ -3889,6 +4227,82 @@ function dimCol(hex, f){
   return '#'+((1<<24)|(r<<16)|(g<<8)|b).toString(16).slice(1);
 }
 // 메시(면 배열) → GPU 정점. 면 셰이딩을 정점색에 굽는다.
+/* ---------- 킷 조각을 '이번 프레임에만' 그리기 ----------
+   정적 조각은 setLevel 때 VBO 한 덩어리로 구워진다. 그래서 움직일 수가 없고,
+   그것이 움직이는 발판을 민무늬 상자로 뒀던 이유였다 — 킷으로 지은 판 위에서
+   그 상자들만 확실히 튀었다.
+
+   그리기와 부딪히기를 갈라 놓으면 된다. **보이는 것은 킷 조각, 부딪히는 것은 상자**다.
+   상자는 _hide 로 안 그리고, 그 자리에 조각을 매 프레임 밀어 넣는다. 상자가 어디로
+   가든 조각이 따라간다.
+
+   buildStation 의 안쪽 루프와 같은 계산을 한다(변환·법선 역전치·음영·윤곽선 껍질) —
+   같아야 정적 조각과 나란히 놓았을 때 색과 테두리가 어긋나지 않는다.
+   비용은 조각 삼각형 수만큼이라 움직이는 것에만 쓴다(정적인 것은 구운 VBO 가 공짜다). */
+/* 조각의 로컬 XZ 크기 — 배율을 자동으로 맞추는 데 쓴다. 조각마다 몇 유닛짜리인지가
+   달라서(바닥은 1, floor-large 는 2, 캣워크는 또 다르다) 생성기가 배율을 손으로
+   적으면 반드시 틀린다. 한 번 재서 캐시한다. */
+var PIECE_EXT={};
+function pieceExt(m, key){
+  var e=PIECE_EXT[key]; if(e) return e;
+  var mnx=1e9,mxx=-1e9,mnz=1e9,mxz=-1e9;
+  for(var v=0; v<m.pos.length; v+=3){
+    if(m.pos[v]<mnx)mnx=m.pos[v];     if(m.pos[v]>mxx)mxx=m.pos[v];
+    if(m.pos[v+2]<mnz)mnz=m.pos[v+2]; if(m.pos[v+2]>mxz)mxz=m.pos[v+2];
+  }
+  return (PIECE_EXT[key]={x:Math.max(1e-3,mxx-mnx), z:Math.max(1e-3,mxz-mnz)});
+}
+function pieceGL(t, x, y, z, o){
+  var PP=stationParts(), m=PP[t];
+  if(!m || !m.idx || !m.pos) return false;
+  o=o||{};
+  var S=(o.unit!=null) ? o.unit : STATION.unit;
+  /* fit = 이 상자를 덮도록 배율을 맞춘다. 상자가 곧 부딪히는 모양이므로, 보이는
+     조각이 그것과 같은 크기여야 "보이는 데 안 밟히는"·"안 보이는 데 밟히는" 이
+     안 생긴다. 세로는 안 건드린다 — 납작한 바닥 조각을 세로로 늘이면 두꺼운
+     덩어리가 되어 발판이 아니라 벽처럼 보인다. */
+  if(o.fit){
+    var ex=pieceExt(m, t);
+    /* tile = 늘리지 말고 여러 장 깐다. 조각을 상자에 맞춰 늘리면 난간·테두리까지
+       같이 늘어나서 킷의 톤이 깨진다 — 조립 라인에서 catwalk 를 2.5배로 늘렸다가
+       가운데 십자 옆이 이상해 보인 것이 그것이었다.
+       한 칸이 조각 원래 크기 그대로이므로 정적 조각과 나란히 놓아도 안 어긋난다. */
+    if(o.tile){
+      var cw=ex.x*S, cd=ex.z*S;                       // 조각 한 장의 월드 크기
+      var nx=Math.max(1, Math.round(2*o.fit.hx/cw)), nz=Math.max(1, Math.round(2*o.fit.hz/cd));
+      var base={rot:o.rot, ry:o.ry, tint:o.tint, unit:o.unit};
+      for(var ix=0; ix<nx; ix++) for(var iz=0; iz<nz; iz++)
+        pieceGL(t, x+(ix-(nx-1)/2)*cw, y, z+(iz-(nz-1)/2)*cd, base);
+      return true;
+    }
+    o={ rot:o.rot, ry:o.ry, tint:o.tint, unit:o.unit,
+        sx:(2*o.fit.hx)/(ex.x*S), sy:o.sy||1, sz:(2*o.fit.hz)/(ex.z*S) };
+    S=(o.unit!=null) ? o.unit : STATION.unit;
+  }
+  var pc={t:t, rot:o.rot||0, ry:o.ry||0, s:o.s, sx:o.sx, sy:o.sy, sz:o.sz};
+  var M=pieceBasis(pc);
+  var off=PIECE_OFF[t], offx=off?off[0]:0, offz=off?off[1]:0;
+  var L=STATION_LIGHT, ll=Math.hypot(L[0],L[1],L[2])||1;
+  // 법선은 변환의 역전치로 — 배율만 있을 때는 축별 역수다(buildStation 주석 참고)
+  var a0=M[0]*M[0]+M[1]*M[1]+M[2]*M[2]||1, a1=M[3]*M[3]+M[4]*M[4]+M[5]*M[5]||1,
+      a2=M[6]*M[6]+M[7]*M[7]+M[8]*M[8]||1;
+  var NM=[M[0]/a0,M[1]/a0,M[2]/a0, M[3]/a1,M[4]/a1,M[5]/a1, M[6]/a2,M[7]/a2,M[8]/a2];
+  var tint=o.tint;                       // [r,g,b] 배수 — 점멸이 꺼지기 직전을 물들일 때
+  for(var k=0;k<m.idx.length;k++){
+    var v=m.idx[k];
+    var PT=xf3(M, m.pos[v*3]+offx, m.pos[v*3+1], m.pos[v*3+2]+offz);
+    var N=xf3(NM, m.nrm?m.nrm[v*3]:0, m.nrm?m.nrm[v*3+1]:1, m.nrm?m.nrm[v*3+2]:0);
+    var nl=Math.sqrt(N[0]*N[0]+N[1]*N[1]+N[2]*N[2])||1;
+    var sh=0.62+0.38*Math.max(0,(N[0]*L[0]+N[1]*L[1]+N[2]*L[2])/nl/ll);
+    var wx=x+PT[0]*S, wy=y+PT[1]*S, wz=z+PT[2]*S;
+    var cr=m.col[v*3]*sh, cg=m.col[v*3+1]*sh, cb=m.col[v*3+2]*sh;
+    if(tint){ cr*=tint[0]; cg*=tint[1]; cb*=tint[2]; }
+    triPush([wx,wy,wz], [cr,cg,cb]);
+    var inv=nl>1e-6 ? OUTLINE_PIECE/nl : 0;
+    outlPush([wx+N[0]*inv, wy+N[1]*inv, wz+N[2]*inv], OUTLINE_COL);
+  }
+  return true;
+}
 function meshGL(fl, baseCol, outline){
   var base=hexRGB(baseCol);
   for(var f=0;f<fl.length;f++){ var face=fl[f], sh=face.sh;
@@ -4008,6 +4422,42 @@ function setMyColor(c){ if(!/^#[0-9a-fA-F]{6}$/.test(c)) return;
 /* 지금 출시 대상은 경쟁뿐이다. 협동(coop) 코드는 그대로 살아 있고 GAMEMODE 만
    바꾸면 다시 돌아가지만, 화면에서 그리로 가는 길은 없다. */
 var GAMEMODE='versus', SCORES={};
+/* ---------- 팀전 ----------
+   GAMEMODE 에 'team' 을 더하지 않고 플래그로 둔다. GAMEMODE!=='versus' 를 묻는 자리가
+   코드 곳곳에 있고(리프트 샷·피어 충돌·결승선 판정·맵 목록…), 세 번째 값을 만들면
+   그 전부가 "팀전은 versus 인가 아닌가"를 다시 답해야 한다. 팀전은 경쟁을 대신하는
+   모드가 아니라 '경쟁이면서 편이 갈린 것'이라, 켜고 끄는 플래그가 뜻에도 맞다. */
+var VSTEAM=false;
+/* 레드/블루는 고정색이다 — 팀전에서 몸 색은 '누구인가'가 아니라 '어느 편인가'를
+   말한다. 개인을 가리는 것은 머리 위 이름표가 맡는다.
+   개인 색(PLAYER_COL·MP.cols)은 여기서 절대 덮어쓰지 않는다. 예전에 남의 색이
+   민트로 굳었던 사고가 '색을 다른 것의 수명에 얹어 둔' 데서 나왔기 때문에, 팀 색은
+   저장하지 않고 그릴 때마다 팀에서 파생시킨다 — 팀전을 끄면 개인 색이 그대로 돌아온다. */
+var TEAM_COL={ r:'#e0483d', b:'#3d7ae0' };
+var TEAM_NAME={ r:'레드', b:'블루' };
+var TEAM_MAX=3;                 // 한 편의 정원(server.js 의 TEAM_MAX 와 같아야 한다)
+/* 팀은 명단(roster)에 실려 온다 — 서버가 쥐고 있는 값이라 전원이 같은 답을 본다.
+   여섯 명이 최대라 매 프레임 훑어도 비용이 없다. */
+function teamOf(id){
+  if(id==null) return null;
+  for(var i=0;i<MP.players.length;i++) if(MP.players[i].id===id) return MP.players[i].team||null;
+  return null;
+}
+function myTeam(){ return teamOf(MP.id); }
+/* 같은 편인가. 팀전이 아니면 '아군' 이라는 개념 자체가 없으므로 늘 거짓이다 —
+   이 함수 하나가 리프트 샷·넉백 면역·봇 조준의 공통 관문이라, 여기서 false 를
+   내주면 개인전 동작이 예전 그대로 남는다. */
+function sameTeam(a, b){
+  if(!VSTEAM || a==null || b==null || a===b) return false;
+  var ta=teamOf(a); return !!ta && ta===teamOf(b);
+}
+function teamSize(side){
+  var n=0; for(var i=0;i<MP.players.length;i++) if(MP.players[i].team===side) n++; return n;
+}
+// 매치 포인트 배너를 팀마다 한 번만 띄우기 위한 기록(side -> 그때의 문턱 점수)
+var TEAM_MP_SHOWN={};
+/* 내 몸 색 — 팀전이면 팀 색, 아니면 내가 고른 색 */
+function myCol(){ var t=VSTEAM?myTeam():null; return (t&&TEAM_COL[t])||PLAYER_COL; }
 /* 한 방의 정원 — 사람과 AI 를 합친 수다. server.js 의 MAX_PLAYERS 와 같아야 한다.
    서버가 실제로 막는 쪽이고 여기는 화면 표시·버튼 잠금용이다. */
 var MAX_PLAYERS=6;
@@ -4023,7 +4473,23 @@ var MAX_PLAYERS=6;
    하고, 무엇보다 모든 참가자가 같은 값을 봐야 하기 때문이다 — 명단(MP.players)은
    서버가 맞춰 주므로 각자 세어도 답이 같다. 어느 한쪽이 정해 보내면 그때부터
    어긋날 자리가 생긴다. */
-function vsWin(){ return 5 * Math.max(1, (MP.players.length||2) - 1); }
+/* 팀전 목표 점수 — 팀당 인원으로 정한다. 1:1 15 · 2:2 25 · 3:3 35.
+   개인전처럼 '표적 수에 비례' 로 두지 않는 이유는 표적이 늘어도 아군이 같이 늘어
+   한 사람이 점수를 쌓는 속도가 개인전만큼 빨라지지 않기 때문이다. 대신 판이 길어야
+   편끼리 서로를 살리고 띄우는 수가 나올 시간이 생긴다. */
+function teamGoal(per){ return 15 + (Math.max(1, per) - 1) * 10; }
+function teamScore(side){
+  var n=0; for(var i=0;i<MP.players.length;i++){ var p=MP.players[i];
+    if(p.team===side) n+=(SCORES[p.id]||0); }
+  return n;
+}
+function vsWin(){
+  /* 팀전은 양쪽 인원이 같을 때만 시작되므로 어느 한쪽을 세면 된다. 그래도 둘 중
+     큰 쪽을 쓰는 이유는 경기 도중에 누가 나가는 순간이 있기 때문이다 — 그때 목표가
+     0으로 무너지면 남은 쪽이 즉시 이겨 버린다. */
+  if(VSTEAM) return teamGoal(Math.max(teamSize('r'), teamSize('b')));
+  return 5 * Math.max(1, (MP.players.length||2) - 1);
+}
 function nameOf(id){ for(var i=0;i<MP.players.length;i++) if(MP.players[i].id===id) return MP.players[i].name;
   return (id===MP.id)?MP.name:('P'+id); }
 /* 누군가 아레나 밖으로 떨어지면 나머지 전원이 1점.
@@ -4047,6 +4513,34 @@ function scoreFall(fallerId, byId){
   // 승리 판정
   var best=null;
   var need=vsWin();
+  /* 팀전 — 점수는 그대로 사람마다 쌓고(fell 한 줄이 그렇게 생겼다) 승리만 팀 합계로
+     본다. 이러면 결과 화면에서 "우리 팀이 이겼고 그 안에서 내가 몇 점" 이 둘 다 남는다.
+     알릴 때 실어 보내는 best 는 이긴 팀의 최고 득점자다 — 받는 쪽은 거기서 팀을
+     되찾는다. 서버의 over 는 숫자 하나만 통과시키므로 프로토콜을 안 늘려도 된다. */
+  if(VSTEAM){
+    var winSide=null;
+    ['r','b'].forEach(function(sd){ if(teamScore(sd)>=need &&
+      (winSide===null || teamScore(sd)>teamScore(winSide))) winSide=sd; });
+    /* 매치 포인트는 팀 단위로 한 번만. 개인전처럼 사람마다 띄우면 3인 팀에서는
+       같은 배너가 세 번 뜬다 — 알림이 아니라 소음이 된다. */
+    if(who!=null && mode==='play' && need>1){
+      var ws=teamOf(who);
+      if(ws && teamScore(ws)===need-1 && TEAM_MP_SHOWN[ws]!==need-1){
+        // 그 문턱에서 한 번만. 목표가 바뀌면(누가 나가면) 새 문턱에서 다시 뜨는 게 맞다
+        TEAM_MP_SHOWN[ws]=need-1;
+        arenaMsgT=2.2;
+        roundBanner(ws===myTeam() ? '매치 포인트 — 한 번만 더' : TEAM_NAME[ws]+' 매치 포인트');
+      }
+    }
+    if(winSide!==null && mode==='play'){
+      var top=null;
+      MP.players.forEach(function(p){ if(p.team===winSide &&
+        (top===null || (SCORES[p.id]||0)>(SCORES[top]||0))) top=p.id; });
+      showVsWin(top!=null?top:MP.id);
+      if(MP.connected) mpSend({t:'over', best:(top!=null?top:MP.id)});
+    }
+    return;
+  }
   /* 매치 포인트 — 한 점 남은 순간을 말해 준다. 점수 칩은 숫자가 하나 올랐을 뿐이라
      "다음 한 방이 끝"이라는 것이 그 자리에서는 안 읽힌다. 배너는 새 아레나가 쓰는
      그 장치를 그대로 쓴다(arenaMsgT 가 지운다).
@@ -4069,7 +4563,7 @@ function scoreFall(fallerId, byId){
     return;                                    // 경기가 끝났으면 다음 라운드는 없다
   }
 }
-function resetScores(){ SCORES={}; }
+function resetScores(){ SCORES={}; TEAM_MP_SHOWN={}; }
 // 최근에 나를 민 사람 — 너무 오래된 건 무효(스스로 걸어 나가 떨어진 걸로 본다)
 function creditOf(s){
   if(s.hitBy==null) return null;
@@ -4240,6 +4734,10 @@ function mpConnect(room, onOk, onFail, asJoin){
 }
 function mpDisconnect(){ if(MP.ws){ try{ MP.ws.onclose=null; MP.ws.close(); }catch(e){} }
   MP.ws=null; MP.connected=false; MP.peers={}; MP.cols={}; MP.players=[]; MP.host=null; MP.id=null; MP.room=null;
+  /* 팀전은 방의 설정이라 방을 나가면 끝난다. 안 끄면 명단이 빈 채로 VSTEAM 만 남아,
+     다음에 혼자 들어간 판에서 내 몸이 팀 색으로 그려지거나(teamOf 가 null 이라
+     실제로는 개인 색이지만) 시작 조건이 팀 규칙으로 잠긴다. */
+  VSTEAM=false;
   BOTS.length=0;                 // 방을 나가면 AI 도 같이 나간다(안 비우면 튜토리얼까지 따라온다)
   if(chatting) closeChat(false); CHAT.length=0; renderChat(); }
 function mpSend(o){ if(MP.ws&&MP.connected){ try{ MP.ws.send(JSON.stringify(o)); }catch(e){} } }
@@ -4269,7 +4767,11 @@ function mpHandle(m){
     if(mode==='lobbyScr' || !document.getElementById('lobbyBlock').classList.contains('off')) renderLobby();
   }
   // 호스트가 고른 게임 모드
-  else if(m.t==='gm'){ if(m.mode==='coop'||m.mode==='versus'){ GAMEMODE=m.mode; syncModePicker(); } }
+  else if(m.t==='gm'){ if(m.mode==='coop'||m.mode==='versus'){
+    GAMEMODE=m.mode;
+    // 팀전은 경쟁 안의 하위 규칙 — 협동으로 넘어가면 서버가 이미 꺼서 보낸다
+    VSTEAM=(m.mode==='versus') && !!m.team;
+    syncModePicker(); renderLobby(); } }
   // 누군가 아레나 밖으로 떨어졌다 — 내 낙하도 여기로 되돌아온다(점수의 단일 출처)
   else if(m.t==='fell'){ scoreFall(m.id, (m.by!=null?m.by:null)); }
   /* 경기가 끝났다고 누군가 알려 왔다. 이미 결과창이면 아무 일도 안 한다 —
@@ -4298,13 +4800,17 @@ function mpHandle(m){
        리프트 샷(협동)뿐이고, 그건 방향이 아니라 규칙이라 받는 쪽이 적용해야 한다. */
     var _judged=!!m.hit && typeof m.hit.length==='number';
     var _mine=findHit(m, MP.id);
+    /* li = 팀전 리프트 샷이 지목한 아군. 이게 실려 있으면 hit 도 같이 실려 있으므로
+       (doFire 주석) 폭발은 판정된 것으로 다루고, 지목된 한 명만 따로 띄운다. */
     if(sim&&!sim.win){ spawnRemoteShot(sim, m, _judged || !!_mine);
-      if(_mine) applyRemoteImpulse(sim, _mine, m.id, !!m.rv); }
+      if(_mine) applyRemoteImpulse(sim, _mine, m.id, !!m.rv);
+      else if(m.li!=null && m.li===MP.id) applyLift(sim); }
     // 방장이 돌리는 봇들도 남의 폭발에 밀려야 한다(봇 자신이 쏜 건 제외)
     for(var _b=0;_b<BOTS.length;_b++){ if(BOTS[_b].id===m.id) continue;
       var _bh=findHit(m, BOTS[_b].id);
       spawnRemoteShot(BOTS[_b].sim, m, _judged || !!_bh);
-      if(_bh) applyRemoteImpulse(BOTS[_b].sim, _bh, m.id, !!m.rv); } }
+      if(_bh) applyRemoteImpulse(BOTS[_b].sim, _bh, m.id, !!m.rv);
+      else if(m.li!=null && m.li===BOTS[_b].id) applyLift(BOTS[_b].sim); } }
   else if(m.t==='ch'){ pushChat(m.name, m.text, m.id===MP.id); }
   else if(m.t==='left'){ delete MP.peers[m.id]; delete MP.cols[m.id]; }
 }
@@ -4756,9 +5262,47 @@ SCREEN_ENTER.title=enterTitle;
 /* 아래 셋은 이름을 유지한다 — 멀티 메시지 핸들러를 포함해 호출부가 여기저기 있다.
    예전엔 <select> 를 채웠고 지금은 카드 격자를 다시 그린다. */
 function fillMapPickers(){ syncMapPickers(); syncModePicker(); }
-/* 경쟁 전용이라 고를 게 없다. 멀티의 'gm' 메시지 핸들러가 계속 부르므로 자리는 남긴다 —
-   협동을 다시 열 때 여기에 선택 UI 를 붙이면 된다. */
-function syncModePicker(){}
+/* 협동은 아직 화면에서 갈 길이 없다. 지금 여기서 고르는 것은 경쟁 안의 개인전/팀전이다.
+   멀티의 'gm' 메시지 핸들러가 이 이름으로 부르므로 이름은 그대로 둔다. */
+function syncModePicker(){ syncModeRow(); }
+/* 개인전/팀전 토글 + 팀 인원 요약. 게스트에게는 잠긴 채로 '지금 무엇인지'만 보인다 —
+   방 설정은 방장의 것이지만, 어느 규칙으로 뛰는지는 전원이 알아야 한다. */
+function syncModeRow(){
+  var row=document.getElementById('modeRow'); if(!row) return;
+  var bs=row.querySelectorAll('button');
+  for(var i=0;i<bs.length;i++){
+    var on=(bs[i].getAttribute('data-team')==='1')===VSTEAM;
+    bs[i].classList.toggle('on', on);
+    bs[i].disabled=!mpIsHost();
+  }
+  var tally=document.getElementById('teamTally'); if(!tally) return;
+  tally.classList.toggle('off', !VSTEAM);
+  if(!VSTEAM) return;
+  var r=teamSize('r'), b=teamSize('b');
+  /* 인원과 목표 점수를 같이 적는다. 목표는 팀당 인원에 따라 달라지므로(15/25/35)
+     팀을 옮기는 순간 여기 숫자가 같이 움직여야 "왜 바뀌었나"가 그 자리에서 풀린다.
+     양쪽이 안 맞으면 목표 대신 무엇이 어긋났는지를 적는다 — 시작을 눌러 보기 전에. */
+  var mid = (r===b && r>0) ? ('선취 <b>'+teamGoal(r)+'</b>') : '<span style="color:#e0713a">인원을 맞춰야 시작</span>';
+  tally.innerHTML='<span style="color:'+TEAM_COL.r+'">'+TEAM_NAME.r+' <b>'+r+'</b></span>'+
+                  '<span style="opacity:.5">'+mid+'</span>'+
+                  '<span style="color:'+TEAM_COL.b+'">'+TEAM_NAME.b+' <b>'+b+'</b></span>';
+}
+/* 팀 바꾸기. 서버가 정원(TEAM_MAX)을 강제하고 바뀐 결과를 명단으로 되돌려 주므로,
+   여기서는 보내기만 하고 화면을 미리 고치지 않는다 — 거절당하면 화면만 어긋난다. */
+function pickTeam(p, side){
+  if(p.team===side) return;
+  if(p.bot){ if(mpIsHost()) mpSend({t:'team', bot:p.id, team:side}); }
+  else if(p.id===MP.id) mpSend({t:'team', team:side});
+}
+document.getElementById('modeRow').addEventListener('click', function(e){
+  var t=e.target, b=(t && t.closest) ? t.closest('button') : null;
+  if(!b||b.disabled||!mpIsHost()) return;
+  var want=(b.getAttribute('data-team')==='1');
+  if(want===VSTEAM) return;
+  /* 서버가 되돌려 주는 'gm' 으로만 켠다 — 여기서 VSTEAM 을 먼저 바꾸면 방장 화면만
+     팀전이 되고 나머지는 개인전인 순간이 생긴다(맵 선택이 이미 그 규칙이다). */
+  mpSend({t:'gm', mode:'versus', team:want?1:0});
+});
 function syncMapPickers(){
   // 대기방의 맵 버튼 — 이름 + 작은 썸네일. 카드 격자는 폭 300px 패널에 안 들어간다
   var btn=document.getElementById('lobbyMapBtn');
@@ -4786,8 +5330,28 @@ function renderLobby(){
     var nm=document.createElement('span'); nm.textContent=p.name+(p.id===MP.id?' (나)':''); li.appendChild(nm);
     if(p.id===MP.host){ var tg=document.createElement('span'); tg.className='tag'; tg.textContent='HOST'; li.appendChild(tg); }
     if(p.bot){ var bt=document.createElement('span'); bt.className='tag'; bt.textContent='AI'; li.appendChild(bt); }
+    /* 팀 스위치 — 내 줄은 내가, AI 줄은 방장이 누른다(서버가 같은 규칙으로 막는다).
+       남의 줄에도 그리는 이유는 '누가 어느 편인지'가 여기서 한눈에 읽혀야 하기
+       때문이다. 누를 수 없을 뿐 보이지 않는 것은 아니다. */
+    if(VSTEAM){
+      var mine=(p.id===MP.id) || (p.bot && mpIsHost());
+      var sw=document.createElement('span'); sw.className='tsw';
+      ['r','b'].forEach(function(side){
+        var b=document.createElement('button'); b.type='button';
+        b.textContent=TEAM_NAME[side];
+        b.style.setProperty('--tc', TEAM_COL[side]);
+        if(p.team===side) b.className='on';
+        // 꽉 찬 편은 흐리게 — 눌러 봐야 서버가 거절한다는 것을 누르기 전에 알려 준다
+        else if(teamSize(side)>=TEAM_MAX) b.className='full';
+        b.disabled=!mine||p.team===side;
+        if(mine) b.addEventListener('click', function(){ pickTeam(p, side); });
+        sw.appendChild(b);
+      });
+      li.appendChild(sw);
+    }
     ul.appendChild(li);
   });
+  syncModeRow();
   var btn=document.getElementById('lobbyStartBtn'), hint=document.getElementById('lobbyHint');
   var enough=MP.players.length>=2;
   // AI 는 방장만 넣고 뺀다(서버가 슬롯의 주인이라 게스트가 눌러도 거절된다)
@@ -4906,8 +5470,35 @@ function doJoin(){ ensureAudio();
       else if(why==='full') setErr('joinErr','<b>'+code+'</b> 방이 가득 찼습니다 ('+(max||6)+'명)');
       else setErr('joinErr', noServerMsg()); }, true);
 }
+/* 팀전 시작 조건 — 못 하는 이유를 문장으로 돌려준다(되면 null).
+   버튼을 죽이지 않고 눌렀을 때 막는 쪽을 고른 이유: 잠긴 버튼은 '왜 잠겼는지'를
+   말하지 못한다. 팀전은 막히는 이유가 여럿이라(한쪽이 비었다 / 수가 다르다 /
+   정원을 넘었다) 그중 무엇인지 아는 것이 곧 다음에 뭘 눌러야 하는지다. */
+function teamStartBlock(){
+  if(!VSTEAM) return null;
+  var r=teamSize('r'), b=teamSize('b');
+  var none=MP.players.filter(function(p){ return p.team!=='r'&&p.team!=='b'; }).length;
+  if(none) return '팀을 안 고른 참가자가 '+none+'명 있습니다';
+  if(!r || !b) return '양 팀에 최소 1명씩 있어야 시작합니다';
+  if(r>TEAM_MAX || b>TEAM_MAX) return '한 팀은 최대 '+TEAM_MAX+'명입니다';
+  if(r!==b) return '팀 인원이 다릅니다 — '+TEAM_NAME.r+' '+r+' 대 '+TEAM_NAME.b+' '+b+
+                   ' (같은 수로 맞춰 주세요)';
+  return null;
+}
 document.getElementById('lobbyStartBtn').addEventListener('click',function(){
-  if(!mpIsHost()||MP.players.length<2)return; mpSend({t:'gm', mode:GAMEMODE});
+  if(!mpIsHost()||MP.players.length<2)return;
+  var block=teamStartBlock();
+  if(block){
+    /* 안내는 두 자리에 같이 낸다 — 대기방 안내줄(누른 버튼 바로 위)과 경고줄.
+       안내줄은 다음 renderLobby 가 덮으므로, 명단이 바뀌면 저절로 사라진다. */
+    var h=document.getElementById('lobbyHint');
+    if(h) h.innerHTML='<b style="color:#e0713a">'+esc(block)+'</b>';
+    setWarn('bad', block);
+    return;
+  }
+  setWarn('');
+  // 팀 플래그를 같이 실어야 한다 — 빼면 서버가 '팀 없음'으로 읽어 팀전이 꺼진다
+  mpSend({t:'gm', mode:GAMEMODE, team:VSTEAM?1:0});
   // 패드 개수는 맵마다 다르다 — 서버가 내용물을 채우려면 몇 개인지 알아야 한다
   MATCH_SEED=newSeed();                       // 경기 시드 — 전원이 같은 지형을 만든다
   mpSend({t:'start', level:CURLEVEL, pads:(LEVEL.pads||[]).length, seed:MATCH_SEED});
@@ -5173,8 +5764,14 @@ document.getElementById('vsAgainBtn').addEventListener('click',function(){
   ensureAudio();
   if(MP.connected){
     if(!mpIsHost()) return;
+    /* 여기도 같은 조건을 본다. 한 판이 끝나는 사이에 누가 나가면 편이 어긋난 채로
+       남는데, 대기방을 거치지 않고 '다시' 로 곧장 새 판을 열 수 있기 때문이다. */
+    var block=teamStartBlock();
+    if(block){ setWarn('bad', block); return; }
+    setWarn('');
     MATCH_SEED=newSeed();
-    mpSend({t:'gm', mode:GAMEMODE});
+    // 시작 버튼과 같은 이유로 팀 플래그를 같이 보낸다 — 빼면 '다시' 한 판에서 팀전이 풀린다
+    mpSend({t:'gm', mode:GAMEMODE, team:VSTEAM?1:0});
     mpSend({t:'start', level:CURLEVEL, pads:(LEVEL.pads||[]).length, seed:MATCH_SEED});
   } else MATCH_SEED=newSeed();
   startGame(CURLEVEL); });
@@ -5397,6 +5994,12 @@ function loop(now){ if(!last)last=now; var dt=Math.max(0, Math.min(0.05,(now-las
        (stepSim 의 goal 검사) 튜토리얼 맵에 가짜 결승선을 숨겨 둬야 한다. 상태 하나로
        끊는 편이 어디서 무엇이 꺼지는지 읽힌다. */
     var vsLive = (GAMEMODE==='versus' && !sim.practice && !sim.tutorial);
+    /* 판이 스스로 움직이는 것들 — 경기 중이 아니어도 돈다(대기방 연습에서 확인해야
+       하므로). vsLive 를 넘겨 주면 그 안에서 시계를 고른다(dynClock).
+       collapseTick 보다 먼저 부르는 이유는 없다 — 둘은 서로 다른 상자를 만진다.
+       stepSim 보다 먼저인 것이 중요하다: 발판이 먼저 가 있어야 몸이 그 자리에서
+       충돌을 풀고, 그래야 발판이 몸을 밀어내는 것이 성립한다. */
+    if(!PAUSED) dynTick(dt, vsLive);
     if(vsLive){
       ROUND.t+=dt;
       collapseTick(dt);
@@ -5497,10 +6100,23 @@ function renderHud(s, vsLive){
      경기 중에도 바뀔 수 있고, 그때 칩이 안 따라가면 숫자 하나가 조용히 거짓말을 한다. */
   var goal = vsWin();
   // 색도 서명에 넣는다 — 늦게 도착한 색이 칩에 반영되려면 다시 그려야 한다
-  var sig = 'R'+ROUND.n+'|G'+goal+'|'+ps.map(function(p){ return p.id+':'+(SCORES[p.id]||0)+':'+(p.name||'')+':'+peerCol(p.id); }).join(',');
+  var sig = (VSTEAM?'T|':'')+'R'+ROUND.n+'|G'+goal+'|'+ps.map(function(p){ return p.id+':'+(SCORES[p.id]||0)+':'+(p.name||'')+':'+peerCol(p.id)+':'+(p.team||''); }).join(',');
   if(HUD_SIG.scoreRow===sig) return;
   HUD_SIG.scoreRow=sig;
   row.innerHTML='';
+  if(VSTEAM){
+    /* 팀전은 칩이 둘뿐이다. 사람마다 칩을 두면 여섯 개가 늘어서는데, 정작 알아야
+       하는 것(우리가 이기고 있나)은 그 여섯을 머릿속에서 두 무더기로 더해야 나온다.
+       내 팀이 늘 왼쪽이다 — 어느 쪽이 나인지 매번 찾지 않게. */
+    var sides=['r','b'];
+    var mt=myTeam(); if(mt==='b') sides=['b','r'];
+    sides.forEach(function(sd){
+      var d=document.createElement('div'); d.className='sc'+(sd===mt?' me':'');
+      d.style.setProperty('--c', TEAM_COL[sd]);
+      d.innerHTML='<s></s>'+TEAM_NAME[sd]+' <b>'+teamScore(sd)+'</b>';
+      row.appendChild(d);
+    });
+  } else
   ps.slice().sort(function(a,b){ return (SCORES[b.id]||0)-(SCORES[a.id]||0); }).forEach(function(p){
     var d=document.createElement('div'); d.className='sc'+(p.id===MP.id?' me':'');
     d.style.setProperty('--c', peerCol(p.id));
@@ -5513,8 +6129,13 @@ function renderHud(s, vsLive){
   g.innerHTML='선취 <b>'+goal+'</b>';
   row.appendChild(g);
 }
-// 그 사람 몸 색 — 나는 내가 고른 색, 남은 서버가 알려준 색(없으면 회색)
+/* 그 사람 몸 색 — 나는 내가 고른 색, 남은 서버가 알려준 색(없으면 회색).
+   팀전이면 그 위에 팀 색이 얹힌다. 얹는 것이지 덮어쓰는 것이 아니다 — MP.cols 는
+   그대로 두므로 팀전을 끄거나 방을 나가면 개인 색이 그 자리에 있다.
+   팀을 아직 모르면(명단이 오기 전) 개인 색으로 그린다. 팀 색을 억지로 하나 고르면
+   그 순간에는 편이 틀리게 보이고, 그건 색이 없는 것보다 나쁘다. */
 function peerCol(id){
+  if(VSTEAM){ var t=teamOf(id); if(t && TEAM_COL[t]) return TEAM_COL[t]; }
   if(id===MP.id) return PLAYER_COL;
   return MP.cols[id] || '#8492ad';
 }
@@ -5717,18 +6338,35 @@ function showVsWin(bestId){
   showScreen('vsWin'); sndWin(); if(locked)document.exitPointerLock();
 }
 function renderVsWin(bestId){
-  var win = (bestId===MP.id);
+  /* 팀전에서 이긴 것은 사람이 아니라 편이다. 실려 온 best 는 이긴 팀의 최고 득점자라,
+     거기서 팀을 되찾아 '내 팀인가'로 이겼는지를 정한다. 명단에서 그 사람이 이미
+     사라졌으면(나갔으면) 팀을 알 수 없으므로 그때만 점수를 다시 세어 판정한다. */
+  var winSide=null;
+  if(VSTEAM){
+    winSide=teamOf(bestId);
+    if(!winSide) winSide = teamScore('r')>=teamScore('b') ? 'r' : 'b';
+  }
+  var win = VSTEAM ? (winSide===myTeam()) : (bestId===MP.id);
   /* 제목은 이름이 아니라 WIN/LOSE 다 — 이겼는지부터 알아야 하고, 그건 이름을 읽는
      것보다 빠르다. 누가 이겼는지는 바로 아랫줄이 말한다. 워드마크라 구운 폰트도 산다. */
   var t=document.getElementById('vsWinTitle');
   t.textContent = win ? 'WIN' : 'LOSE';
   t.style.color = win ? 'var(--you)' : '#fff';
   var w=document.getElementById('vsWinWho');
-  if(w) w.innerHTML = win ? '내가 이겼다' : '<b>'+nameOf(bestId)+'</b> 승리';
+  if(w) w.innerHTML = VSTEAM
+    ? ('<b style="color:'+TEAM_COL[winSide]+'">'+TEAM_NAME[winSide]+'</b> 승리 · '+
+       teamScore('r')+' : '+teamScore('b'))
+    : (win ? '내가 이겼다' : '<b>'+nameOf(bestId)+'</b> 승리');
 
   var ul=document.getElementById('vsList'); ul.innerHTML='';
   var ps = MP.players.length ? MP.players.slice() : [{id:MP.id, name:MP.name}];
-  ps.sort(function(a,b){ return (SCORES[b.id]||0)-(SCORES[a.id]||0); });
+  /* 팀전 순위표는 편으로 먼저 묶는다 — 이긴 편이 위. 섞어 놓으면 개인 점수 순서라
+     "우리가 이겼는데 명단 맨 위는 상대" 같은 화면이 나온다. */
+  if(VSTEAM) ps.sort(function(a,b){
+    var aw=(a.team===winSide)?0:1, bw=(b.team===winSide)?0:1;
+    if(aw!==bw) return aw-bw;
+    return (SCORES[b.id]||0)-(SCORES[a.id]||0); });
+  else ps.sort(function(a,b){ return (SCORES[b.id]||0)-(SCORES[a.id]||0); });
   ps.forEach(function(p,i){
     var li=document.createElement('li'); if(p.id===MP.id) li.className='me';
     li.style.borderLeftColor=peerCol(p.id);

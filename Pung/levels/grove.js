@@ -11,7 +11,15 @@ PUNG.defineLevel('grove', {
   unit: 3,
   boxes: [
     // 저 아래 배경 바닥(deco = 밟히지 않는다). 발판은 전부 pieces 다
-    {cx:0, cy:-72, cz:0, hx:220, hy:1, hz:220, col:'#20301f', deco:true}
+    {cx:0, cy:-72, cz:0, hx:220, hy:1, hz:220, col:'#20301f', deco:true},
+    /* ===== 여기부터 tools/adddyn.js 가 넣은 것 — 직접 고치지 마세요 =====
+       숲 공터에 더한 것 — 원본 조각은 그대로다.
+         · 통나무 발판 2 : 떠내려갔다 돌아온다. 숲에 어울리는 움직임이 이것뿐이라
+                          벨트도 점멸도 안 넣었다 — 물길도 기계도 없는 판이다.
+       ===================================================================== */
+    {cx:7.96, cy:0.28, cz:0, hx:0.9, hy:0.28, hz:2.9, col:"#6b4f32", skin:"survival/tree-log", move:{ax:"z", amp:4.96, t:14.2, ph:0}},
+    {cx:-7.96, cy:0.28, cz:0, hx:0.9, hy:0.28, hz:2.9, col:"#6b4f32", skin:"survival/tree-log", move:{ax:"z", amp:4.96, t:14.2, ph:0.5}}
+    /* ===== 여기까지 adddyn ===== */
   ],
   pieces: [
     {t:'survival/rock-flat-grass', i:0, j:0, y:-0.28, sx:1.25, sy:1.25, sz:1.25},

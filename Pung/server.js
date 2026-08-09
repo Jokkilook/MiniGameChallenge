@@ -203,10 +203,28 @@ function padsetLines(st){
   return out;
 }
 var roomMode  = {};    // room -> 호스트가 고른 게임 모드(coop/versus)
+/* room -> 팀전인가(경쟁 안의 하위 규칙). GAMEMODE 와 따로 두는 이유는 클라이언트 쪽과
+   같다 — 'versus' 를 검사하는 자리가 여럿이라 세 번째 모드 값을 만들면 그 전부를
+   다시 봐야 한다. 팀전은 '경쟁이면서 편이 갈린 것'이라 켜고 끄는 플래그가 맞다. */
+var roomTeam  = {};    // room -> true 면 팀전
+/* 팀 한 편의 정원. MAX_PLAYERS(6)의 절반이다 — 팀전은 양쪽 인원이 같아야 시작되므로
+   한 편이 3을 넘으면 어차피 상대 편을 채울 자리가 없다. */
+var TEAM_MAX = 3;
+function teamCount(room, side){
+  var n = 0, r = rooms[room];
+  if(r) for(var k in r) if(r[k].team === side) n++;
+  botsOf(room).forEach(function(b){ if(b.team === side) n++; });
+  return n;
+}
+/* 빈자리가 적은 쪽 — 새로 들어온 사람과 새 봇이 여기로 간다. 같으면 레드부터.
+   자동 배치를 두는 이유는 '팀을 안 고른 사람' 이라는 상태가 생기면 시작 조건
+   (양 팀 인원이 같은가)이 늘 거짓이 되어, 아무도 뭘 눌러야 하는지 모른 채 막히기
+   때문이다. 기본값이 있어야 고르는 것이 '바꾸는 일' 이 된다. */
+function thinnerSide(room){ return teamCount(room,'r') <= teamCount(room,'b') ? 'r' : 'b'; }
 /* AI 봇 — 서버에는 물리도 레벨도 없으므로(순수 중계) 봇은 방장이 자기 클라이언트에서
    돌린다. 서버가 하는 일은 '가상 참가자 슬롯'을 잡아 주고, 방장이 그 슬롯 이름으로
    보내는 상태를 중계하는 것뿐이다. 게스트 입장에서는 사람과 구별되지 않는다. */
-var roomBots = {};     // room -> [{id, name, owner}]
+var roomBots = {};     // room -> [{id, name, owner, team}]
 var nextBotId = 100000;   // 사람 id(1부터)와 절대 겹치지 않게 멀리 띄운다
 function botsOf(room){ return roomBots[room] || (roomBots[room] = []); }
 /* AI 이름 — 'AI 1' 대신 형용사 + 명사. 번호는 순서를 알려줄 뿐 누구인지는 안 알려준다.
@@ -280,7 +298,10 @@ server.on('upgrade', function(req, socket){
     log('bot', 'room='+room, 'AI 가 자리를 내줌 id='+kicked.id);
   }
   var id = nextId++;
-  var client = { id:id, socket:socket, room:room, name:('P'+id) };
+  /* 팀은 들어오는 순간 정해 둔다(빈자리가 적은 쪽). 'team' 은 팀전에서만 쓰이지만
+     개인전일 때도 들고 있는다 — 대기방에서 팀전으로 전환하는 순간 전원이 이미
+     어딘가에 서 있어야, 그 화면이 '아무도 팀이 없는 상태'로 시작하지 않는다. */
+  var client = { id:id, socket:socket, room:room, name:('P'+id), team:thinnerSide(room) };
   (rooms[room] || (rooms[room] = {}))[id] = client;
   send(socket, JSON.stringify({ t:'welcome', id:id, room:room }));
   // 현재 명단은 접속자 본인에게만. 다른 사람에게는 'join'(이름 확정) 이후에 알린다
@@ -312,7 +333,7 @@ server.on('upgrade', function(req, socket){
         mine.forEach(function(b){ broadcast(room, id, JSON.stringify({ t:'left', id:b.id })); });
       }
       if(Object.keys(r).length === 0){ delete rooms[room]; delete roomLevel[room];
-        delete roomMode[room]; delete roomPads[room]; delete roomBots[room]; } else sendRoster(room);
+        delete roomMode[room]; delete roomTeam[room]; delete roomPads[room]; delete roomBots[room]; } else sendRoster(room);
     }
     try{ socket.destroy(); }catch(e){}
     log('left', 'room='+room, 'id='+id);
@@ -324,7 +345,8 @@ server.on('upgrade', function(req, socket){
       sendRoster(room);
       // 새로 들어온 사람이 방의 현재 상태를 그대로 보도록 맞춰 준다
       if(roomLevel[room]) send(socket, JSON.stringify({ t:'lvl', level:roomLevel[room] }));
-      if(roomMode[room])  send(socket, JSON.stringify({ t:'gm',  mode:roomMode[room] }));
+      if(roomMode[room])  send(socket, JSON.stringify({ t:'gm',  mode:roomMode[room], team:roomTeam[room]?1:0 }));
+      else if(roomTeam[room]) send(socket, JSON.stringify({ t:'gm', mode:'versus', team:1 }));
       if(roomPads[room]) padsetLines(roomPads[room]).forEach(function(ln){ send(socket, ln); });
       var r0 = rooms[room];
       if(r0) Object.keys(r0).forEach(function(k){
@@ -354,7 +376,32 @@ server.on('upgrade', function(req, socket){
       if(id !== hostOf(room)) return;
       if(m.mode !== 'coop' && m.mode !== 'versus') return;
       roomMode[room] = m.mode;
-      broadcast(room, id, JSON.stringify({ t:'gm', mode:m.mode }));
+      // 팀전은 경쟁 안의 하위 규칙이다 — 협동으로 넘어가면 자동으로 꺼진다
+      roomTeam[room] = (m.mode === 'versus') && !!m.team;
+      /* 보낸 방장에게도 되돌려 준다. 예전에는 방장이 제 화면을 먼저 바꾸고 남에게
+         알리는 식이었는데, 그러면 서버가 거절하거나 값을 다듬은 경우 방장만 다른
+         규칙을 보게 된다. 켜는 사람도 서버가 되돌려 준 한 줄로 켠다(fell·pad 와 같은 규칙). */
+      var gmline = JSON.stringify({ t:'gm', mode:m.mode, team:roomTeam[room]?1:0 });
+      broadcast(room, id, gmline); send(socket, gmline);
+      /* 팀 배정은 명단(roster)에 실려 가므로, 팀전으로 켜는 순간 전원이 각자
+         어디에 서 있는지 다시 봐야 한다. 켤 때만이 아니라 끌 때도 보낸다 —
+         개인전으로 돌아가면 명단에서 팀 딱지가 사라져야 한다. */
+      sendRoster(room);
+      return;
+    }
+    /* 팀 선택 — 자기 팀은 자기가 고르고, 봇 팀은 그 봇의 주인(방장)이 고른다.
+       색 배정과 같은 규칙이다: 남의 팀은 아무도 못 바꾼다.
+       한 편이 TEAM_MAX 를 넘으면 조용히 거절한다 — 거절당한 쪽 화면은 방금 누른
+       것이 안 먹은 상태로 남는데, 뒤이어 오는 roster 가 실제 상태로 되돌려 준다. */
+    if(m.t === 'team'){
+      if(m.team !== 'r' && m.team !== 'b') return;
+      var tgt = null;
+      if(m.bot != null){ tgt = ownsBot(room, id, m.bot|0); if(!tgt) return; }
+      else tgt = (rooms[room] || {})[id];
+      if(!tgt || tgt.team === m.team) return;
+      if(teamCount(room, m.team) >= TEAM_MAX) return;
+      tgt.team = m.team;
+      sendRoster(room);
       return;
     }
     if(m.t === 'lvl'){          // 대기방에서 호스트가 고른 맵 — 방에 저장해 두고 전원에게
@@ -418,7 +465,8 @@ server.on('upgrade', function(req, socket){
         // 정원은 사람 + AI 합계다(위 upgrade 주석). AI 만 세면 8인 방이 만들어진다
         var now = Object.keys(rooms[room] || {}).length + list.length;
         if(now >= MAX_PLAYERS) return;
-        list.push({ id: nextBotId++, name: botName(list), owner: id });
+        // 사람과 같은 규칙으로 빈자리가 적은 쪽에 세운다 — 방장은 그 뒤에 바꾸면 된다
+        list.push({ id: nextBotId++, name: botName(list), owner: id, team: thinnerSide(room) });
       } else {
         var gone = list.pop();
         if(gone) broadcast(room, -1, JSON.stringify({ t:'left', id:gone.id }));
@@ -480,8 +528,12 @@ function hostOf(room){
 function sendRoster(room, onlySocket){
   var r = rooms[room]; if(!r) return;
   var ids = Object.keys(r).map(Number).sort(function(a,b){ return a-b; });
-  var players = ids.map(function(id){ return { id:id, name:r[id].name }; });
-  botsOf(room).forEach(function(b){ players.push({ id:b.id, name:b.name, bot:true }); });
+  /* 팀은 명단에 실어 보낸다 — 색(col)처럼 따로 흐르게 두지 않는 이유가 있다.
+     색은 'join 때 한 명씩 되돌려 주기' 라는 재생 경로를 따로 만들어야 했고, 그 경로에
+     구멍이 생겨 남의 색이 통째로 날아간 적이 있다. 명단은 인원이 바뀔 때마다 이미
+     전원에게 다시 나가므로, 여기 실으면 늦게 들어온 사람도 자동으로 맞춰진다. */
+  var players = ids.map(function(id){ return { id:id, name:r[id].name, team:r[id].team }; });
+  botsOf(room).forEach(function(b){ players.push({ id:b.id, name:b.name, bot:true, team:b.team }); });
   var msg = JSON.stringify({ t:'roster', players:players, host: ids[0] });
   if(onlySocket){ send(onlySocket, msg); return; }
   ids.forEach(function(id){ send(r[id].socket, msg); });
